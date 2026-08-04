@@ -13,6 +13,7 @@ import { supabase } from '../../lib/supabase';
 import { format } from 'date-fns';
 import { useTrainingSettings } from '../../hooks/useTrainingSettings';
 import { cleanupInstructorComment, type CommentCleanupMode } from '../../utils/commentCleanup';
+import { buildTrainingCommentContext } from '../../utils/commentCleanupContext';
 import { usePageLoadState } from '../../context/PageLoadContext';
 import {
   matrixStandardMeetsRequirement,
@@ -1136,16 +1137,37 @@ export const OutstandingRecordsTab: React.FC = () => {
     }
     setCommentCleanupLoading(mode);
     try {
-      const rewritten = await cleanupInstructorComment(form.flightComments, {
+      const matrixResults = activeMatrixRequirements.flatMap(requirement => {
+        const achieved = form.matrixGrades[requirement.matrixRowId];
+        if (!achieved) return [];
+        const row = rowsById.get(requirement.matrixRowId);
+        const label = row?.code || row?.elementCode || row?.unitCode || row?.description || 'Matrix item';
+        return [`${label}: achieved ${achieved}, required ${requirement.requiredStandard}`];
+      });
+      const cleanup = await cleanupInstructorComment(form.flightComments, buildTrainingCommentContext({
+        studentId: activeLog?.student_id,
         studentName: activeLog?.student_name,
-        lessonName: selectedLesson?.name || selectedLesson?.sequenceTitle,
-        courseName: selectedCourse?.title,
+        course: selectedCourse,
+        lesson: selectedLesson,
+        records: trainingRecords,
+        currentCriteriaGrades: effectiveCriteriaGrades,
+        matrixResults,
+        nextLessonName: lessonWillProceed
+          ? nextLessonAfterSelected?.name || nextLessonAfterSelected?.sequenceTitle
+          : selectedLesson?.name || selectedLesson?.sequenceTitle,
         aircraft: activeLog?.aircraft_registration,
         date: activeLog?.start_time ? format(new Date(activeLog.start_time), 'yyyy-MM-dd') : undefined,
-      }, mode);
+        durationMinutes: activeLog
+          ? Math.round(((activeLog.dual_time || 0) + (activeLog.solo_time || 0)) * 60)
+          : undefined,
+      }), mode);
       setCommentCleanupOriginal(form.flightComments);
-      setForm(current => ({ ...current, flightComments: rewritten }));
-      toast.success(mode === 'readability' ? 'Flight comments rewritten for readability' : 'Flight comments grammar cleaned up');
+      setForm(current => ({ ...current, flightComments: cleanup.rewrittenComment }));
+      toast.success(cleanup.usedFallback
+        ? 'AI Rewrite was unavailable, so a safe local grammar cleanup was applied'
+        : mode === 'readability'
+          ? 'Flight comments rewritten for readability'
+          : 'Flight comments grammar cleaned up');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'AI comment cleanup failed');
     } finally {

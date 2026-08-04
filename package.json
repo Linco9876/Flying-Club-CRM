@@ -48,7 +48,7 @@
     "test:member-billing-state": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/memberBillingState.test.ts",
     "test:profile-readiness": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/profileReadiness.test.ts",
     "test:exam-sheet-access": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/examSheetAccess.test.ts",
-    "test:ai-rewrite": "node --test functions/api/instructor-comment-cleanup.test.mjs",
+    "test:ai-rewrite": "node --test functions/api/instructor-comment-cleanup.test.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/commentCleanupSession.test.ts src/utils/commentCleanupContext.test.ts",
     "test:reviewer-roles": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/reviewerRoleRules.test.ts",
     "test:review-findings": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/flightReviewFindings.test.ts",
     "test:pilot-review-currency": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/pilotReviewCurrency.test.ts",

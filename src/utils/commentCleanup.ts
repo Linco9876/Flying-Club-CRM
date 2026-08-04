@@ -1,15 +1,18 @@
 import { supabase } from '../lib/supabase';
+import { withCommentCleanupSessionRetry } from './commentCleanupSession';
+import type { CommentCleanupContext } from './commentCleanupContext';
 
-export interface CommentCleanupContext {
-  studentName?: string;
-  lessonName?: string;
-  lessonCode?: string;
-  courseName?: string;
-  aircraft?: string;
-  date?: string;
-}
+export type { CommentCleanupContext } from './commentCleanupContext';
 
 export type CommentCleanupMode = 'grammar' | 'readability';
+
+export interface CommentCleanupResult {
+  rewrittenComment: string;
+  usedFallback: boolean;
+  fallbackReason?: string;
+}
+
+const REQUEST_TIMEOUT_MS = 25_000;
 
 const getCommentCleanupEndpoint = () => {
   const configuredEndpoint = import.meta.env.VITE_COMMENT_CLEANUP_ENDPOINT;
@@ -31,23 +34,45 @@ export const cleanupInstructorComment = async (
   mode: CommentCleanupMode = 'grammar'
 ) => {
   const endpoint = getCommentCleanupEndpoint();
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  if (!token) {
-    throw new Error('You need to be signed in to use AI comment cleanup.');
+  const requestRewrite = async (token: string) => {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      return await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ comment, context, mode }),
+        signal: controller.signal,
+      });
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  };
+
+  let response: Response;
+  try {
+    response = await withCommentCleanupSessionRetry(supabase.auth, requestRewrite);
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('AI Rewrite took too long to respond. Please try again.', { cause: error });
+    }
+    if (error instanceof TypeError && /fetch|network|load/i.test(error.message)) {
+      throw new Error('AI Rewrite could not be reached. Check your connection and try again.', { cause: error });
+    }
+    throw error;
   }
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({ comment, context, mode }),
-  });
-
-  const responseText = await response.text();
-  let payload: { error?: string; rewrittenComment?: string } = {};
+  const responseText = await response.text().catch(() => '');
+  let payload: {
+    code?: string;
+    error?: string;
+    rewrittenComment?: string;
+    usedFallback?: boolean;
+    fallbackReason?: string;
+  } = {};
   try {
     payload = responseText ? JSON.parse(responseText) : {};
   } catch {
@@ -55,9 +80,24 @@ export const cleanupInstructorComment = async (
   }
 
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error('Your session has expired. Refresh the page or sign in again to use AI Rewrite.');
+    }
+    if (response.status === 429) {
+      throw new Error('AI Rewrite is busy. Wait a moment and try again.');
+    }
     const detail = payload.error || responseText.trim();
     throw new Error(detail || `AI comment cleanup failed (${response.status}).`);
   }
 
-  return String(payload.rewrittenComment || '').trim();
+  const rewrittenComment = String(payload.rewrittenComment || '').trim();
+  if (!rewrittenComment) {
+    throw new Error('AI Rewrite returned an empty comment. Your original comment has not been changed.');
+  }
+
+  return {
+    rewrittenComment,
+    usedFallback: Boolean(payload.usedFallback),
+    fallbackReason: payload.fallbackReason,
+  } satisfies CommentCleanupResult;
 };
