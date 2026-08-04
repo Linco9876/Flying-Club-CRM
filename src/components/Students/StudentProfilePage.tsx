@@ -27,6 +27,7 @@ import { supabase } from '../../lib/supabase';
 import { hasAnyRole } from '../../utils/rbac';
 import { canAccessUploadedExamSheets, examResultColumnsForViewer } from '../../utils/examSheetAccess';
 import { cleanupInstructorComment, type CommentCleanupMode } from '../../utils/commentCleanup';
+import { buildTrainingCommentContext } from '../../utils/commentCleanupContext';
 import { getConsecutivePassReadiness, getTwoOccasionReadiness } from '../../utils/trainingReadiness';
 import { formatRichTextContent, richTextToPlainText } from '../../utils/richText';
 import { InstructorComplianceProfilePanel } from '../Profile/InstructorComplianceProfilePanel';
@@ -1531,17 +1532,25 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     try {
       const lesson = getEditedRecordLesson(editingTrainingRecord, trainingEditForm);
       const course = getRecordCourse(editingTrainingRecord);
-      const rewritten = await cleanupInstructorComment(trainingEditForm.comments, {
+      const cleanup = await cleanupInstructorComment(trainingEditForm.comments, buildTrainingCommentContext({
+        studentId: editingTrainingRecord.studentId,
         studentName: student?.name,
-        lessonName: lesson?.name || lesson?.sequenceTitle,
-        lessonCode: lesson?.sequenceCode || editingTrainingRecord.lessonCodes.join(', '),
-        courseName: course?.title,
+        course,
+        lesson,
+        records: studentTrainingRecords,
+        currentCriteriaGrades: trainingEditForm.criteriaGrades,
+        nextLessonName: trainingEditForm.nextLesson,
         aircraft: editingTrainingRecord.registration,
         date: formatBookingDateTime(editingTrainingRecord),
-      }, mode);
+        durationMinutes: editingTrainingRecord.dualTimeMin + editingTrainingRecord.soloTimeMin,
+      }), mode);
       setCommentCleanupOriginal(trainingEditForm.comments);
-      setTrainingEditForm(form => form ? { ...form, comments: rewritten } : form);
-      toast.success(mode === 'readability' ? 'Lesson comments rewritten for readability' : 'Lesson comments grammar cleaned up');
+      setTrainingEditForm(form => form ? { ...form, comments: cleanup.rewrittenComment } : form);
+      toast.success(cleanup.usedFallback
+        ? 'AI Rewrite was unavailable, so a safe local grammar cleanup was applied'
+        : mode === 'readability'
+          ? 'Lesson comments rewritten for readability'
+          : 'Lesson comments grammar cleaned up');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'AI comment cleanup failed');
     } finally {

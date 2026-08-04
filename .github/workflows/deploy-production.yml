@@ -85,14 +85,20 @@ jobs:
             --commit-hash "${{ github.event.workflow_run.head_sha }}"
 
       - name: Verify production AI Rewrite bindings
+        env:
+          EXPECTED_SUPABASE_URL: ${{ secrets.SUPABASE_AU_URL }}
         run: |
           set -euo pipefail
+          expected_auth_host="${EXPECTED_SUPABASE_URL#https://}"
+          expected_auth_host="${expected_auth_host#http://}"
+          expected_auth_host="${expected_auth_host%%/*}"
           for attempt in {1..12}; do
             headers="$(curl --silent --show-error --request OPTIONS \
               --dump-header - --output /dev/null \
               https://portal.bendigoflyingclub.com.au/api/instructor-comment-cleanup || true)"
-            if grep -qi '^x-bfc-ai-rewrite-ready: true' <<<"$headers"; then
-              echo "AI Rewrite production bindings are ready."
+            if grep -qi '^x-bfc-ai-rewrite-ready: true' <<<"$headers" \
+              && grep -Fqi "x-bfc-ai-rewrite-auth-project: ${expected_auth_host}" <<<"$headers"; then
+              echo "AI Rewrite production bindings and authentication project are ready."
               exit 0
             fi
             echo "Waiting for the new Cloudflare release (attempt $attempt of 12)..."

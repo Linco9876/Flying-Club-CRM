@@ -205,16 +205,30 @@ export const TrainingRecordForm: React.FC<TrainingRecordFormProps> = ({
     }
     setCommentCleanupLoading(mode);
     try {
-      const rewritten = await cleanupInstructorComment(formData.lessonComments, {
+      const cleanup = await cleanupInstructorComment(formData.lessonComments, {
+        studentId: formData.studentId,
         studentName: student?.name,
         lessonCode: formData.lessonCode,
         lessonName: lessonCodes.find(lesson => lesson.value === formData.lessonCode)?.label,
+        assessmentResults: [
+          ...selectedSequences
+            .filter(entry => entry.competence !== '-')
+            .map(entry => `${entry.sequence.code} ${entry.sequence.title}: ${entry.competence}`),
+          ...flightTolerances.flatMap(category => category.items
+            .filter(item => item.rating !== '-')
+            .map(item => `${category.category} - ${item.description}: ${item.rating}`)),
+        ].slice(0, 12),
         aircraft: formData.aircraftRegistration,
         date: formData.date,
+        duration: `${Math.round((formData.dualTime + formData.soloTime) * 60)} minutes`,
       }, mode);
       setCommentCleanupOriginal(formData.lessonComments);
-      setFormData(prev => ({ ...prev, lessonComments: rewritten }));
-      toast.success(mode === 'readability' ? 'Lesson comments rewritten for readability' : 'Lesson comments grammar cleaned up');
+      setFormData(prev => ({ ...prev, lessonComments: cleanup.rewrittenComment }));
+      toast.success(cleanup.usedFallback
+        ? 'AI Rewrite was unavailable, so a safe local grammar cleanup was applied'
+        : mode === 'readability'
+          ? 'Lesson comments rewritten for readability'
+          : 'Lesson comments grammar cleaned up');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'AI comment cleanup failed');
     } finally {
