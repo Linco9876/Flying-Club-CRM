@@ -321,7 +321,7 @@ export const DutySupervisionSettings: React.FC<{ canEdit?: boolean; onFormChange
       </section>
 
       <section>
-        <div className="mb-3"><h3 className="font-bold text-gray-950">Authorised senior instructors</h3><p className="text-xs text-gray-500">The lowest priority number is tried first. Eligibility, availability, coverage location and capacity are checked before priority.</p></div>
+        <div className="mb-3"><h3 className="font-bold text-gray-950">Authorised senior instructors</h3><p className="text-xs text-gray-500">The lowest priority number is tried first. Roster availability, authorisation, coverage location, duty limits and capacity are checked before priority. An instructor can supervise while conducting their own lesson.</p></div>
         <div className="space-y-3">
           {staff.map(person => {
             const value = authorisations[person.id];
