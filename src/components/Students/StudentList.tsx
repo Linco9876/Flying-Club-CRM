@@ -483,9 +483,10 @@ export const StudentList: React.FC = () => {
     phone?: string;
     roles?: UserRole[];
     resend?: boolean;
+    sendInvitation?: boolean;
   }): Promise<InviteUserResult | undefined> => {
     const result = await inviteUser(data);
-    if (result?.tempPassword || result?.emailSent || result?.manualLink) {
+    if (result?.tempPassword || result?.emailSent || result?.manualLink || result?.accountCreatedWithoutInvite) {
       await refetch();
     }
     return result;
@@ -528,7 +529,7 @@ export const StudentList: React.FC = () => {
                   className="inline-flex self-start items-center justify-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-slate-950 shadow-sm transition-colors hover:bg-blue-50 sm:self-auto sm:px-3"
                 >
                   <UserPlus className="h-4 w-4" />
-                  Invite
+                  Add user
                 </button>
               )}
             </div>

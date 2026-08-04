@@ -15,6 +15,7 @@ export const AcceptInvitationPage: React.FC = () => {
   );
   const setupMode = useMemo(() => getPasswordSetupMode(window.location.hash), []);
   const isPasswordReset = setupMode === 'password-reset';
+  const isAccountClaim = setupMode === 'account-claim';
 
   const continueSetup = () => {
     if (!actionLink) return;
@@ -35,12 +36,18 @@ export const AcceptInvitationPage: React.FC = () => {
             Bendigo Flying Club
           </p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight">
-            {isPasswordReset ? 'Reset your portal password' : 'Set up your portal account'}
+            {isPasswordReset
+              ? 'Reset your portal password'
+              : isAccountClaim
+                ? 'Verify your portal account'
+                : 'Set up your portal account'}
           </h1>
           <p className="mt-3 max-w-md text-sm leading-6 text-blue-100">
             {isPasswordReset
               ? 'Choose a new password to restore access to your Bendigo Flying Club portal account.'
-              : 'The portal brings your bookings, flying records, documents and club information together.'}
+              : isAccountClaim
+                ? 'The club has already added your details. Verify this email address, then choose your own password.'
+                : 'The portal brings your bookings, flying records, documents and club information together.'}
           </p>
         </div>
 
@@ -50,7 +57,9 @@ export const AcceptInvitationPage: React.FC = () => {
               <div className="flex gap-3 rounded-xl border border-[#a7f3d0] bg-[#ecfdf5] p-4 text-[#064e3b]">
                 <MailCheck className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
                 <div>
-                  <p className="font-semibold">{isPasswordReset ? 'Password reset ready' : 'Invitation ready'}</p>
+                  <p className="font-semibold">
+                    {isPasswordReset ? 'Password reset ready' : isAccountClaim ? 'Email verification ready' : 'Invitation ready'}
+                  </p>
                   <p className="mt-1 text-sm leading-5 text-[#065f46]">
                     Press the button below to verify this request and choose your password.
                   </p>
@@ -67,7 +76,9 @@ export const AcceptInvitationPage: React.FC = () => {
                   ? 'Opening secure setup…'
                   : isPasswordReset
                     ? 'Continue password reset'
-                    : 'Continue account setup'}
+                    : isAccountClaim
+                      ? 'Verify email and set password'
+                      : 'Continue account setup'}
                 {!isContinuing && <ArrowRight className="h-5 w-5" aria-hidden="true" />}
               </button>
 

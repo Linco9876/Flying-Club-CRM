@@ -179,6 +179,8 @@ Residential and address-for-service fields provide keyboard-accessible Australia
 
 Membership-path submission creates the portal account and membership application together. Account-only submission creates only the portal identity and student profile. When email confirmation is enabled, the confirmation returns to the appropriate portal continuation. Applicants can use the portal as soon as their account is active, while aircraft self-booking remains subject to membership and financial clearance.
 
+Administrators can also use **Members → Add user** to add a portal user without sending an invitation. An email address is still required, but no usable password or setup link is exposed to the administrator. If that person later tries to create an account with the same email address, the portal sends a rate-limited verification link to that mailbox and lets them choose their own password. The public request returns the same response whether or not a pending account exists, and its setup link can return only to the configured portal origin.
+
 A welcome email is sent only when legal membership actually commences, either after committee approval or the 30-day lifecycle. The delivery log prevents duplicate sends, approval attempts delivery immediately, and the daily membership job retries unsent messages. Two variants are selected from the saved preference:
 
 - **Automatic renewal:** explains the 1 July attempt, 60-day payment window after failure, cessation for non-payment and aircraft booking restriction while unpaid.

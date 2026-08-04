@@ -56,7 +56,7 @@
     "test:training-record-edit": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/trainingRecordEdit.test.ts",
     "test:training-record-background": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/trainingRecordBackgroundQueue.test.ts",
     "test:credential-dropdowns": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/credentialDropdowns.test.ts",
-    "test:portal-signup": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/portalSignup.test.ts",
+    "test:portal-signup": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/portalSignup.test.ts src/utils/pendingAccountSetup.test.ts",
     "test:settings-deep-links": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/settingsDeepLink.test.ts",
     "test:profile-picture": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/profilePicture.test.ts",
     "test:ground-session-billing": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/groundSessionBilling.test.ts",
