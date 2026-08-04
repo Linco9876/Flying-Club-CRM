@@ -5,6 +5,7 @@ import { afterEach, test } from 'node:test';
 import {
   buildPrompt,
   isMeaningfullyRewritten,
+  isStrictGrammarEdit,
   onRequestOptions,
   onRequestPost,
 } from './instructor-comment-cleanup.js';
@@ -208,6 +209,8 @@ test('readability mode requests a genuine, concise plain-language rewrite', () =
   assert.match(prompt, /plain, direct language/i);
   assert.match(prompt, /remove filler, repetition, hedging, generic praise/i);
   assert.match(prompt, /no more than 24 words/i);
+  assert.match(prompt, /replace awkward wording, change sentence order, and split or combine sentences/i);
+  assert.match(prompt, /add words only when they materially improve clarity/i);
   assert.match(prompt, /do not preserve the original wording, length, or sentence structure/i);
   assert.doesNotMatch(prompt, /keep the same broad structure/i);
   assert.doesNotMatch(prompt, /level of detail/i);
@@ -280,12 +283,12 @@ test('a readability rewrite can remove filler without triggering the dropped-det
   const payload = await response.json();
 
   assert.equal(response.status, 200);
-  assert.match(capturedRequest.messages[1].content, /no more than 26 words/i);
+  assert.match(capturedRequest.messages[1].content, /no more than 30 words/i);
   assert.equal(payload.rewrittenComment, conciseRewrite);
   assert.equal(payload.usedFallback, false);
 });
 
-test('grammar mode remains a conservative copy-edit rather than a rewrite', async () => {
+test('grammar mode requests only the smallest objective correction', async () => {
   mockStaffAuthentication();
   let capturedRequest;
   const env = {
@@ -304,9 +307,85 @@ test('grammar mode remains a conservative copy-edit rather than a rewrite', asyn
   });
 
   assert.equal(response.status, 200);
-  assert.match(capturedRequest.messages[0].content, /conservatively copy-edit/i);
-  assert.match(capturedRequest.messages[1].content, /stay very close to the original wording/i);
+  assert.match(capturedRequest.messages[0].content, /fix only grammar, spelling, and punctuation/i);
+  assert.match(capturedRequest.messages[1].content, /make the smallest possible correction/i);
+  assert.match(capturedRequest.messages[1].content, /do not paraphrase, shorten, simplify, polish, professionalise/i);
+  assert.match(capturedRequest.messages[1].content, /already grammatically correct, return it unchanged/i);
   assert.doesNotMatch(capturedRequest.messages[1].content, /genuine rewrite/i);
+  assert.doesNotMatch(capturedRequest.messages[1].content, /professional tone/i);
+  assert.doesNotMatch(capturedRequest.messages[1].content, /omit words and phrases/i);
+});
+
+test('grammar mode distinguishes a strict correction from a paraphrase', () => {
+  const source = 'The student fly a safe circuit and make sound decisions throughout the lesson.';
+
+  assert.equal(
+    isStrictGrammarEdit(source, 'The student flies a safe circuit and makes sound decisions throughout the lesson.'),
+    true
+  );
+  assert.equal(
+    isStrictGrammarEdit(source, 'Safe circuit handling and sound decisions were demonstrated throughout the lesson.'),
+    false
+  );
+});
+
+test('an over-edited grammar draft is retried with the strict correction contract', async () => {
+  mockStaffAuthentication();
+  const source = 'The student fly a safe circuit and make sound decisions throughout the lesson.';
+  const strictCorrection = 'The student flies a safe circuit and makes sound decisions throughout the lesson.';
+  const requests = [];
+  const env = {
+    ...readyEnvironment,
+    AI: {
+      run: async (_model, request) => {
+        requests.push(request);
+        return {
+          response: requests.length === 1
+            ? 'Safe circuit handling and sound decisions were demonstrated throughout the lesson.'
+            : strictCorrection,
+        };
+      },
+    },
+  };
+
+  const response = await onRequestPost({
+    env,
+    request: rewriteRequest({ body: { comment: source, mode: 'grammar' } }),
+  });
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(requests.length, 2);
+  assert.match(requests[1].messages[1].content, /changed the wording or structure too much/i);
+  assert.equal(payload.rewrittenComment, strictCorrection);
+  assert.equal(payload.usedFallback, false);
+});
+
+test('rewrite mode may add a few words when they materially improve clarity', async () => {
+  mockStaffAuthentication();
+  const source = 'Circuit was safe, but radio calls were sometimes unclear during the lesson.';
+  const flexibleRewrite = 'The circuit was flown safely, but some radio calls lacked clarity during the lesson.';
+  let capturedRequest;
+  const env = {
+    ...readyEnvironment,
+    AI: {
+      run: async (_model, request) => {
+        capturedRequest = request;
+        return { response: flexibleRewrite };
+      },
+    },
+  };
+
+  const response = await onRequestPost({
+    env,
+    request: rewriteRequest({ body: { comment: source, mode: 'readability' } }),
+  });
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.match(capturedRequest.messages[1].content, /no more than 16 words/i);
+  assert.equal(payload.rewrittenComment, flexibleRewrite);
+  assert.equal(payload.usedFallback, false);
 });
 
 test('provider failures return a safe local cleanup after one retry', async () => {
