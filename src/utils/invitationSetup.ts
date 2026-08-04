@@ -20,11 +20,12 @@ export const clearPasswordSetupMarker = () => {
   getStorage()?.removeItem(PASSWORD_SETUP_MARKER_KEY);
 };
 
-export type PasswordSetupMode = 'invitation' | 'password-reset';
+export type PasswordSetupMode = 'invitation' | 'password-reset' | 'account-claim';
 
 export const getPasswordSetupMode = (hash: string): PasswordSetupMode => {
   const mode = new URLSearchParams(hash.replace(/^#/, '')).get('mode');
-  return mode === 'password-reset' ? 'password-reset' : 'invitation';
+  if (mode === 'password-reset' || mode === 'account-claim') return mode;
+  return 'invitation';
 };
 
 export const markPasswordSetupFromCurrentUrl = () => {

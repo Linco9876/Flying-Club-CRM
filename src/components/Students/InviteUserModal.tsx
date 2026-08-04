@@ -13,6 +13,7 @@ interface InviteUserModalProps {
     phone?: string;
     roles?: UserRole[];
     resend?: boolean;
+    sendInvitation?: boolean;
   }) => Promise<InviteUserResult | undefined>;
 }
 
@@ -27,6 +28,7 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
     phone: '',
     roles: ['student'] as UserRole[]
   });
+  const [sendInvitation, setSendInvitation] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [inviteResult, setInviteResult] = useState<InviteUserResult | null>(null);
   const [copied, setCopied] = useState(false);
@@ -35,6 +37,7 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
   const tempPassword = inviteResult?.tempPassword || null;
   const manualLink = inviteResult?.manualLink || null;
   const pendingInviteExists = Boolean(inviteResult?.pendingInviteExists);
+  const accountCreatedWithoutInvite = Boolean(inviteResult?.accountCreatedWithoutInvite);
   const hasStudentRoleConflict = formData.roles.includes('student') && formData.roles.length > 1;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -48,8 +51,14 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
     setIsSubmitting(true);
 
     try {
-      const result = await onInvite(formData);
-      if (result?.tempPassword || result?.emailSent || result?.manualLink || result?.pendingInviteExists) {
+      const result = await onInvite({ ...formData, sendInvitation });
+      if (
+        result?.tempPassword ||
+        result?.emailSent ||
+        result?.manualLink ||
+        result?.pendingInviteExists ||
+        result?.accountCreatedWithoutInvite
+      ) {
         setInviteResult(result);
       }
     } catch (error) {
@@ -66,6 +75,7 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
       phone: '',
       roles: ['student']
     });
+    setSendInvitation(true);
     setInviteResult(null);
     setCopied(false);
     setCopyLinkDone(false);
@@ -113,7 +123,7 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
   const handleGenerateSetupLink = async () => {
     setIsSubmitting(true);
     try {
-      const result = await onInvite({ ...formData, resend: true });
+      const result = await onInvite({ ...formData, resend: true, sendInvitation: true });
       if (result?.manualLink || result?.emailSent || result?.tempPassword) {
         setInviteResult(result);
       }
@@ -132,7 +142,7 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div className="flex items-center space-x-2">
             <UserPlus className="h-5 w-5 text-blue-600" />
-            <h2 className="text-xl font-semibold text-gray-900">Invite User</h2>
+            <h2 className="text-xl font-semibold text-gray-900">Add Portal User</h2>
           </div>
           <button
             onClick={handleClose}
@@ -152,13 +162,19 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
               <p className={`font-medium mb-2 ${pendingInviteExists ? 'text-amber-800' : 'text-green-800'}`}>
                 {pendingInviteExists
                   ? 'Pending invite already exists'
+                  : accountCreatedWithoutInvite
+                    ? 'User added without an invitation'
                   : inviteResult.emailSent
                     ? 'Invitation email sent!'
-                    : 'User invited successfully!'}
+                    : 'User added successfully!'}
               </p>
               {pendingInviteExists ? (
                 <p className="text-sm text-amber-700">
                   This email already has a pending invite. Generate a setup link below if the email did not arrive.
+                </p>
+              ) : accountCreatedWithoutInvite ? (
+                <p className="text-sm text-green-700">
+                  No email was sent. When {formData.name} creates an account with this email address, they will verify it and choose their own password.
                 </p>
               ) : inviteResult.emailSent ? (
                 <p className="text-sm text-green-700">
@@ -182,7 +198,11 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
               <p className="text-gray-900 font-medium">{formData.email}</p>
             </div>
 
-            {manualLink ? (
+            {accountCreatedWithoutInvite ? (
+              <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+                Their account is safely reserved. The club does not know or store a usable password for them, and the setup email is only sent after they try to create an account.
+              </div>
+            ) : manualLink ? (
               <div className="mb-6">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Invite Setup Link
@@ -329,10 +349,42 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
                 </p>
                 {hasStudentRoleConflict && (
                   <p className="text-xs text-red-600 mt-1">
-                    Remove Student or remove the other roles before inviting this user.
+                    Remove Student or remove the other roles before adding this user.
                   </p>
                 )}
               </div>
+
+              <fieldset>
+                <legend className="block text-sm font-medium text-gray-700 mb-3">Account setup</legend>
+                <div className="space-y-2">
+                  <label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${sendInvitation ? 'border-blue-300 bg-blue-50' : 'border-gray-200'}`}>
+                    <input
+                      type="radio"
+                      name="account-setup"
+                      checked={sendInvitation}
+                      onChange={() => setSendInvitation(true)}
+                      className="mt-1 h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span>
+                      <span className="block text-sm font-medium text-gray-900">Send invitation now</span>
+                      <span className="mt-1 block text-xs leading-5 text-gray-600">Email a secure link so they can set a password immediately.</span>
+                    </span>
+                  </label>
+                  <label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${!sendInvitation ? 'border-blue-300 bg-blue-50' : 'border-gray-200'}`}>
+                    <input
+                      type="radio"
+                      name="account-setup"
+                      checked={!sendInvitation}
+                      onChange={() => setSendInvitation(false)}
+                      className="mt-1 h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span>
+                      <span className="block text-sm font-medium text-gray-900">Add without inviting</span>
+                      <span className="mt-1 block text-xs leading-5 text-gray-600">Send no email now. If they later create an account with this email, they will verify it and choose a password.</span>
+                    </span>
+                  </label>
+                </div>
+              </fieldset>
             </div>
 
             <div className="mt-6 flex space-x-3">
@@ -348,7 +400,7 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
                 disabled={isSubmitting || hasStudentRoleConflict}
                 className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isSubmitting ? 'Inviting...' : 'Invite User'}
+                {isSubmitting ? 'Adding...' : sendInvitation ? 'Add and Invite' : 'Add Without Invite'}
               </button>
             </div>
           </form>

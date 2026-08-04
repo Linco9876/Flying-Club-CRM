@@ -25,6 +25,7 @@ test('rejects links for other hosts, non-auth paths, and unsupported action type
 
 test('distinguishes password resets from invitations without trusting arbitrary modes', () => {
   assert.equal(getPasswordSetupMode('#mode=password-reset&setup=example'), 'password-reset');
+  assert.equal(getPasswordSetupMode('#mode=account-claim&setup=example'), 'account-claim');
   assert.equal(getPasswordSetupMode('#mode=invitation&setup=example'), 'invitation');
   assert.equal(getPasswordSetupMode('#mode=unexpected&setup=example'), 'invitation');
 });

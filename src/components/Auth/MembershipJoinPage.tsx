@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronLeft, ChevronRight, CreditCard, Landmark, Loader2, Lock, Mail, Plane, ReceiptText, ShieldCheck, UserPlus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { supabase } from '../../lib/supabase';
+import { publicSupabaseKey, publicSupabaseUrl, supabase } from '../../lib/supabase';
 import { MembershipDocumentLinks } from '../Membership/MembershipDocumentLinks';
 import { TurnstileWidget } from './TurnstileWidget';
 import { AddressAutocomplete } from '../common/AddressAutocomplete';
@@ -16,6 +16,10 @@ import {
   getPortalSignupSteps,
   type PortalSignupIntent,
 } from '../../utils/portalSignup';
+import {
+  isExistingAccountSignupError,
+  requestPendingAccountSetup,
+} from '../../utils/pendingAccountSetup';
 
 type PaymentMethod = 'becs' | 'invoice' | 'card';
 const turnstileEnabled = Boolean(import.meta.env.VITE_TURNSTILE_SITE_KEY);
@@ -336,8 +340,24 @@ export const MembershipJoinPage: React.FC = () => {
             : `${window.location.origin}/`,
         },
       });
-      if (error) throw error;
+      if (error) {
+        if (!isExistingAccountSignupError(error)) throw error;
+        await requestPendingAccountSetup({
+          email: form.email,
+          redirectTo: `${window.location.origin}/reset-password`,
+          supabaseUrl: publicSupabaseUrl,
+          supabaseKey: publicSupabaseKey,
+        });
+        setComplete('confirm-email');
+        return;
+      }
       if (!data.session) {
+        await requestPendingAccountSetup({
+          email: form.email,
+          redirectTo: `${window.location.origin}/reset-password`,
+          supabaseUrl: publicSupabaseUrl,
+          supabaseKey: publicSupabaseKey,
+        });
         setComplete('confirm-email');
         return;
       }
@@ -378,17 +398,15 @@ export const MembershipJoinPage: React.FC = () => {
           </h1>
           <p className="mt-3 text-center text-sm leading-6 text-slate-600">
             {complete === 'confirm-email'
-              ? wantsMembership
-                ? financialProviders.financeEnabled
-                  ? 'Use the confirmation link we sent you to activate your portal account, then sign in to finish your membership payment setup.'
-                  : 'Use the confirmation link we sent you to activate your portal account. Payment setup is currently unavailable while the club reconnects its financial services.'
-                : 'Use the confirmation link we sent you to activate your portal account, then sign in.'
+              ? 'If this address can be activated, an email is on its way. New accounts receive a confirmation link; accounts already added by the club receive a verification link to choose a password.'
               : membershipCompleted
                 ? 'Your portal account is ready. Membership commences when approved by the committee, or 30 days after your complete application was submitted.'
                 : 'Your account is ready. You have not applied for club membership and no membership payment will be taken.'}
           </p>
           <div className="mt-6 rounded-2xl bg-blue-50 p-4 text-sm leading-6 text-blue-950">
-            {wantsMembership
+            {complete === 'confirm-email' && wantsMembership
+              ? 'After activation, sign in and open Membership to confirm or finish your application and payment setup.'
+              : wantsMembership
               ? 'You can use the portal to manage your profile and follow your application. Where your membership includes aircraft self-booking, it becomes available after the membership fee is paid or waived.'
               : 'You can manage your profile and use the portal features available to your account. You can apply for club membership later from the Membership tab.'}
           </div>

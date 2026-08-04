@@ -1,13 +1,38 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient, type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
+import {
+  createClient,
+  type SupabaseClient,
+  type User,
+} from "npm:@supabase/supabase-js@2";
+import {
+  createPendingAccountPassword,
+  isValidPendingAccountEmail,
+  nextPendingAccountClaimWindow,
+  normalisePendingAccountEmail,
+  pendingAccountClaimIsAvailable,
+  pendingAccountClaimIsWithinWindowLimit,
+  pendingAccountClaimResponse,
+  resolvePendingAccountRedirect,
+} from "../_shared/pendingPortalAccount.ts";
+
+declare const EdgeRuntime: {
+  waitUntil(promise: Promise<unknown>): void;
+};
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+  "Access-Control-Allow-Headers":
+    "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-const validRoles = new Set(["admin", "senior_instructor", "instructor", "pilot", "student"]);
+const validRoles = new Set([
+  "admin",
+  "senior_instructor",
+  "instructor",
+  "pilot",
+  "student",
+]);
 const defaultPortalOrigin = "https://portal.bendigoflyingclub.com.au";
 
 const jsonResponse = (body: Record<string, unknown>, status = 200) =>
@@ -16,18 +41,24 @@ const jsonResponse = (body: Record<string, unknown>, status = 200) =>
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 
-const normaliseEmail = (value: unknown) => String(value || "").trim().toLowerCase();
+const normaliseEmail = normalisePendingAccountEmail;
 
 const getPrimaryRole = (roles: string[]) =>
-  roles.includes("admin") ? "admin"
-    : roles.includes("senior_instructor") ? "senior_instructor"
-    : roles.includes("instructor") ? "instructor"
-    : roles.includes("pilot") ? "pilot"
+  roles.includes("admin")
+    ? "admin"
+    : roles.includes("senior_instructor")
+    ? "senior_instructor"
+    : roles.includes("instructor")
+    ? "instructor"
+    : roles.includes("pilot")
+    ? "pilot"
     : "student";
 
 const getLegacyUsersRole = (primaryRole: string) =>
-  primaryRole === "senior_instructor" ? "instructor"
-    : primaryRole === "pilot" ? "student"
+  primaryRole === "senior_instructor"
+    ? "instructor"
+    : primaryRole === "pilot"
+    ? "student"
     : primaryRole;
 
 const escapeHtml = (value: unknown) =>
@@ -39,14 +70,16 @@ const escapeHtml = (value: unknown) =>
     .replaceAll("'", "&#039;");
 
 const resolveRedirectTo = (value: unknown) => {
-  const fallback = `${Deno.env.get("PORTAL_ORIGIN") || defaultPortalOrigin}/reset-password`;
+  const fallback = `${
+    Deno.env.get("PORTAL_ORIGIN") || defaultPortalOrigin
+  }/reset-password`;
   if (typeof value !== "string" || !value.trim()) return fallback;
 
   try {
     const url = new URL(value.trim());
     const isSecure = url.protocol === "https:";
-    const isLocalDevelopment =
-      url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1");
+    const isLocalDevelopment = url.protocol === "http:" &&
+      (url.hostname === "localhost" || url.hostname === "127.0.0.1");
     if (!isSecure && !isLocalDevelopment) return fallback;
     url.pathname = "/reset-password";
     url.search = "";
@@ -57,7 +90,7 @@ const resolveRedirectTo = (value: unknown) => {
   }
 };
 
-type SetupEmailPurpose = "invite" | "password_reset";
+type SetupEmailPurpose = "invite" | "password_reset" | "account_claim";
 
 const buildScannerSafeLink = (
   actionLink: string,
@@ -68,7 +101,11 @@ const buildScannerSafeLink = (
   portalUrl.pathname = "/accept-invitation";
   portalUrl.search = "";
   portalUrl.hash = new URLSearchParams({
-    mode: purpose === "password_reset" ? "password-reset" : "invitation",
+    mode: purpose === "password_reset"
+      ? "password-reset"
+      : purpose === "account_claim"
+      ? "account-claim"
+      : "invitation",
     setup: actionLink,
   }).toString();
   return portalUrl.toString();
@@ -86,23 +123,41 @@ const sendSetupEmail = async ({
   purpose?: SetupEmailPurpose;
 }) => {
   const apiKey = Deno.env.get("BREVO_API_KEY");
-  if (!apiKey) return { sent: false, error: "Email delivery is not configured" };
+  if (!apiKey) {
+    return { sent: false, error: "Email delivery is not configured" };
+  }
 
-  const senderEmail = Deno.env.get("BREVO_SENDER_EMAIL") || "no-reply@bendigoflyingclub.com.au";
+  const senderEmail = Deno.env.get("BREVO_SENDER_EMAIL") ||
+    "no-reply@bendigoflyingclub.com.au";
   const senderName = Deno.env.get("BREVO_SENDER_NAME") || "Bendigo Flying Club";
   const safeName = escapeHtml(name);
   const safeLink = escapeHtml(setupLink);
   const isPasswordReset = purpose === "password_reset";
+  const isAccountClaim = purpose === "account_claim";
   const subject = isPasswordReset
     ? "Reset your Bendigo Flying Club portal password"
+    : isAccountClaim
+    ? "Verify your Bendigo Flying Club portal account"
     : "Set up your Bendigo Flying Club portal account";
-  const heading = isPasswordReset ? "Reset your portal password" : "Your portal invitation";
+  const heading = isPasswordReset
+    ? "Reset your portal password"
+    : isAccountClaim
+    ? "Verify your portal account"
+    : "Your portal invitation";
   const introduction = isPasswordReset
     ? "A club administrator has sent you a secure link to choose a new password for your Bendigo Flying Club portal account."
+    : isAccountClaim
+    ? "The club has already added your details to the portal. Use this secure link to verify your email address and choose your own password."
     : "You have been invited to the Bendigo Flying Club portal. Use it to manage bookings, flying records, club documents and your account information.";
-  const buttonLabel = isPasswordReset ? "Reset my portal password" : "Set up my portal account";
+  const buttonLabel = isPasswordReset
+    ? "Reset my portal password"
+    : isAccountClaim
+    ? "Verify email and set password"
+    : "Set up my portal account";
   const unexpectedMessage = isPasswordReset
     ? "If you did not expect a password reset, do not continue and contact Bendigo Flying Club."
+    : isAccountClaim
+    ? "If you did not try to create a portal account, you can ignore this email."
     : "If you did not expect this invitation, you can ignore this email.";
 
   const response = await fetch("https://api.brevo.com/v3/smtp/email", {
@@ -155,19 +210,30 @@ const sendSetupEmail = async ({
 
   if (!response.ok) {
     const body = await response.text();
-    return { sent: false, error: body || `Email delivery failed with ${response.status}` };
+    return {
+      sent: false,
+      error: body || `Email delivery failed with ${response.status}`,
+    };
   }
 
   return { sent: true, error: null };
 };
 
-const findAuthUserByEmail = async (adminClient: SupabaseClient, email: string) => {
+const findAuthUserByEmail = async (
+  adminClient: SupabaseClient,
+  email: string,
+) => {
   const perPage = 1000;
   for (let page = 1; page <= 20; page += 1) {
-    const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage });
+    const { data, error } = await adminClient.auth.admin.listUsers({
+      page,
+      perPage,
+    });
     if (error) throw error;
 
-    const match = data.users.find((candidate) => normaliseEmail(candidate.email) === email);
+    const match = data.users.find((candidate) =>
+      normaliseEmail(candidate.email) === email
+    );
     if (match) return match;
     if (data.users.length < perPage) return null;
   }
@@ -215,53 +281,276 @@ const generateAuthAction = async ({
   };
 };
 
+const handlePendingAccountClaim = async ({
+  adminClient,
+  emailValue,
+  redirectValue,
+}: {
+  adminClient: SupabaseClient;
+  emailValue: unknown;
+  redirectValue: unknown;
+}) => {
+  if (!isValidPendingAccountEmail(emailValue)) return;
+
+  const email = normaliseEmail(emailValue);
+  const { data: candidates, error: lookupError } = await adminClient
+    .from("pending_portal_accounts")
+    .select(
+      "user_id,email,claim_email_reserved_at,claim_email_window_started_at,claim_email_count",
+    )
+    .eq("email", email)
+    .is("claimed_at", null)
+    .limit(1);
+
+  if (lookupError) {
+    console.warn("Pending portal account lookup failed", lookupError.message);
+    return;
+  }
+
+  const candidate = candidates?.[0] || null;
+  if (
+    !candidate ||
+    !pendingAccountClaimIsAvailable(candidate.claim_email_reserved_at) ||
+    !pendingAccountClaimIsWithinWindowLimit(
+      candidate.claim_email_count,
+      candidate.claim_email_window_started_at,
+    )
+  ) {
+    return;
+  }
+
+  const reservedAt = new Date().toISOString();
+  const nextWindow = nextPendingAccountClaimWindow(
+    candidate.claim_email_count,
+    candidate.claim_email_window_started_at,
+    Date.parse(reservedAt),
+  );
+  const reservation = adminClient
+    .from("pending_portal_accounts")
+    .update({
+      claim_email_reserved_at: reservedAt,
+      claim_email_window_started_at: nextWindow.windowStartedAt,
+      claim_email_count: nextWindow.claimCount,
+    })
+    .eq("user_id", candidate.user_id)
+    .is("claimed_at", null);
+  const { data: reserved, error: reservationError } =
+    candidate.claim_email_reserved_at
+      ? await reservation
+        .eq("claim_email_reserved_at", candidate.claim_email_reserved_at)
+        .select("user_id,email")
+        .maybeSingle()
+      : await reservation
+        .is("claim_email_reserved_at", null)
+        .select("user_id,email")
+        .maybeSingle();
+
+  if (reservationError) {
+    console.warn(
+      "Pending portal account reservation failed",
+      reservationError.message,
+    );
+    return;
+  }
+  if (!reserved) return;
+
+  const { data: profile, error: profileError } = await adminClient
+    .from("users")
+    .select("id,email,name")
+    .eq("id", reserved.user_id)
+    .maybeSingle();
+  if (
+    profileError ||
+    !profile ||
+    normaliseEmail(profile.email) !== email ||
+    normaliseEmail(reserved.email) !== email
+  ) {
+    if (profileError) {
+      console.warn(
+        "Pending portal profile lookup failed",
+        profileError.message,
+      );
+    }
+    return;
+  }
+
+  const { data: authData, error: authError } = await adminClient.auth.admin
+    .getUserById(profile.id);
+  const authUser = authData?.user || null;
+  if (authError || !authUser || normaliseEmail(authUser.email) !== email) {
+    if (authError) {
+      console.warn(
+        "Pending portal authentication lookup failed",
+        authError.message,
+      );
+    }
+    return;
+  }
+
+  const redirectTo = resolvePendingAccountRedirect(
+    redirectValue,
+    Deno.env.get("PORTAL_ORIGIN") || defaultPortalOrigin,
+  );
+  const { actionLink, error: actionError } = await generateAuthAction({
+    adminClient,
+    email,
+    name: profile.name || email,
+    phone: null,
+    redirectTo,
+    existingAuthUser: authUser,
+  });
+  if (actionError || !actionLink) {
+    console.warn(
+      "Pending portal setup link generation failed",
+      actionError?.message || "No action link",
+    );
+    return;
+  }
+
+  const setupLink = buildScannerSafeLink(
+    actionLink,
+    redirectTo,
+    "account_claim",
+  );
+  const delivery = await sendSetupEmail({
+    email,
+    name: profile.name || email,
+    setupLink,
+    purpose: "account_claim",
+  });
+  if (!delivery.sent) {
+    console.warn("Pending portal setup email delivery failed", delivery.error);
+  }
+};
+
+const removeProvisionedAuthUser = async (
+  adminClient: SupabaseClient,
+  userId: string,
+) => {
+  const { error } = await adminClient.auth.admin.deleteUser(userId);
+  if (error) {
+    console.error(
+      "Failed to roll back provisioned authentication user",
+      error.message,
+    );
+  }
+};
+
 Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
-  if (req.method !== "POST") return jsonResponse({ error: "Method not allowed" }, 405);
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 200, headers: corsHeaders });
+  }
+  if (req.method !== "POST") {
+    return jsonResponse({ error: "Method not allowed" }, 405);
+  }
 
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return jsonResponse({ error: "No authorization header" }, 401);
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const body = await req.json();
+
+    if (body.action === "request_pending_account_setup") {
+      const claimTask = handlePendingAccountClaim({
+        adminClient,
+        emailValue: body.email,
+        redirectValue: body.redirectTo,
+      }).catch((error) => {
+        console.warn(
+          "Pending portal account claim failed",
+          error instanceof Error ? error.message : "Unknown error",
+        );
+      });
+      EdgeRuntime.waitUntil(claimTask);
+      return jsonResponse(pendingAccountClaimResponse());
+    }
+
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return jsonResponse({ error: "No authorization header" }, 401);
+    }
 
     const callerClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
       auth: { autoRefreshToken: false, persistSession: false },
     });
-    const { data: { user: callerUser }, error: callerError } = await callerClient.auth.getUser();
-    if (callerError || !callerUser) return jsonResponse({ error: "Unauthorized" }, 401);
+    const { data: { user: callerUser }, error: callerError } =
+      await callerClient.auth.getUser();
+    if (callerError || !callerUser) {
+      return jsonResponse({ error: "Unauthorized" }, 401);
+    }
 
-    const adminClient = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-
-    const body = await req.json();
     if (body.action === "accept_current") {
       const acceptedAt = new Date().toISOString();
-      const { error } = await adminClient
-        .from("invitations")
-        .update({ status: "accepted", accepted_at: acceptedAt })
-        .eq("user_id", callerUser.id)
-        .eq("status", "pending");
-      if (error) return jsonResponse({ error: error.message }, 500);
-      return jsonResponse({ accepted: true, acceptedAt });
+      const { data: pendingAccount, error: pendingLookupError } =
+        await adminClient
+          .from("pending_portal_accounts")
+          .select("user_id")
+          .eq("user_id", callerUser.id)
+          .is("claimed_at", null)
+          .maybeSingle();
+      if (pendingLookupError) {
+        return jsonResponse({ error: pendingLookupError.message }, 500);
+      }
+
+      if (pendingAccount) {
+        const { error: confirmError } = await adminClient.auth.admin
+          .updateUserById(callerUser.id, {
+            email_confirm: true,
+          });
+        if (confirmError) {
+          return jsonResponse({ error: confirmError.message }, 500);
+        }
+      }
+
+      const [invitationResult, pendingAccountResult] = await Promise.all([
+        adminClient
+          .from("invitations")
+          .update({ status: "accepted", accepted_at: acceptedAt })
+          .eq("user_id", callerUser.id)
+          .eq("status", "pending"),
+        adminClient
+          .from("pending_portal_accounts")
+          .update({ claimed_at: acceptedAt })
+          .eq("user_id", callerUser.id)
+          .is("claimed_at", null)
+          .select("user_id"),
+      ]);
+      if (invitationResult.error) {
+        return jsonResponse({ error: invitationResult.error.message }, 500);
+      }
+      if (pendingAccountResult.error) {
+        return jsonResponse({ error: pendingAccountResult.error.message }, 500);
+      }
+
+      const claimedPendingAccount = Boolean(pendingAccountResult.data?.length);
+      return jsonResponse({
+        accepted: true,
+        acceptedAt,
+        claimedPendingAccount,
+      });
     }
 
     const { data: callerRoles, error: callerRolesError } = await adminClient
       .from("user_roles")
       .select("role")
       .eq("user_id", callerUser.id);
-    if (callerRolesError) return jsonResponse({ error: callerRolesError.message }, 500);
+    if (callerRolesError) {
+      return jsonResponse({ error: callerRolesError.message }, 500);
+    }
     if (!(callerRoles || []).some((row) => row.role === "admin")) {
       return jsonResponse({ error: "Only admins can manage user access" }, 403);
     }
 
     if (body.action === "send_password_reset") {
       const targetUserId = String(body.userId || "").trim();
-      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(targetUserId)) {
+      if (
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+          .test(targetUserId)
+      ) {
         return jsonResponse({ error: "A valid user is required" }, 400);
       }
 
@@ -271,13 +560,27 @@ Deno.serve(async (req: Request) => {
         .eq("id", targetUserId)
         .maybeSingle();
       if (targetError) return jsonResponse({ error: targetError.message }, 500);
-      if (!targetProfile?.email) return jsonResponse({ error: "This user does not have a login email" }, 404);
+      if (!targetProfile?.email) {
+        return jsonResponse(
+          { error: "This user does not have a login email" },
+          404,
+        );
+      }
 
       const targetEmail = normaliseEmail(targetProfile.email);
-      const targetAuthUser = await findAuthUserByEmail(adminClient, targetEmail);
-      if (!targetAuthUser) return jsonResponse({ error: "This CRM profile does not have an authentication account" }, 409);
+      const targetAuthUser = await findAuthUserByEmail(
+        adminClient,
+        targetEmail,
+      );
+      if (!targetAuthUser) {
+        return jsonResponse({
+          error: "This CRM profile does not have an authentication account",
+        }, 409);
+      }
       if (targetAuthUser.id !== targetProfile.id) {
-        return jsonResponse({ error: "The CRM profile and authentication account do not match" }, 409);
+        return jsonResponse({
+          error: "The CRM profile and authentication account do not match",
+        }, 409);
       }
 
       const redirectTo = resolveRedirectTo(body.redirectTo);
@@ -290,10 +593,17 @@ Deno.serve(async (req: Request) => {
         existingAuthUser: targetAuthUser,
       });
       if (actionError || !actionLink) {
-        return jsonResponse({ error: actionError?.message || "Failed to generate a password reset link" }, 500);
+        return jsonResponse({
+          error: actionError?.message ||
+            "Failed to generate a password reset link",
+        }, 500);
       }
 
-      const scannerSafeLink = buildScannerSafeLink(actionLink, redirectTo, "password_reset");
+      const scannerSafeLink = buildScannerSafeLink(
+        actionLink,
+        redirectTo,
+        "password_reset",
+      );
       const delivery = await sendSetupEmail({
         email: targetEmail,
         name: targetProfile.name || targetEmail,
@@ -301,7 +611,10 @@ Deno.serve(async (req: Request) => {
         purpose: "password_reset",
       });
       if (!delivery.sent) {
-        return jsonResponse({ error: `The reset link was generated, but the email could not be sent: ${delivery.error}` }, 502);
+        return jsonResponse({
+          error:
+            `The reset link was generated, but the email could not be sent: ${delivery.error}`,
+        }, 502);
       }
 
       return jsonResponse({
@@ -314,117 +627,225 @@ Deno.serve(async (req: Request) => {
     const email = normaliseEmail(body.email);
     const name = String(body.name || "").trim();
     const phone = body.phone ? String(body.phone).trim() : null;
-    const resend = Boolean(body.resend);
-    const requestedRoles = Array.isArray(body.roles) && body.roles.length > 0 ? body.roles : ["student"];
+    const sendInvitation = body.sendInvitation !== false;
+    const resend = sendInvitation && Boolean(body.resend);
+    const requestedRoles = Array.isArray(body.roles) && body.roles.length > 0
+      ? body.roles
+      : ["student"];
     const userRoles = Array.from(new Set(requestedRoles))
       .map((role) => String(role).trim())
       .filter((role) => validRoles.has(role));
 
-    if (!email || !name) return jsonResponse({ error: "email and name are required" }, 400);
-    if (userRoles.length === 0) return jsonResponse({ error: "At least one valid role is required" }, 400);
+    if (!isValidPendingAccountEmail(email) || !name) {
+      return jsonResponse(
+        { error: "A valid email and name are required" },
+        400,
+      );
+    }
+    if (name.length > 200 || (phone && phone.length > 50)) {
+      return jsonResponse({ error: "Name or phone number is too long" }, 400);
+    }
+    if (userRoles.length === 0) {
+      return jsonResponse(
+        { error: "At least one valid role is required" },
+        400,
+      );
+    }
     if (userRoles.includes("student") && userRoles.length > 1) {
-      return jsonResponse({ error: "Student cannot be combined with any other role" }, 400);
+      return jsonResponse({
+        error: "Student cannot be combined with any other role",
+      }, 400);
     }
 
-    const { data: existingProfile, error: profileLookupError } = await adminClient
-      .from("users")
-      .select("id,email")
-      .ilike("email", email)
-      .maybeSingle();
-    if (profileLookupError) return jsonResponse({ error: profileLookupError.message }, 500);
+    const { data: existingProfile, error: profileLookupError } =
+      await adminClient
+        .from("users")
+        .select("id,email")
+        .ilike("email", email)
+        .maybeSingle();
+    if (profileLookupError) {
+      return jsonResponse({ error: profileLookupError.message }, 500);
+    }
 
-    const { data: pendingInvitations, error: invitationLookupError } = await adminClient
-      .from("invitations")
-      .select("id,status,user_id")
-      .ilike("email", email)
-      .eq("status", "pending")
-      .order("invited_at", { ascending: false })
-      .limit(1);
-    if (invitationLookupError) return jsonResponse({ error: invitationLookupError.message }, 500);
+    const { data: pendingInvitations, error: invitationLookupError } =
+      await adminClient
+        .from("invitations")
+        .select("id,status,user_id")
+        .ilike("email", email)
+        .eq("status", "pending")
+        .order("invited_at", { ascending: false })
+        .limit(1);
+    if (invitationLookupError) {
+      return jsonResponse({ error: invitationLookupError.message }, 500);
+    }
     const pendingInvitation = pendingInvitations?.[0] || null;
 
     if (existingProfile && !resend) {
       return jsonResponse({
-        error: pendingInvitation
+        error: !sendInvitation
+          ? "A user with this email already exists"
+          : pendingInvitation
           ? "A pending invite already exists for this email. Use resend to send a fresh setup email."
           : "A user with this email already exists",
       }, 409);
     }
     if (existingProfile && resend && !pendingInvitation) {
-      return jsonResponse({ error: "This user has already completed their invitation" }, 409);
+      return jsonResponse({
+        error: "This user has already completed their invitation",
+      }, 409);
     }
 
     const existingAuthUser = await findAuthUserByEmail(adminClient, email);
     if (existingProfile && !existingAuthUser) {
       return jsonResponse({
-        error: "The CRM profile exists but its login is missing. Contact support before resending.",
+        error:
+          "The CRM profile exists but its login is missing. Contact support before resending.",
       }, 409);
     }
 
     const redirectTo = resolveRedirectTo(body.redirectTo);
-    const { actionLink, user: actionUser, error: actionError } = await generateAuthAction({
-      adminClient,
-      email,
-      name,
-      phone,
-      redirectTo,
-      existingAuthUser,
-    });
+    let actionLink: string | null = null;
+    let actionUser: User | null = null;
+    let createdAuthUser = false;
 
-    if (actionError || !actionLink || !actionUser) {
-      return jsonResponse({ error: actionError?.message || "Failed to generate a fresh setup link" }, 500);
+    if (sendInvitation) {
+      const generated = await generateAuthAction({
+        adminClient,
+        email,
+        name,
+        phone,
+        redirectTo,
+        existingAuthUser,
+      });
+      actionLink = generated.actionLink;
+      actionUser = generated.user;
+      createdAuthUser = !existingAuthUser;
+
+      if (generated.error || !actionLink || !actionUser) {
+        return jsonResponse({
+          error: generated.error?.message ||
+            "Failed to generate a fresh setup link",
+        }, 500);
+      }
+    } else {
+      if (existingAuthUser) {
+        return jsonResponse({
+          error:
+            "An authentication account already exists for this email. Review it before adding portal access.",
+        }, 409);
+      }
+
+      const { data: created, error: createError } = await adminClient.auth.admin
+        .createUser({
+          email,
+          password: createPendingAccountPassword(),
+          email_confirm: false,
+          user_metadata: { name, phone },
+        });
+      if (createError || !created.user) {
+        return jsonResponse({
+          error: createError?.message || "Failed to create the portal login",
+        }, 500);
+      }
+      actionUser = created.user;
+      createdAuthUser = true;
     }
 
-    const userId = existingProfile?.id || actionUser.id;
+    const userId = existingProfile?.id || actionUser!.id;
 
-    if (existingProfile && existingAuthUser && existingAuthUser.id !== existingProfile.id) {
+    if (
+      existingProfile && existingAuthUser &&
+      existingAuthUser.id !== existingProfile.id
+    ) {
+      if (createdAuthUser) {
+        await removeProvisionedAuthUser(adminClient, actionUser!.id);
+      }
       return jsonResponse({
-        error: "The CRM profile and login refer to different accounts. Contact support before resending.",
+        error:
+          "The CRM profile and login refer to different accounts. Contact support before resending.",
       }, 409);
     }
 
     const primaryRole = getPrimaryRole(userRoles);
-    const { error: profileWriteError } = await adminClient.from("users").upsert({
-      id: userId,
-      email,
-      name,
-      phone,
-      role: getLegacyUsersRole(primaryRole),
-      is_active: true,
-    });
-    if (profileWriteError) throw profileWriteError;
+    try {
+      const { error: profileWriteError } = await adminClient.from("users")
+        .upsert({
+          id: userId,
+          email,
+          name,
+          phone,
+          role: getLegacyUsersRole(primaryRole),
+          is_active: true,
+        });
+      if (profileWriteError) throw profileWriteError;
 
-    const { error: roleDeleteError } = await adminClient.from("user_roles").delete().eq("user_id", userId);
-    if (roleDeleteError) throw roleDeleteError;
-    const { error: roleInsertError } = await adminClient
-      .from("user_roles")
-      .insert(userRoles.map((role) => ({ user_id: userId, role })));
-    if (roleInsertError) throw roleInsertError;
+      const { error: roleDeleteError } = await adminClient.from("user_roles")
+        .delete().eq("user_id", userId);
+      if (roleDeleteError) throw roleDeleteError;
+      const { error: roleInsertError } = await adminClient
+        .from("user_roles")
+        .insert(userRoles.map((role) => ({ user_id: userId, role })));
+      if (roleInsertError) throw roleInsertError;
 
-    const invitationValues = {
-      email,
-      name,
-      phone,
-      role: primaryRole,
-      invited_by: callerUser.id,
-      invited_at: new Date().toISOString(),
-      status: "pending",
-      accepted_at: null,
-      user_id: userId,
-    };
-    if (pendingInvitation) {
-      const { error } = await adminClient
-        .from("invitations")
-        .update(invitationValues)
-        .eq("id", pendingInvitation.id);
-      if (error) throw error;
-    } else {
-      const { error } = await adminClient.from("invitations").insert(invitationValues);
-      if (error) throw error;
+      if (!sendInvitation) {
+        const { error: pendingAccountError } = await adminClient.from(
+          "pending_portal_accounts",
+        ).insert({
+          user_id: userId,
+          email,
+          created_by: callerUser.id,
+        });
+        if (pendingAccountError) throw pendingAccountError;
+      } else {
+        const invitationValues = {
+          email,
+          name,
+          phone,
+          role: primaryRole,
+          invited_by: callerUser.id,
+          invited_at: new Date().toISOString(),
+          status: "pending",
+          accepted_at: null,
+          user_id: userId,
+        };
+        if (pendingInvitation) {
+          const { error } = await adminClient
+            .from("invitations")
+            .update(invitationValues)
+            .eq("id", pendingInvitation.id);
+          if (error) throw error;
+        } else {
+          const { error } = await adminClient.from("invitations").insert(
+            invitationValues,
+          );
+          if (error) throw error;
+        }
+      }
+    } catch (writeError) {
+      if (createdAuthUser) await removeProvisionedAuthUser(adminClient, userId);
+      throw writeError;
     }
 
-    const scannerSafeLink = buildScannerSafeLink(actionLink, redirectTo, "invite");
-    const delivery = await sendSetupEmail({ email, name, setupLink: scannerSafeLink });
+    if (!sendInvitation) {
+      return jsonResponse({
+        accountCreatedWithoutInvite: true,
+        emailSent: false,
+        message:
+          "User added without sending an email. When they create an account with this address, they can verify it and choose a password.",
+        userId,
+      });
+    }
+
+    const scannerSafeLink = buildScannerSafeLink(
+      actionLink!,
+      redirectTo,
+      "invite",
+    );
+    const delivery = await sendSetupEmail({
+      email,
+      name,
+      setupLink: scannerSafeLink,
+    });
 
     return jsonResponse({
       emailSent: delivery.sent,
@@ -440,7 +861,9 @@ Deno.serve(async (req: Request) => {
   } catch (error) {
     console.error("invite-user failed", error);
     return jsonResponse({
-      error: error instanceof Error ? error.message : "The invitation could not be completed",
+      error: error instanceof Error
+        ? error.message
+        : "The invitation could not be completed",
     }, 500);
   }
 });

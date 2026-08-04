@@ -21,6 +21,7 @@ export interface InviteUserResult {
   emailSent?: boolean;
   manualLink?: string;
   pendingInviteExists?: boolean;
+  accountCreatedWithoutInvite?: boolean;
   message?: string;
 }
 
@@ -73,6 +74,7 @@ export const useInvitations = () => {
     phone?: string;
     roles?: UserRole[];
     resend?: boolean;
+    sendInvitation?: boolean;
   }): Promise<InviteUserResult | undefined> => {
     try {
       const roles = data.roles && data.roles.length > 0 ? data.roles : ['student'];
@@ -97,6 +99,7 @@ export const useInvitations = () => {
           phone: data.phone,
           roles,
           resend: Boolean(data.resend),
+          sendInvitation: data.sendInvitation !== false,
           redirectTo: getInviteRedirectUrl(),
         }),
       });
@@ -104,7 +107,7 @@ export const useInvitations = () => {
       const result = await response.json();
 
       if (!response.ok) {
-        const message = result.error || result.message || result.msg || 'Failed to invite user';
+        const message = result.error || result.message || result.msg || 'Failed to add user';
         toast.error(message);
         if (response.status === 409 && String(message).toLowerCase().includes('pending invite')) {
           return {
@@ -116,18 +119,19 @@ export const useInvitations = () => {
       }
 
       await fetchInvitations();
-      toast.success(result.message || (result.emailSent ? 'Invitation email sent' : 'User invited successfully'));
+      toast.success(result.message || (result.emailSent ? 'Invitation email sent' : 'User added successfully'));
 
       return {
         tempPassword: result.tempPassword,
         emailSent: Boolean(result.emailSent),
         manualLink: result.manualLink,
         pendingInviteExists: Boolean(result.pendingInviteExists),
+        accountCreatedWithoutInvite: Boolean(result.accountCreatedWithoutInvite),
         message: result.message,
       };
     } catch (err) {
-      console.error('Error inviting user:', err);
-      toast.error('Failed to invite user');
+      console.error('Error adding user:', err);
+      toast.error('Failed to add user');
       throw err;
     }
   };
