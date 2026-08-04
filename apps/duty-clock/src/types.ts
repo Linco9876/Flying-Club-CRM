@@ -67,3 +67,33 @@ export type StartDutyInput = {
   kssScore?: number;
   privateNote: string;
 };
+
+export type HistoricalDutyBreak = {
+  id: string;
+  breakStart: string;
+  breakEnd: string;
+  breakType: 'break' | 'rest' | 'split_duty_rest';
+  freeOfDuty: boolean;
+  affectsCalculation: boolean;
+  facility?: string;
+  notes?: string;
+};
+
+export type HistoricalDutyPeriod = {
+  id: string;
+  dutyDate: string;
+  plannedStart?: string;
+  plannedEnd?: string;
+  actualStart: string;
+  actualEnd: string;
+  location: string;
+  isExternal: boolean;
+  externalOrganisation?: string;
+  flightMinutes: number;
+  notes?: string;
+  amendmentReason?: string;
+  entrySource: 'manual' | 'mobile' | 'automatic_booking';
+  autoClosedAtLimit: boolean;
+  breakConfirmation?: 'taken' | 'not_taken';
+  breaks: HistoricalDutyBreak[];
+};

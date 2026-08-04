@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
-import { AlertTriangle, CheckCircle2, Clock3, Coffee, Download, Edit3, History, LogOut, Play, Plus, ShieldCheck, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronRight, Clock3, Coffee, Download, Edit3, History, LogOut, Play, Plus, ShieldCheck, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -10,6 +10,7 @@ import { DutyTimePicker } from './DutyTimePicker';
 import { useBookingRulesSettings } from '../../hooks/useSettings';
 import { groupDutyHistoryByWeek } from '../../utils/dutyWeekSummary';
 import { PortalDutyStartInput, StartDutyModal } from './StartDutyModal';
+import { DutyPeriodDetailsModal } from './DutyPeriodDetailsModal';
 
 type StaffOption = { id: string; name: string };
 type SupervisionBooking = { id: string; instructorId: string; instructorName: string; startTime: Date; endTime: Date; location: string; status: string; supervisionStatus: string };
@@ -93,6 +94,7 @@ export const DutyDashboard: React.FC = () => {
   const { periods, loading, savePeriod, refetch } = useDuty(selectedInstructorId);
   const { settings: fatigueSettings } = useBookingRulesSettings();
   const [form, setForm] = useState<FormState | null>(null);
+  const [detailsPeriod, setDetailsPeriod] = useState<DutyPeriod | null>(null);
   const [saving, setSaving] = useState(false);
   const [startDutyOpen, setStartDutyOpen] = useState(false);
   const [startingDuty, setStartingDuty] = useState(false);
@@ -487,8 +489,9 @@ export const DutyDashboard: React.FC = () => {
                       const hours = start && end ? (end.getTime() - start.getTime()) / 3_600_000 : null;
                       return (
                         <article key={period.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
+                          <button type="button" onClick={() => setDetailsPeriod(period)} className="group flex min-w-0 flex-1 items-center gap-3 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-4" aria-label={`View details for duty period on ${format(new Date(`${period.dutyDate}T12:00:00`), 'dd MMMM yyyy')}`}>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
                               <p className="font-bold text-gray-950">{format(new Date(`${period.dutyDate}T12:00:00`), 'EEE, dd MMM yyyy')}</p>
                               <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${period.status === 'completed' ? 'bg-emerald-100 text-emerald-800' : period.status === 'active' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700'}`}>{period.status}</span>
                               {period.isExternal && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-bold text-violet-800">External duty</span>}
@@ -497,9 +500,12 @@ export const DutyDashboard: React.FC = () => {
                               {period.autoClosedAtLimit && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">Maximum assumed</span>}
                               {period.breakConfirmation === 'not_taken' && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-900">No break taken</span>}
                             </div>
-                            <p className="mt-1 text-sm text-gray-700">{start ? format(start, 'HH:mm') : '—'} – {end ? format(end, 'HH:mm') : 'In progress'}{hours !== null ? ` · ${hours.toFixed(1)} h` : ''}</p>
-                            <p className="mt-1 text-xs text-gray-500">{period.location} · {(period.flightMinutes / 60).toFixed(1)} flight h · {period.breaks.length} {period.breaks.length === 1 ? 'break' : 'breaks'}</p>
-                          </div>
+                              <p className="mt-1 text-sm text-gray-700">{start ? format(start, 'HH:mm') : '—'} – {end ? format(end, 'HH:mm') : 'In progress'}{hours !== null ? ` · ${hours.toFixed(1)} h` : ''}</p>
+                              <p className="mt-1 text-xs text-gray-500">{period.location} · {(period.flightMinutes / 60).toFixed(1)} flight h · {period.breaks.length} {period.breaks.length === 1 ? 'break' : 'breaks'}</p>
+                              <p className="mt-2 text-xs font-bold text-blue-600 sm:hidden">View details</p>
+                            </div>
+                            <ChevronRight className="h-5 w-5 shrink-0 text-blue-500 transition group-hover:translate-x-0.5" />
+                          </button>
                           <button type="button" onClick={() => openEdit(period)} className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"><Edit3 className="h-4 w-4" /> Edit</button>
                         </article>
                       );
@@ -533,6 +539,8 @@ export const DutyDashboard: React.FC = () => {
           onStart={startDutyFromClock}
         />
       )}
+
+      {detailsPeriod && <DutyPeriodDetailsModal period={detailsPeriod} onClose={() => setDetailsPeriod(null)} />}
 
       {form && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-3">
