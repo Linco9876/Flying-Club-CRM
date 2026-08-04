@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "npm run build:portal && npm run build:duty-clock-pwa",
-    "build:portal": "vite build",
+    "build:portal": "node scripts/verify-production-config.mjs --offline && vite build",
     "build:duty-clock-pwa": "node scripts/build-duty-clock-pwa.mjs",
-    "deploy:cloudflare": "npm run build && npx --yes wrangler@latest pages deploy dist --project-name bendigo-flying-club-portal --branch main",
+    "deploy:cloudflare": "npm run verify:production-config && npm run build && npx --yes wrangler@latest pages deploy dist --project-name bendigo-flying-club-portal --branch main",
+    "verify:production-config": "node scripts/verify-production-config.mjs",
+    "test:production-config": "node --test scripts/verify-production-config.test.mjs",
     "cloudflare:status": "npx --yes wrangler@latest pages project list",
     "supabase:status": "supabase migration list",
     "supabase:push": "supabase db push",
