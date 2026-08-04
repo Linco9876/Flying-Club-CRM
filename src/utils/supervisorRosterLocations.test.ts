@@ -7,7 +7,7 @@ import {
 } from './supervisorRosterLocations.ts';
 
 const rosteredSupervisorMigration = readFileSync(
-  new URL('../../supabase/migrations/20260804040000_treat_rostered_supervisors_as_available.sql', import.meta.url),
+  new URL('../../supabase/migrations/20260804043000_allow_active_supervisors_for_historical_lessons.sql', import.meta.url),
   'utf8',
 );
 
@@ -67,4 +67,17 @@ test('reconciles lessons already waiting for rostered supervision', () => {
     rosteredSupervisorMigration,
     /supervision_required[\s\S]*supervision_status\s*=\s*'pending'[\s\S]*status not in \('cancelled', 'no-show', 'completed'\)/i,
   );
+});
+
+test('active authorisation covers a historical rostered lesson without starting future authority early', () => {
+  const historicalAuthorisationRule = /p_end\s*<\s*now\(\)[\s\S]*?or authorisation\.effective_from\s*<=/gi;
+
+  assert.equal(
+    (rosteredSupervisorMigration.match(historicalAuthorisationRule) || []).length,
+    2,
+    'both supervisor lookup layers must accept active authorisation for a historical lesson',
+  );
+  assert.match(rosteredSupervisorMigration, /authorisation\.is_active/i);
+  assert.match(rosteredSupervisorMigration, /authorisation\.qualification_expires_on/i);
+  assert.match(rosteredSupervisorMigration, /authorisation\.effective_to/i);
 });
