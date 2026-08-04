@@ -46,3 +46,18 @@ test('migration recognises licences, endorsements and course flight tests idempo
   assert.match(migration, /Select Pass or Further training required/i);
   assert.match(migration, /Backfill existing completed course flight tests/i);
 });
+
+test('course lesson imports hydrate a selected flight-test result before database validation', () => {
+  const migration = readFileSync(
+    new URL('../../supabase/migrations/20260804050000_import_course_flight_test_outcomes.sql', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(migration, /hydrate_imported_course_flight_test_outcome/i);
+  assert.match(migration, /current_setting\('app\.course_record_import_rows'/i);
+  assert.match(migration, /set_config\('app\.course_record_import_rows'/i);
+  assert.match(migration, /new\.is_flight_review := true/i);
+  assert.match(migration, /new\.flight_review_result/i);
+  assert.match(migration, /Further training required/i);
+  assert.match(migration, /assert_function_permission_manifest/i);
+});

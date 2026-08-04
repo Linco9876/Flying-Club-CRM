@@ -30,6 +30,8 @@ import {
   getCourseCompetencyGuideCsv,
   getCourseStudentRecordTemplate,
   getCourseTransferFilename,
+  type ImportedFlightTestResult,
+  normaliseImportedFlightTestResult,
   type CourseCompetencyDefinition,
   validateCourseStudentRecordCsv,
   type CourseTransferRecordType,
@@ -79,6 +81,11 @@ interface StudentRecordImportModalProps {
   onImported: () => Promise<void> | void;
 }
 
+interface FlightTestImportOutcome {
+  result: ImportedFlightTestResult;
+  findings: string;
+}
+
 const EMPTY_MAPPINGS: ImportMappingState = { courses: {}, lessons: {}, exams: {} };
 const keyForCourse = (value: string) => value.trim().toLocaleLowerCase();
 
@@ -115,6 +122,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
   const [previewing, setPreviewing] = useState(false);
   const [importing, setImporting] = useState(false);
   const [requestAcknowledgement, setRequestAcknowledgement] = useState(false);
+  const [flightTestOutcomes, setFlightTestOutcomes] = useState<Record<number, FlightTestImportOutcome>>({});
   const [batches, setBatches] = useState<ImportBatch[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [rollingBackId, setRollingBackId] = useState<string | null>(null);
@@ -164,7 +172,50 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
     [competencies, identity, mappings, parsed, recordType, reviewChecklist],
   );
 
-  useEffect(() => setServerPreview(null), [validation]);
+  const flightTestImportRows = useMemo(() => {
+    if (!validation || !selectedCourse || recordType !== 'lesson') return [];
+    const flightTestLessons = new Map(
+      selectedCourse.lessons
+        .filter(lesson => lesson.isFlightTest)
+        .map(lesson => [lesson.id, lesson]),
+    );
+    return validation.rows.flatMap(row => {
+      const lesson = flightTestLessons.get(String(row.lesson_id || ''));
+      if (!lesson) return [];
+      const override = flightTestOutcomes[row.source_row];
+      return [{
+        row,
+        lesson,
+        result: override?.result
+          || normaliseImportedFlightTestResult(String(row.flight_review_result || ''))
+          || 'not_assessed',
+        findings: override?.findings ?? String(row.flight_review_notes || ''),
+      }];
+    });
+  }, [flightTestOutcomes, recordType, selectedCourse, validation]);
+
+  const hasIncompleteFlightTestOutcomes = flightTestImportRows.some(item => (
+    !['pass', 'fail'].includes(item.result)
+    || (item.result === 'fail' && !item.findings.trim())
+  ));
+
+  const preparedImportRows = useMemo(() => {
+    if (!validation) return [];
+    const outcomes = new Map(flightTestImportRows.map(item => [item.row.source_row, item]));
+    return validation.rows.map(row => {
+      const outcome = outcomes.get(row.source_row);
+      if (!outcome) return row;
+      return {
+        ...row,
+        is_flight_review: true,
+        flight_review_type: 'Flight Test',
+        flight_review_result: outcome.result,
+        flight_review_notes: outcome.findings.trim(),
+      };
+    });
+  }, [flightTestImportRows, validation]);
+
+  useEffect(() => setServerPreview(null), [flightTestOutcomes, validation]);
 
   const loadHistory = useCallback(async () => {
     setLoadingHistory(true);
@@ -263,6 +314,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
     setSourceFile(null);
     setParsed(null);
     setMappings(EMPTY_MAPPINGS);
+    setFlightTestOutcomes({});
     setServerPreview(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -293,6 +345,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
     setSourceFile(file);
     setParsed(result);
     setMappings(EMPTY_MAPPINGS);
+    setFlightTestOutcomes({});
     setServerPreview(null);
   };
 
@@ -304,7 +357,14 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
   };
 
   const preview = async () => {
-    if (!sourceFile || !validation || !selectedCourse || validation.errors.length > 0 || validation.rows.length === 0) return;
+    if (
+      !sourceFile
+      || !validation
+      || !selectedCourse
+      || validation.errors.length > 0
+      || preparedImportRows.length === 0
+      || hasIncompleteFlightTestOutcomes
+    ) return;
     setPreviewing(true);
     try {
       const rpcName = recordType === 'review'
@@ -315,7 +375,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
         p_course_id: selectedCourse.id,
         p_course_version: selectedCourse.version,
         p_filename: sourceFile.name,
-        p_rows: validation.rows,
+        p_rows: preparedImportRows,
         p_commit: false,
         ...(recordType === 'review'
           ? {}
@@ -336,7 +396,13 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
   };
 
   const commit = async () => {
-    if (!sourceFile || !validation || !selectedCourse || !serverPreview?.can_import) return;
+    if (
+      !sourceFile
+      || !validation
+      || !selectedCourse
+      || !serverPreview?.can_import
+      || hasIncompleteFlightTestOutcomes
+    ) return;
     setImporting(true);
     try {
       const rpcName = recordType === 'review'
@@ -347,7 +413,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
         p_course_id: selectedCourse.id,
         p_course_version: selectedCourse.version,
         p_filename: sourceFile.name,
-        p_rows: validation.rows,
+        p_rows: preparedImportRows,
         p_commit: true,
         ...(recordType === 'review'
           ? {}
@@ -442,7 +508,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
       if (recordType === 'lesson') {
         const { data: records, error: recordsError } = await supabase
           .from('training_records')
-          .select('id,date,lesson_id,registration,aircraft_type,dual_time_min,solo_time_min,comments,formal_briefing,next_lesson,student_ack,source_instructor_name,source_organisation,source_reference,instructor_id,criteria_grades')
+          .select('id,date,lesson_id,registration,aircraft_type,dual_time_min,solo_time_min,comments,formal_briefing,next_lesson,student_ack,source_instructor_name,source_organisation,source_reference,instructor_id,criteria_grades,flight_review_result,flight_review_notes')
           .eq('student_id', studentId)
           .eq('course_id', identity.course.id)
           .order('date', { ascending: true });
@@ -495,6 +561,14 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
             formal_briefing: record.formal_briefing ? 'Yes' : 'No',
             next_lesson: record.next_lesson || '',
             student_acknowledged: record.student_ack ? 'Yes' : 'No',
+            flight_test_result: lesson?.isFlightTest
+              ? record.flight_review_result === 'pass'
+                ? 'Pass'
+                : record.flight_review_result === 'fail'
+                  ? 'Further training required'
+                  : ''
+              : '',
+            flight_test_findings: lesson?.isFlightTest ? record.flight_review_notes || '' : '',
           };
           competencies
             .filter(competency => competency.kind === 'criterion')
@@ -660,7 +734,8 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
     && validation
     && validation.rows.length > 0
     && validation.errors.length === 0
-    && !hasMappingWork,
+    && !hasMappingWork
+    && !hasIncompleteFlightTestOutcomes,
   );
   const localReadyRows = validation?.rows.length || 0;
   const importPresentation = getImportWorkflowPresentation({
@@ -790,6 +865,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                         </li>
                       )}
                       <li>Use Yes or No for formal briefing and historical student acknowledgement.</li>
+                      <li>For a course flight test, choose Pass or Further training required in the portal after uploading. Fresh templates also include optional result and formal findings columns.</li>
                     </ul>
                   ) : recordType === 'exam' ? (
                     <ul className="mt-2 list-disc space-y-1 pl-5">
@@ -910,6 +986,79 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                     {validation.errors.map(error => (
                       <div key={`${error.sourceRow}-${error.messages.join()}`} className="rounded-lg bg-white p-3 text-sm text-red-900 ring-1 ring-red-100">
                         <strong>Row {error.sourceRow}:</strong> {error.messages.join(' ')}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {flightTestImportRows.length > 0 && (
+                <section className="rounded-xl border border-orange-200 bg-orange-50 p-4">
+                  <div className="flex items-start gap-3">
+                    <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-orange-700" />
+                    <div>
+                      <h3 className="font-semibold text-orange-950">Flight test outcome required</h3>
+                      <p className="mt-1 text-sm text-orange-800">
+                        Confirm the official result for each imported course flight test. This is stored in both the lesson record and the formal Reviews &amp; Tests register.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-4 space-y-4">
+                    {flightTestImportRows.map(item => (
+                      <div key={item.row.source_row} className="rounded-lg border border-orange-200 bg-white p-4">
+                        <p className="text-sm font-semibold text-gray-900">
+                          Row {item.row.source_row}: {item.lesson.sequenceCode ? `${item.lesson.sequenceCode} · ` : ''}{item.lesson.name}
+                        </p>
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                          <label className="block">
+                            <span className="mb-1 block text-xs font-medium text-orange-900">Result</span>
+                            <select
+                              value={item.result}
+                              onChange={event => {
+                                const result = event.target.value as ImportedFlightTestResult;
+                                setFlightTestOutcomes(current => ({
+                                  ...current,
+                                  [item.row.source_row]: {
+                                    result,
+                                    findings: current[item.row.source_row]?.findings ?? item.findings,
+                                  },
+                                }));
+                              }}
+                              className="w-full rounded-lg border border-orange-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                            >
+                              <option value="not_assessed">Select result…</option>
+                              <option value="pass">Pass</option>
+                              <option value="fail">Further training required</option>
+                            </select>
+                          </label>
+                          <label className="block sm:col-span-2">
+                            <span className="mb-1 block text-xs font-medium text-orange-900">
+                              Formal findings or required follow-up {item.result === 'fail' ? '(required)' : '(optional)'}
+                            </span>
+                            <textarea
+                              rows={3}
+                              value={item.findings}
+                              onChange={event => {
+                                const findings = event.target.value;
+                                setFlightTestOutcomes(current => ({
+                                  ...current,
+                                  [item.row.source_row]: {
+                                    result: current[item.row.source_row]?.result ?? item.result,
+                                    findings,
+                                  },
+                                }));
+                              }}
+                              required={item.result === 'fail'}
+                              className="w-full resize-none rounded-lg border border-orange-300 px-3 py-2.5 text-sm text-gray-900 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                            />
+                          </label>
+                        </div>
+                        {item.result === 'not_assessed' && (
+                          <p className="mt-2 text-xs font-medium text-orange-800">Select a result before previewing the import.</p>
+                        )}
+                        {item.result === 'fail' && !item.findings.trim() && (
+                          <p className="mt-2 text-xs font-medium text-orange-800">Record the required further training or formal findings before previewing.</p>
+                        )}
                       </div>
                     ))}
                   </div>

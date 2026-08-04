@@ -49,6 +49,8 @@ const LESSON_BASE_HEADERS = [
   'formal_briefing',
   'next_lesson',
   'student_acknowledged',
+  'flight_test_result',
+  'flight_test_findings',
 ];
 
 const EXAM_BASE_HEADERS = [
@@ -119,6 +121,18 @@ const normaliseColumnPart = (value: string) => value
 const yesValues = new Set(['yes', 'y', 'true', '1', 'x', 'include', 'included', 'complete', 'completed', 'done', 'checked', '✓']);
 const noValues = new Set(['no', 'n', 'false', '0', '']);
 const skipValues = new Set(['skip', 'exclude', 'excluded']);
+
+export type ImportedFlightTestResult = 'not_assessed' | 'pass' | 'fail';
+
+export const normaliseImportedFlightTestResult = (
+  value: string | undefined,
+): ImportedFlightTestResult | null => {
+  const normalised = normaliseLookup(value || '').replace(/[_-]+/g, ' ');
+  if (!normalised || normalised === 'not assessed') return 'not_assessed';
+  if (['pass', 'passed', 'satisfactory'].includes(normalised)) return 'pass';
+  if (['fail', 'failed', 'further training required', 'further training'].includes(normalised)) return 'fail';
+  return null;
+};
 
 const escapeFilename = (value: string) => value
   .trim()
@@ -326,6 +340,8 @@ export const validateCourseStudentRecordCsv = (
         'formal_briefing',
         'next_lesson',
         'student_acknowledged',
+        'flight_test_result',
+        'flight_test_findings',
         ...competencies.flatMap(competency => [
           competency.column,
           ...(competency.commentsColumn ? [competency.commentsColumn] : []),
@@ -403,6 +419,30 @@ export const validateCourseStudentRecordCsv = (
     base.rows.forEach(row => {
       const rawRow = includedRows.find(candidate => candidate.sourceRow === row.source_row);
       if (!rawRow) return;
+      const lesson = identity.course.lessons.find(candidate => candidate.id === row.lesson_id);
+      const rawFlightTestResult = (rawRow.values.flight_test_result || '').trim();
+      const flightTestFindings = (rawRow.values.flight_test_findings || '').trim();
+      if (lesson?.isFlightTest) {
+        const flightTestResult = normaliseImportedFlightTestResult(rawFlightTestResult);
+        if (flightTestResult === null) {
+          mergeRowError(
+            metadataErrors,
+            rawRow.sourceRow,
+            'Flight test result must be Pass, Further training required, or blank so it can be selected in the portal.',
+          );
+        } else {
+          row.is_flight_review = true;
+          row.flight_review_type = 'Flight Test';
+          row.flight_review_result = flightTestResult;
+          row.flight_review_notes = flightTestFindings;
+        }
+      } else if (rawFlightTestResult || flightTestFindings) {
+        mergeRowError(
+          metadataErrors,
+          rawRow.sourceRow,
+          'Flight test result and findings can only be entered for a lesson marked as a flight test.',
+        );
+      }
       const importedCompetencies: NormalizedImportedCompetency[] = [];
       const criteriaGrades: Record<string, string> = {};
       competencies.forEach(competency => {
