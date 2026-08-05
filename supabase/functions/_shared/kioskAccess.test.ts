@@ -1,4 +1,4 @@
-import { assert, assertEquals, assertNotEquals } from "jsr:@std/assert@1";
+import { assert, assertEquals, assertNotEquals, assertRejects } from "jsr:@std/assert@1";
 import {
   createKioskAccessToken,
   createKioskSessionGrant,
@@ -46,6 +46,24 @@ Deno.test("stored kiosk keys are encrypted and can be recovered with the separat
   assert(encrypted.startsWith("v1."));
   assertEquals(encrypted.includes(token), false);
   assertEquals(await decryptKioskToken(encrypted, encryptionKey), token);
+});
+
+Deno.test("URL-safe Base64 encryption keys are accepted", async () => {
+  const token = "bfc_kiosk_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+  const rawKey = Uint8Array.from({ length: 32 }, (_, index) => index + 1);
+  const binary = Array.from(rawKey, (value) => String.fromCharCode(value)).join("");
+  const base64UrlKey = btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const encrypted = await encryptKioskToken(token, base64UrlKey);
+
+  assertEquals(await decryptKioskToken(encrypted, base64UrlKey), token);
+});
+
+Deno.test("invalid kiosk encryption keys return an actionable configuration error", async () => {
+  await assertRejects(
+    () => encryptKioskToken("example", "not-a-valid-key"),
+    Error,
+    "must be 64 hexadecimal characters or Base64 encoding exactly 32 bytes",
+  );
 });
 
 Deno.test("active kiosk sessions receive a 30-day idle window", () => {

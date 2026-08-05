@@ -11,6 +11,7 @@ interface KioskAccessSettingsProps {
 interface KioskAccessState {
   configured: boolean;
   token?: string;
+  tokenUnavailable?: boolean;
   prefix?: string;
   createdAt?: string;
   lastUsedAt?: string | null;
@@ -186,6 +187,43 @@ export const KioskAccessSettings: React.FC<KioskAccessSettingsProps> = ({ canEdi
               onClick={() => void disable()}
               disabled={!canEdit || working !== null}
               className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/70 dark:bg-transparent dark:text-red-300 dark:hover:bg-red-950/30"
+            >
+              {working === 'disable' ? <Loader className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              Disable
+            </button>
+          </div>
+        </div>
+      ) : access.configured && access.tokenUnavailable ? (
+        <div className="mt-5 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-900/70 dark:bg-amber-950/30">
+          <p className="font-semibold text-amber-950 dark:text-amber-100">The existing kiosk key cannot be revealed</p>
+          <p className="mt-1 text-sm leading-relaxed text-amber-900 dark:text-amber-200">
+            Its encryption key changed after it was created. Existing kiosk sessions will continue working until you rotate or disable the key.
+          </p>
+          <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+            <div className="rounded-lg bg-white/70 px-3 py-2 dark:bg-black/20">
+              <span className="block text-xs text-amber-800 dark:text-amber-300">Created</span>
+              <span className="font-medium text-amber-950 dark:text-amber-100">{formatDateTime(access.createdAt)}</span>
+            </div>
+            <div className="rounded-lg bg-white/70 px-3 py-2 dark:bg-black/20">
+              <span className="block text-xs text-amber-800 dark:text-amber-300">Last used</span>
+              <span className="font-medium text-amber-950 dark:text-amber-100">{formatDateTime(access.lastUsedAt)}</span>
+            </div>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void rotate()}
+              disabled={!canEdit || working !== null}
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {working === 'rotate' ? <Loader className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Create replacement key
+            </button>
+            <button
+              type="button"
+              onClick={() => void disable()}
+              disabled={!canEdit || working !== null}
+              className="inline-flex items-center gap-2 rounded-lg border border-red-300 bg-white px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/70 dark:bg-transparent dark:text-red-300 dark:hover:bg-red-950/30"
             >
               {working === 'disable' ? <Loader className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
               Disable
