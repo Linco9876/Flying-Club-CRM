@@ -325,7 +325,7 @@ The `/kiosk` calendar uses a dedicated high-entropy kiosk key instead of an emai
 - Rotating or disabling the key revokes all existing kiosk browser grants.
 - An active kiosk grant remains usable while the kiosk is regularly used and expires after 30 days of inactivity.
 - The kiosk retains its existing calendar, booking and flight-logging permissions; it does not add a new permission role.
-- Production requires a separate 32-byte `KIOSK_TOKEN_ENCRYPTION_KEY` stored only in Supabase Edge Function secrets.
+- Production requires a separate 32-byte `KIOSK_TOKEN_ENCRYPTION_KEY` stored only in Supabase Edge Function secrets. Store it as exactly 64 hexadecimal characters (for example, output from `openssl rand -hex 32`) or as Base64/Base64URL that decodes to 32 bytes; do not use the kiosk access key itself as this encryption key.
 
 ## Deployment checklist for the membership change
 

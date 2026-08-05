@@ -14,12 +14,18 @@ const bytesToBase64 = (bytes: Uint8Array) => {
   return btoa(binary);
 };
 
-const base64ToBytes = (value: string) => {
-  const binary = atob(value);
-  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+const base64ToBytes = (value: string): Uint8Array<ArrayBuffer> => {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
 };
 
-const configuredEncryptionKey = (configuredValue?: string) => {
+export const configuredKioskEncryptionKey = (configuredValue?: string): Uint8Array<ArrayBuffer> => {
   const configured = String(
     configuredValue === undefined
       ? Deno.env.get("KIOSK_TOKEN_ENCRYPTION_KEY") || ""
@@ -29,14 +35,24 @@ const configuredEncryptionKey = (configuredValue?: string) => {
     throw new Error("KIOSK_TOKEN_ENCRYPTION_KEY is not configured.");
   }
   if (/^[0-9a-f]{64}$/i.test(configured)) {
-    return Uint8Array.from(
-      configured.match(/.{2}/g) || [],
-      (pair) => Number.parseInt(pair, 16),
+    const decoded = new Uint8Array(32);
+    (configured.match(/.{2}/g) || []).forEach((pair, index) => {
+      decoded[index] = Number.parseInt(pair, 16);
+    });
+    return decoded;
+  }
+  let decoded: Uint8Array<ArrayBuffer>;
+  try {
+    decoded = base64ToBytes(configured);
+  } catch {
+    throw new Error(
+      "KIOSK_TOKEN_ENCRYPTION_KEY must be 64 hexadecimal characters or Base64 encoding exactly 32 bytes.",
     );
   }
-  const decoded = base64ToBytes(configured);
   if (decoded.length !== 32) {
-    throw new Error("KIOSK_TOKEN_ENCRYPTION_KEY must decode to exactly 32 bytes.");
+    throw new Error(
+      "KIOSK_TOKEN_ENCRYPTION_KEY must be 64 hexadecimal characters or Base64 encoding exactly 32 bytes.",
+    );
   }
   return decoded;
 };
@@ -44,7 +60,7 @@ const configuredEncryptionKey = (configuredValue?: string) => {
 const encryptionKey = async (configuredValue?: string) =>
   await crypto.subtle.importKey(
     "raw",
-    configuredEncryptionKey(configuredValue),
+    configuredKioskEncryptionKey(configuredValue),
     { name: "AES-GCM" },
     false,
     ["encrypt", "decrypt"],

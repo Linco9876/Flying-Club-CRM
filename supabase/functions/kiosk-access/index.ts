@@ -257,14 +257,27 @@ Deno.serve(async (req: Request) => {
       if (error) throw error;
       if (!activeToken) return json(req, { configured: false });
 
-      return json(req, {
-        configured: true,
-        token: await decryptKioskToken(activeToken.token_ciphertext),
-        prefix: activeToken.token_prefix,
-        createdAt: activeToken.created_at,
-        lastUsedAt: activeToken.last_used_at,
-        createdBy: activeToken.created_by,
-      });
+      try {
+        const token = await decryptKioskToken(activeToken.token_ciphertext);
+        return json(req, {
+          configured: true,
+          token,
+          prefix: activeToken.token_prefix,
+          createdAt: activeToken.created_at,
+          lastUsedAt: activeToken.last_used_at,
+          createdBy: activeToken.created_by,
+        });
+      } catch (decryptError) {
+        console.error("Active kiosk key could not be decrypted", decryptError);
+        return json(req, {
+          configured: true,
+          tokenUnavailable: true,
+          prefix: activeToken.token_prefix,
+          createdAt: activeToken.created_at,
+          lastUsedAt: activeToken.last_used_at,
+          createdBy: activeToken.created_by,
+        });
+      }
     }
 
     if (action === "disable") {
