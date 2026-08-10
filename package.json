@@ -91,13 +91,13 @@
     "duty-pwa:check": "npm --prefix apps/duty-clock run check"
   },
   "dependencies": {
-    "@supabase/supabase-js": "2.112.0",
+    "@supabase/supabase-js": "2.112.2",
     "@types/node": "^24.3.0",
     "@types/react-big-calendar": "^1.16.2",
     "@types/react-router-dom": "^5.3.3",
     "date-fns": "^4.1.0",
-    "dompurify": "^3.4.12",
-    "lucide-react": "^0.344.0",
+    "dompurify": "^3.4.13",
+    "lucide-react": "^0.577.0",
     "pdf-lib": "^1.17.1",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
