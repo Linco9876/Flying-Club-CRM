@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   FORMAL_REVIEW_FINDINGS_LABEL,
+  flightReviewErrorMessage,
   isFinalFlightReviewOutcome,
   isSuccessfulFlightReviewOutcome,
   requiresFormalReviewFindings,
@@ -21,6 +22,17 @@ test('further training is final but never a successful currency-renewing outcome
   assert.equal(isFinalFlightReviewOutcome('completed'), true);
   assert.equal(isSuccessfulFlightReviewOutcome('completed'), true);
   assert.equal(isFinalFlightReviewOutcome('in_progress'), false);
+});
+
+test('surfaces structured database errors instead of hiding their message', () => {
+  assert.equal(
+    flightReviewErrorMessage(
+      { message: 'permission denied for schema private', code: '42501' },
+      'Could not update review',
+    ),
+    'permission denied for schema private',
+  );
+  assert.equal(flightReviewErrorMessage({}, 'Could not update review'), 'Could not update review');
 });
 
 test('normal completed and passed reviews do not require duplicate notes', () => {
