@@ -16,7 +16,7 @@
     "expo": "~57.0.12",
     "expo-location": "~57.0.9",
     "expo-status-bar": "~57.0.1",
-    "react": "19.2.3",
+    "react": "19.2.8",
     "react-dom": "19.2.3",
     "react-native": "0.86.2",
     "react-native-safe-area-context": "~5.7.0",
@@ -24,7 +24,7 @@
     "react-native-web": "^0.21.2"
   },
   "devDependencies": {
-    "@types/react": "~19.2.2",
+    "@types/react": "~19.2.18",
     "sharp": "^0.35.3",
     "typescript": "6.0.3"
   },
