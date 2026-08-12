@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "reviewed_at": "2026-08-03",
+  "reviewed_at": "2026-08-05",
   "source_project": "Flying Club CRM Australia",
   "rules": {
     "anonymous_token_public": [
@@ -98,6 +98,15 @@
     {
       "signature": "public.apply_membership_scholarship_contribution()",
       "name": "apply_membership_scholarship_contribution",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.apply_notification_delivery_policy()",
+      "name": "apply_notification_delivery_policy",
       "classification": "trigger_internal",
       "allowed_roles": [],
       "security_definer": true,
@@ -972,6 +981,15 @@
       "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
     },
     {
+      "signature": "public.notify_booking_participants()",
+      "name": "notify_booking_participants",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
       "signature": "public.notify_instructor_booking_request(booking_id uuid)",
       "name": "notify_instructor_booking_request",
       "classification": "authenticated_self_service",
@@ -1523,6 +1541,18 @@
       "rationale": "Background, privileged or internal helper not exposed to browser roles."
     },
     {
+      "signature": "public.save_billing_configuration(p_payment_methods jsonb, p_flight_types jsonb, p_ground_options jsonb)",
+      "name": "save_billing_configuration",
+      "classification": "staff_aal2",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Admin-only financial configuration transaction; current_user_is_admin enforces role and AAL2."
+    },
+    {
       "signature": "public.save_instructor_compliance_template(p_course_id uuid, p_name text, p_description text, p_version text, p_source_documents jsonb, p_check_type text, p_is_active boolean, p_items jsonb)",
       "name": "save_instructor_compliance_template",
       "classification": "staff_aal2",
@@ -1787,6 +1817,15 @@
       "rationale": "Background, privileged or internal helper not exposed to browser roles."
     },
     {
+      "signature": "public.sync_provider_payment_method_availability()",
+      "name": "sync_provider_payment_method_availability",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by provider-connection triggers; client EXECUTE is unnecessary."
+    },
+    {
       "signature": "public.sync_public_user_email_from_auth()",
       "name": "sync_public_user_email_from_auth",
       "classification": "trigger_internal",
@@ -1889,6 +1928,57 @@
       "security_definer": true,
       "fixed_search_path": true,
       "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.flight_review_authority(explicit_authority text, review_type text, template_snapshot jsonb)",
+      "name": "flight_review_authority",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": false,
+      "fixed_search_path": true,
+      "rationale": "Internal authority classifier used by protected flight-review currency functions."
+    },
+    {
+      "signature": "public.normalise_student_review_currency()",
+      "name": "normalise_student_review_currency",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": false,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by the student review-currency normalisation trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.claim_notification_push_deliveries(p_limit integer)",
+      "name": "claim_notification_push_deliveries",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Claims queued Web Push deliveries for the authenticated background worker."
+    },
+    {
+      "signature": "public.invoke_notification_push_worker(p_notification_id uuid)",
+      "name": "invoke_notification_push_worker",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invokes the protected notification delivery worker from triggers and cron."
+    },
+    {
+      "signature": "public.enqueue_notification_push_deliveries()",
+      "name": "enqueue_notification_push_deliveries",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Creates an idempotent push outbox entry when an in-app notification is inserted."
     }
   ]
 }
