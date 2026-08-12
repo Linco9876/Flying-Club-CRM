@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -188,6 +188,8 @@ export const FlightReviewRecordEditor: React.FC<
   const [expandedSection, setExpandedSection] = useState<string | null>(
     items[0]?.section || null,
   );
+  const [submissionIntent, setSubmissionIntent] = useState<FlightReviewStatus | null>(null);
+  const formalFindingsRef = useRef<HTMLTextAreaElement>(null);
   const [saving, setSaving] = useState(false);
   const [changingForm, setChangingForm] = useState(false);
   const [changeFormConfirmationOpen, setChangeFormConfirmationOpen] = useState(false);
@@ -209,7 +211,7 @@ export const FlightReviewRecordEditor: React.FC<
   ).length;
   const completionReady = satisfactoryRequired === requiredItems.length;
   const formalFindingsRequired = requiresFormalReviewFindings({
-    reviewStatus: form.status,
+    reviewStatus: submissionIntent ?? form.status,
     checklistResults: items.map(item => item.result),
   });
   const belowMinimum =
@@ -236,6 +238,7 @@ export const FlightReviewRecordEditor: React.FC<
 
   const save = async (statusOverride?: FlightReviewStatus) => {
     const nextStatus = statusOverride || form.status;
+    setSubmissionIntent(statusOverride ?? null);
     const successfulOutcome = isSuccessfulFlightReviewOutcome(nextStatus);
     const finalOutcome = isFinalFlightReviewOutcome(nextStatus);
     if (successfulOutcome && !completionReady) {
@@ -253,6 +256,10 @@ export const FlightReviewRecordEditor: React.FC<
       checklistResults: items.map(item => item.result),
     }) && !form.reviewerSummary.trim()) {
       toast.error("Record the formal findings or required follow-up for this outcome");
+      requestAnimationFrame(() => {
+        formalFindingsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+        formalFindingsRef.current?.focus({ preventScroll: true });
+      });
       return;
     }
     if (
@@ -813,10 +820,13 @@ export const FlightReviewRecordEditor: React.FC<
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
                   {FORMAL_REVIEW_FINDINGS_LABEL}
-                  {formalFindingsRequired ? " (required)" : " (optional)"}
+                  {formalFindingsRequired ? " (required)" : " (required for an adverse or non-standard outcome)"}
                   <textarea
+                    ref={formalFindingsRef}
                     rows={5}
                     value={form.reviewerSummary}
+                    required={formalFindingsRequired}
+                    aria-required={formalFindingsRequired}
                     onChange={(event) =>
                       setForm((current) => ({
                         ...current,
