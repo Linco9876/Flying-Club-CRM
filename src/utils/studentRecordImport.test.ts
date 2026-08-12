@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   createRejectedRowsCsv,
@@ -53,6 +54,7 @@ test('record importer keeps review and test forms available from the full course
     id: '55555555-5555-4555-8555-555555555555',
     title: 'RAAus Biennial Flight Review',
     coursePurpose: 'flight_review',
+    status: 'published',
     lessons: [],
     exams: [],
   } as TrainingModule;
@@ -62,15 +64,31 @@ test('record importer keeps review and test forms available from the full course
     title: 'RPC Flight Test',
     coursePurpose: 'flight_test',
   } as TrainingModule;
+  const draftReviewCourse = {
+    ...reviewCourse,
+    id: '88888888-8888-4888-8888-888888888888',
+    title: 'Unfinished Review Form',
+    status: 'draft',
+  } as TrainingModule;
 
   assert.deepEqual(
-    getRecordImportCourses([course, reviewCourse, testCourse], 'review').map(item => item.id),
+    getRecordImportCourses([course, reviewCourse, testCourse, draftReviewCourse], 'review').map(item => item.id),
     [reviewCourse.id, testCourse.id],
   );
   assert.deepEqual(
     getRecordImportCourses([course, reviewCourse, testCourse], 'lesson').map(item => item.id),
     [course.id],
   );
+});
+
+test('review imports are also rejected server-side when the selected form is not published', () => {
+  const migration = readFileSync(
+    new URL('../../supabase/migrations/20260812070000_require_published_review_import_forms.sql', import.meta.url),
+    'utf8',
+  );
+  assert.match(migration, /new\.record_type\s*=\s*'review'/i);
+  assert.match(migration, /course\.status\s*=\s*'published'/i);
+  assert.match(migration, /before insert or update of record_type, course_id/i);
 });
 
 test('import workflow shows the locally matched count before server preview', () => {

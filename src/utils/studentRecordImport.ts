@@ -9,7 +9,8 @@ export const getRecordImportCourses = (
 ): TrainingModule[] => courses.filter(course => {
   const purpose = course.coursePurpose || 'training';
   if (recordType === 'review') {
-    return ['flight_review', 'flight_test', 'proficiency_check'].includes(purpose);
+    return course.status === 'published'
+      && ['flight_review', 'flight_test', 'proficiency_check'].includes(purpose);
   }
   if (purpose !== 'training') return false;
   return recordType === 'lesson'
