@@ -18,6 +18,7 @@ import {
   createRejectedRowsCsv,
   type CsvParseResult,
   formatLessonLabel,
+  getRecordImportCourses,
   getImportWorkflowPresentation,
   type ImportMappingState,
   parseCsv,
@@ -132,16 +133,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
     [courses, selectedCourseId],
   );
   const availableCourses = useMemo(
-    () => courses.filter(course => {
-      const purpose = course.coursePurpose || 'training';
-      if (recordType === 'review') {
-        return ['flight_review', 'flight_test', 'proficiency_check'].includes(purpose);
-      }
-      if (purpose !== 'training') return false;
-      return recordType === 'lesson'
-        ? course.lessons.length > 0
-        : Boolean(course.exams?.length);
-    }),
+    () => getRecordImportCourses(courses, recordType),
     [courses, recordType],
   );
   const identity = useMemo(
@@ -792,6 +784,15 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                     ))}
                   </select>
                 </label>
+                {availableCourses.length === 0 && (
+                  <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900" role="status">
+                    {recordType === 'review'
+                      ? 'No review or test forms are available. Ask an administrator to publish a form in Training Settings.'
+                      : recordType === 'exam'
+                        ? 'No courses with configured exams are available.'
+                        : 'No courses with configured lessons are available.'}
+                  </p>
+                )}
                 {selectedCourse && recordType === 'lesson' && (
                   <p className={`mt-2 text-xs ${!loadingCompetencies && competencies.length === 0 ? 'font-medium text-amber-700' : 'text-gray-600'}`}>
                     {loadingCompetencies

@@ -1,6 +1,21 @@
 import type { TrainingModule } from '../types';
 
 export type StudentRecordImportType = 'lesson' | 'exam';
+export type StudentRecordTransferType = StudentRecordImportType | 'review';
+
+export const getRecordImportCourses = (
+  courses: TrainingModule[],
+  recordType: StudentRecordTransferType,
+): TrainingModule[] => courses.filter(course => {
+  const purpose = course.coursePurpose || 'training';
+  if (recordType === 'review') {
+    return ['flight_review', 'flight_test', 'proficiency_check'].includes(purpose);
+  }
+  if (purpose !== 'training') return false;
+  return recordType === 'lesson'
+    ? course.lessons.length > 0
+    : Boolean(course.exams?.length);
+});
 
 export interface CsvRow {
   sourceRow: number;
