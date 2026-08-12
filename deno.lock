@@ -330,7 +330,7 @@
         "npm:autoprefixer@^10.4.18",
         "npm:browserstack-local@^1.5.13",
         "npm:date-fns@^4.1.0",
-        "npm:dompurify@^3.4.12",
+        "npm:dompurify@^3.4.13",
         "npm:eslint-plugin-react-hooks@^7.1.1",
         "npm:eslint-plugin-react-refresh@~0.5.3",
         "npm:eslint@^10.8.0",
