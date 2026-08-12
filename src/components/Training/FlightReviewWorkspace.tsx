@@ -35,6 +35,7 @@ import {
 } from "../../utils/reviewerRoleRules";
 import {
   FORMAL_REVIEW_FINDINGS_LABEL,
+  flightReviewErrorMessage,
   isFinalFlightReviewOutcome,
   isSuccessfulFlightReviewOutcome,
   requiresFormalReviewFindings,
@@ -347,11 +348,7 @@ export const FlightReviewRecordEditor: React.FC<
       setChangeFormConfirmationOpen(false);
     } catch (changeError) {
       console.error("Failed to change review form:", changeError);
-      toast.error(
-        changeError instanceof Error
-          ? changeError.message
-          : "Could not return to form selection",
-      );
+      toast.error(flightReviewErrorMessage(changeError, "Could not return to form selection"));
     } finally {
       setChangingForm(false);
     }

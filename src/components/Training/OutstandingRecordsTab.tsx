@@ -32,6 +32,7 @@ import { StudentFileLink } from '../Students/StudentFileLink';
 import { userCanConductReview } from '../../utils/reviewerRoleRules';
 import {
   FORMAL_REVIEW_FINDINGS_LABEL,
+  flightReviewErrorMessage,
   isFinalFlightReviewOutcome,
   requiresFormalReviewFindings,
 } from '../../utils/flightReviewFindings';
@@ -2004,7 +2005,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                             type="button"
                             onClick={() => {
                               void handleChangeReviewForm(reviewForActiveFlight.id).catch((error) => {
-                                toast.error(error instanceof Error ? error.message : 'Could not change review form');
+                                toast.error(flightReviewErrorMessage(error, 'Could not change review form'));
                               });
                             }}
                             disabled={startingReview}
