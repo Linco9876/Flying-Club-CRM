@@ -11,10 +11,10 @@
     "assets:generate": "node scripts/generate-assets.mjs"
   },
   "dependencies": {
-    "@expo/metro-runtime": "~57.0.8",
-    "@supabase/supabase-js": "^2.110.7",
-    "expo": "~57.0.10",
-    "expo-location": "~57.0.7",
+    "@expo/metro-runtime": "~57.0.9",
+    "@supabase/supabase-js": "^2.112.3",
+    "expo": "~57.0.12",
+    "expo-location": "~57.0.9",
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",

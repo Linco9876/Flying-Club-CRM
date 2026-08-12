@@ -4797,7 +4797,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
         <StudentRecordImportModal
           studentId={student.id}
           studentName={student.name}
-          courses={trainingCourses}
+          courses={allTrainingCourses}
           isAdmin={hasAnyRole(user, ['admin'])}
           onClose={() => setShowRecordImporter(false)}
           onImported={async () => {

@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   createRejectedRowsCsv,
   formatLessonLabel,
+  getRecordImportCourses,
   getImportWorkflowPresentation,
   getStudentRecordTemplate,
   parseCsv,
@@ -45,6 +46,39 @@ const competencyDefinitions = buildCourseCompetencyDefinitions(
   [{ id: '44444444-4444-4444-8444-444444444444', code: 'RPC.1.1', description: 'Prepare aircraft' }],
   [{ matrix_row_id: '44444444-4444-4444-8444-444444444444', lesson_id: course.lessons[0].id }],
 );
+
+test('record importer keeps review and test forms available from the full course catalogue', () => {
+  const reviewCourse = {
+    ...course,
+    id: '55555555-5555-4555-8555-555555555555',
+    title: 'RAAus Biennial Flight Review',
+    coursePurpose: 'flight_review',
+    status: 'published',
+    lessons: [],
+    exams: [],
+  } as TrainingModule;
+  const testCourse = {
+    ...reviewCourse,
+    id: '77777777-7777-4777-8777-777777777777',
+    title: 'RPC Flight Test',
+    coursePurpose: 'flight_test',
+  } as TrainingModule;
+  const draftReviewCourse = {
+    ...reviewCourse,
+    id: '88888888-8888-4888-8888-888888888888',
+    title: 'Unfinished Review Form',
+    status: 'draft',
+  } as TrainingModule;
+
+  assert.deepEqual(
+    getRecordImportCourses([course, reviewCourse, testCourse, draftReviewCourse], 'review').map(item => item.id),
+    [reviewCourse.id, testCourse.id],
+  );
+  assert.deepEqual(
+    getRecordImportCourses([course, reviewCourse, testCourse], 'lesson').map(item => item.id),
+    [course.id],
+  );
+});
 
 test('import workflow shows the locally matched count before server preview', () => {
   assert.deepEqual(
