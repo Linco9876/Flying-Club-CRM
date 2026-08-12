@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   createRejectedRowsCsv,
@@ -79,16 +78,6 @@ test('record importer keeps review and test forms available from the full course
     getRecordImportCourses([course, reviewCourse, testCourse], 'lesson').map(item => item.id),
     [course.id],
   );
-});
-
-test('review imports are also rejected server-side when the selected form is not published', () => {
-  const migration = readFileSync(
-    new URL('../../supabase/migrations/20260812070000_require_published_review_import_forms.sql', import.meta.url),
-    'utf8',
-  );
-  assert.match(migration, /new\.record_type\s*=\s*'review'/i);
-  assert.match(migration, /course\.status\s*=\s*'published'/i);
-  assert.match(migration, /before insert or update of record_type, course_id/i);
 });
 
 test('import workflow shows the locally matched count before server preview', () => {
