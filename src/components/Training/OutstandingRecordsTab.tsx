@@ -33,6 +33,7 @@ import { userCanConductReview } from '../../utils/reviewerRoleRules';
 import {
   FORMAL_REVIEW_FINDINGS_LABEL,
   flightReviewErrorMessage,
+  isContinuableFlightReview,
   isFinalFlightReviewOutcome,
   requiresFormalReviewFindings,
 } from '../../utils/flightReviewFindings';
@@ -604,7 +605,7 @@ export const OutstandingRecordsTab: React.FC = () => {
     });
   }, [flightReviews.templates, user]);
   const reviewForActiveFlight = useMemo(
-    () => flightReviews.records.find(record => record.status !== 'cancelled' && reviewMatchesDraftOrFlight(record, {
+    () => flightReviews.records.find(record => isContinuableFlightReview(record.status) && reviewMatchesDraftOrFlight(record, {
       activeFlightLogId: isDraftSession ? undefined : activeLog?.id,
       draftTrainingRecordId: activeDraftRecord?.id,
     })) ?? null,
@@ -2832,8 +2833,9 @@ export const OutstandingRecordsTab: React.FC = () => {
               ? { ...input, flightLogId: activeLog.id }
               : input;
             const updated = await flightReviews.updateReview(id, updateInput);
-            if (isFinalFlightReviewOutcome(input.status) && !isDraftSession) {
-              await markRecorded(activeLog.id);
+            if (isFinalFlightReviewOutcome(input.status)) {
+              if (!isDraftSession) await markRecorded(activeLog.id);
+              closePanel();
               await refetch();
             }
             return updated;

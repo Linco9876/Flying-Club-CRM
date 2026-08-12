@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   FORMAL_REVIEW_FINDINGS_LABEL,
   flightReviewErrorMessage,
+  isContinuableFlightReview,
   isFinalFlightReviewOutcome,
   isSuccessfulFlightReviewOutcome,
   requiresFormalReviewFindings,
@@ -22,6 +23,14 @@ test('further training is final but never a successful currency-renewing outcome
   assert.equal(isFinalFlightReviewOutcome('completed'), true);
   assert.equal(isSuccessfulFlightReviewOutcome('completed'), true);
   assert.equal(isFinalFlightReviewOutcome('in_progress'), false);
+});
+
+test('only unfinished reviews can be continued from an outstanding flight', () => {
+  assert.equal(isContinuableFlightReview('draft'), true);
+  assert.equal(isContinuableFlightReview('in_progress'), true);
+  assert.equal(isContinuableFlightReview('completed'), false);
+  assert.equal(isContinuableFlightReview('further_training_required'), false);
+  assert.equal(isContinuableFlightReview('cancelled'), false);
 });
 
 test('surfaces structured database errors instead of hiding their message', () => {

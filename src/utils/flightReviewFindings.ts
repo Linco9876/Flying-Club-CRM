@@ -7,6 +7,9 @@ export const isSuccessfulFlightReviewOutcome = (status?: string | null) =>
 export const isFinalFlightReviewOutcome = (status?: string | null) =>
   status === 'completed' || status === 'further_training_required';
 
+export const isContinuableFlightReview = (status?: string | null) =>
+  status === 'draft' || status === 'in_progress';
+
 export const flightReviewErrorMessage = (error: unknown, fallback: string) => {
   if (error instanceof Error && error.message.trim()) return error.message;
   if (error && typeof error === 'object' && 'message' in error) {
