@@ -792,6 +792,14 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
           currentUserId={user.id}
           flightComments={reviews.flightCommentsByRecord.get(selectedRecord.id)}
           onClose={() => setSelectedRecordId(null)}
+          onChangeForm={async () => {
+            await reviews.updateReview(selectedRecord.id, {
+              status: "cancelled",
+              updatedBy: user.id,
+            });
+            setSelectedRecordId(null);
+            openStartForm();
+          }}
           onUpdateRecord={reviews.updateReview}
           onUpdateItem={reviews.updateItem}
           onUploadAttachment={reviews.uploadAttachment}
