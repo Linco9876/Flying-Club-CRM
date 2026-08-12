@@ -35,6 +35,8 @@ import {
 } from "../../utils/reviewerRoleRules";
 import {
   FORMAL_REVIEW_FINDINGS_LABEL,
+  isFinalFlightReviewOutcome,
+  isSuccessfulFlightReviewOutcome,
   requiresFormalReviewFindings,
 } from "../../utils/flightReviewFindings";
 import { StudentFileLink } from "../Students/StudentFileLink";
@@ -123,6 +125,7 @@ interface FlightReviewRecordEditorProps {
   currentUserId: string;
   flightComments?: string;
   onClose: () => void;
+  onChangeForm: () => Promise<void>;
   onUpdateRecord: ReturnType<typeof useFlightReviews>["updateReview"];
   onUpdateItem: ReturnType<typeof useFlightReviews>["updateItem"];
   onUploadAttachment: ReturnType<typeof useFlightReviews>["uploadAttachment"];
@@ -142,6 +145,7 @@ export const FlightReviewRecordEditor: React.FC<
   currentUserId,
   flightComments,
   onClose,
+  onChangeForm,
   onUpdateRecord,
   onUpdateItem,
   onUploadAttachment,
@@ -184,6 +188,8 @@ export const FlightReviewRecordEditor: React.FC<
     items[0]?.section || null,
   );
   const [saving, setSaving] = useState(false);
+  const [changingForm, setChangingForm] = useState(false);
+  const [changeFormConfirmationOpen, setChangeFormConfirmationOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [attachmentCategory, setAttachmentCategory] =
     useState<FlightReviewAttachmentCategory>(
@@ -229,13 +235,15 @@ export const FlightReviewRecordEditor: React.FC<
 
   const save = async (statusOverride?: FlightReviewStatus) => {
     const nextStatus = statusOverride || form.status;
-    if (nextStatus === "completed" && !completionReady) {
+    const successfulOutcome = isSuccessfulFlightReviewOutcome(nextStatus);
+    const finalOutcome = isFinalFlightReviewOutcome(nextStatus);
+    if (successfulOutcome && !completionReady) {
       toast.error(
         "Complete every required checklist item before finishing this review",
       );
       return;
     }
-    if (nextStatus === "completed" && !rpcDetailsComplete) {
+    if (successfulOutcome && !rpcDetailsComplete) {
       toast.error("Complete the RPC001 applicant and aeronautical experience details");
       return;
     }
@@ -247,7 +255,7 @@ export const FlightReviewRecordEditor: React.FC<
       return;
     }
     if (
-      nextStatus === "completed" &&
+      successfulOutcome &&
       ((requiresLogbookConfirmation && !form.logbookEntryConfirmed) ||
         (requiresAuthorityConfirmation && !form.authoritySubmissionConfirmed))
     ) {
@@ -255,7 +263,7 @@ export const FlightReviewRecordEditor: React.FC<
       return;
     }
     if (
-      nextStatus === "completed" &&
+      successfulOutcome &&
       belowMinimum &&
       !form.minimumsOverrideReason.trim()
     ) {
@@ -264,13 +272,17 @@ export const FlightReviewRecordEditor: React.FC<
       );
       return;
     }
+    if (finalOutcome && !form.reviewerSignName.trim()) {
+      toast.error("Enter the reviewer signature name before submitting this outcome");
+      return;
+    }
     setSaving(true);
     try {
       await onUpdateRecord(record.id, {
         status: nextStatus,
         reviewDate: form.reviewDate,
         completionDate:
-          nextStatus === "completed" ? form.completionDate : undefined,
+          successfulOutcome ? form.completionDate : undefined,
         groundMinutes: Math.max(0, Number(form.groundMinutes || 0)),
         flightMinutes: Math.max(0, Number(form.flightMinutes || 0)),
         aircraftType: form.aircraftType.trim(),
@@ -294,23 +306,28 @@ export const FlightReviewRecordEditor: React.FC<
         logbookEntryConfirmed: form.logbookEntryConfirmed,
         authoritySubmissionConfirmed: form.authoritySubmissionConfirmed,
         reviewerSignName:
-          nextStatus === "completed"
+          finalOutcome
             ? form.reviewerSignName.trim()
             : record.reviewerSignName,
         reviewerSignAt:
-          nextStatus === "completed"
+          finalOutcome
             ? new Date().toISOString()
             : record.reviewerSignAt,
         updatedBy: currentUserId,
       });
       setForm((current) => ({ ...current, status: nextStatus }));
       toast.success(
-        nextStatus === "completed"
+        successfulOutcome
           ? isPassFail
             ? "Assessment passed and recorded"
             : "Review completed and currency updated"
+          : nextStatus === "further_training_required"
+            ? "Further training required recorded. Flight review currency was not updated."
           : "Review saved",
       );
+      if (nextStatus === "further_training_required") {
+        onClose();
+      }
     } catch (saveError) {
       console.error("Failed to save review:", saveError);
       toast.error(
@@ -320,6 +337,23 @@ export const FlightReviewRecordEditor: React.FC<
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  const changeForm = async () => {
+    setChangingForm(true);
+    try {
+      await onChangeForm();
+      setChangeFormConfirmationOpen(false);
+    } catch (changeError) {
+      console.error("Failed to change review form:", changeError);
+      toast.error(
+        changeError instanceof Error
+          ? changeError.message
+          : "Could not return to form selection",
+      );
+    } finally {
+      setChangingForm(false);
     }
   };
 
@@ -366,14 +400,25 @@ export const FlightReviewRecordEditor: React.FC<
               {reviewerName}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-2 text-blue-100 hover:bg-white/10"
-            title="Close review"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {record.status === "draft" || record.status === "in_progress" ? (
+              <button
+                type="button"
+                onClick={() => setChangeFormConfirmationOpen(true)}
+                className="rounded-lg border border-white/20 px-3 py-2 text-sm font-semibold text-blue-50 hover:bg-white/10"
+              >
+                Change form
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg p-2 text-blue-100 hover:bg-white/10"
+              title="Close review"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </header>
 
         <div className="grid gap-5 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -940,8 +985,11 @@ export const FlightReviewRecordEditor: React.FC<
 
             <section className={`${panelClass} p-4`}>
               <h3 className="font-bold text-gray-950 dark:text-gray-100">
-                Save or complete
+                Save progress or submit an outcome
               </h3>
+              <p className="mt-1 text-xs leading-5 text-gray-600 dark:text-gray-300">
+                Saving keeps the record open. Submitting an outcome closes the assessment as either successful or requiring further training.
+              </p>
               <select
                 value={form.status}
                 onChange={(event) =>
@@ -954,9 +1002,9 @@ export const FlightReviewRecordEditor: React.FC<
               >
                 <option value="draft">Draft</option>
                 <option value="in_progress">In progress</option>
-                <option value="further_training_required">
-                  Further training required
-                </option>
+                {form.status === "further_training_required" && (
+                  <option value="further_training_required">Further training required</option>
+                )}
                 <option value="cancelled">Cancelled</option>
               </select>
               <button
@@ -969,7 +1017,20 @@ export const FlightReviewRecordEditor: React.FC<
                 Save progress
               </button>
               <div className="my-4 border-t border-gray-200 dark:border-[#343b46]" />
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">
+                Reviewer signature name
+                <input
+                  value={form.reviewerSignName}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      reviewerSignName: event.target.value,
+                    }))
+                  }
+                  className={inputClass}
+                />
+              </label>
+              <label className="mt-3 block text-sm font-medium text-gray-700 dark:text-gray-200">
                 Completion date
                 <input
                   type="date"
@@ -978,19 +1039,6 @@ export const FlightReviewRecordEditor: React.FC<
                     setForm((current) => ({
                       ...current,
                       completionDate: event.target.value,
-                    }))
-                  }
-                  className={inputClass}
-                />
-              </label>
-              <label className="mt-3 block text-sm font-medium text-gray-700 dark:text-gray-200">
-                Reviewer signature name
-                <input
-                  value={form.reviewerSignName}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      reviewerSignName: event.target.value,
                     }))
                   }
                   className={inputClass}
@@ -1011,10 +1059,54 @@ export const FlightReviewRecordEditor: React.FC<
                   Every required item must be satisfactory first.
                 </p>
               )}
+              <div className="my-4 border-t border-gray-200 dark:border-[#343b46]" />
+              <button
+                type="button"
+                onClick={() => void save("further_training_required")}
+                disabled={saving}
+                className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-amber-700 px-4 py-2 text-sm font-bold text-white hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <ShieldCheck className="h-4 w-4" />
+                Submit – further training required
+              </button>
+              <p className="mt-2 text-xs leading-5 text-amber-800 dark:text-amber-200">
+                Records the unsuccessful outcome and follow-up without renewing the pilot&apos;s flight review currency.
+              </p>
             </section>
           </aside>
         </div>
       </div>
+      {changeFormConfirmationOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/65 p-4" role="dialog" aria-modal="true" aria-labelledby="change-review-form-title">
+          <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-5 shadow-2xl dark:border-[#343b46] dark:bg-[#171a21]">
+            <h2 id="change-review-form-title" className="text-lg font-bold text-gray-950 dark:text-gray-100">
+              Choose a different form?
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+              This {record.templateSnapshot.title || "review"} draft will be marked cancelled and kept in the audit history. You can then choose another review or test form.
+            </p>
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setChangeFormConfirmationOpen(false)}
+                disabled={changingForm}
+                className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-[#39414d] dark:text-gray-200 dark:hover:bg-[#11141a]"
+              >
+                Keep this form
+              </button>
+              <button
+                type="button"
+                onClick={() => void changeForm()}
+                disabled={changingForm}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-500 disabled:opacity-50"
+              >
+                {changingForm ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Cancel draft and choose form
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
