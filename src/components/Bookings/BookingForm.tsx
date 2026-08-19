@@ -1,6 +1,6 @@
 import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useMemo, useState } from 'react';
-import { AlertTriangle, Check, Loader2, Mail, X, Clock, Plane, User, CreditCard, Repeat2, MapPin } from 'lucide-react';
+import { AlertTriangle, Loader2, X, Clock, Plane, User, CreditCard, Repeat2, MapPin } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
@@ -258,7 +258,6 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     pendingData: typeof formData & { dutyOverrideReason?: string; membershipOverrideReason?: string };
     reason: string;
   } | null>(null);
-  const [sendVoucherUpdateEmail, setSendVoucherUpdateEmail] = useState<boolean | null>(null);
   const roleBasedInstructors = getInstructors().map((instructor) => ({
     id: instructor.id,
     name: instructor.name,
@@ -281,14 +280,6 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     || portalSettingsError || bookingRulesError || organisationSettingsError;
   const showModalLoader = isLoading || isSubmitting;
   const selectedGuestVoucher = guestVoucherOptions.find(option => option.id === formData.trialFlightVoucherId);
-  const voucherScheduleChanged = Boolean(
-    isVoucherBookingEdit && booking && (
-      formData.date !== format(new Date(booking.startTime), 'yyyy-MM-dd') ||
-      formData.endDate !== format(new Date(booking.endTime), 'yyyy-MM-dd') ||
-      formData.startTime !== normalizeToQuarterHour(format(new Date(booking.startTime), 'HH:mm')) ||
-      formData.endTime !== normalizeToQuarterHour(format(new Date(booking.endTime), 'HH:mm'))
-    )
-  );
   const selectedPilot = users.find(item => item.id === formData.studentId);
   const getPilotSearchLabel = (member: { name?: string; email?: string; id: string }) =>
     `${member.name || 'Unnamed member'}${member.email ? ` - ${member.email}` : ''}`;
@@ -426,7 +417,6 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     setShowPilotDropdown(false);
     setRecurrence(buildDefaultRecurrence());
     setIsSubmitting(false);
-    setSendVoucherUpdateEmail(null);
   }, [buildDefaultRecurrence, buildInitialFormData, isOpen, users]);
 
   React.useEffect(() => {
@@ -615,10 +605,6 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
         return;
       }
     }
-    if (isVoucherBookingEdit && sendVoucherUpdateEmail === null) {
-      toast.error('Choose whether to email the updated booking details');
-      return;
-    }
     // A blank aircraft is treated as an instructor-only ground session.
     if (isFieldRequired('startDate', userRole) && !formData.date) {
       toast.error('Start date is required');
@@ -773,20 +759,6 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
         ...normalisedBookingData,
         recurrence: !isEdit && !normalisedBookingData.isGuestBooking && recurrence.enabled ? recurrence : undefined,
       });
-      if (isVoucherBookingEdit && sendVoucherUpdateEmail && booking?.id && booking.trialFlightVoucherId) {
-        const { data: emailResult, error: emailError } = await supabase.functions.invoke('trial-voucher-public', {
-          body: {
-            action: 'staff-booking-update-email',
-            bookingId: booking.id,
-            voucherId: booking.trialFlightVoucherId,
-          },
-        });
-        if (emailError || !emailResult?.sent) {
-          toast.error(`Booking updated, but the email could not be sent${emailResult?.error ? `: ${emailResult.error}` : ''}`);
-        } else {
-          toast.success(`Updated booking details sent to ${emailResult.emailTo || 'the voucher holder'}`);
-        }
-      }
       onClose();
     } catch (error) {
       setIsSubmitting(false);
@@ -1445,54 +1417,6 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
             </div>
           )}
 
-          {!isLoading && isVoucherBookingEdit && (
-            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
-              <div className="flex items-start gap-2">
-                <Mail className="mt-0.5 h-4 w-4 shrink-0 text-blue-700" />
-                <div>
-                  <p className="text-sm font-semibold text-blue-950">Email the updated booking details?</p>
-                  <p className="mt-0.5 text-xs text-blue-800">
-                    The email will show the saved date, time and trial-flight information.
-                  </p>
-                </div>
-              </div>
-              {voucherScheduleChanged && (
-                <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs font-medium text-amber-900">
-                  The date or time changed. Sending a new confirmation email is recommended.
-                </div>
-              )}
-              <div className="mt-3 grid grid-cols-2 gap-2" role="group" aria-label="Send updated voucher booking email">
-                <button
-                  type="button"
-                  onClick={() => setSendVoucherUpdateEmail(true)}
-                  className={`inline-flex items-center justify-center gap-1.5 rounded-md border px-3 py-2 text-sm font-semibold transition-colors ${
-                    sendVoucherUpdateEmail === true
-                      ? 'border-blue-600 bg-blue-600 text-white'
-                      : 'border-blue-200 bg-white text-blue-800 hover:bg-blue-100'
-                  }`}
-                >
-                  {sendVoucherUpdateEmail === true && <Check className="h-4 w-4" />}
-                  Send email
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSendVoucherUpdateEmail(false)}
-                  className={`inline-flex items-center justify-center gap-1.5 rounded-md border px-3 py-2 text-sm font-semibold transition-colors ${
-                    sendVoucherUpdateEmail === false
-                      ? 'border-gray-700 bg-gray-700 text-white'
-                      : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-100'
-                  }`}
-                >
-                  {sendVoucherUpdateEmail === false && <Check className="h-4 w-4" />}
-                  Don’t send
-                </button>
-              </div>
-              {sendVoucherUpdateEmail === null && (
-                <p className="mt-2 text-xs font-medium text-blue-900">Choose one option before saving the booking.</p>
-              )}
-            </div>
-          )}
-
           </div>
 
           <div className="flex justify-end space-x-2 px-4 py-3 border-t border-gray-200 bg-gray-50">
@@ -1520,7 +1444,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
             )}
             <button
               type="submit"
-              disabled={isSubmitting || isLoading || Boolean(financialProvidersError) || Boolean(bookingDataError) || (isVoucherBookingEdit && sendVoucherUpdateEmail === null)}
+              disabled={isSubmitting || isLoading || Boolean(financialProvidersError) || Boolean(bookingDataError)}
               className="px-4 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isSubmitting

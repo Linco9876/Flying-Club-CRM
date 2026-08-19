@@ -11,6 +11,9 @@ import {
 const clean = (value: unknown, maximum = 1000) =>
   String(value ?? "").trim().slice(0, maximum);
 
+const CLUB_REPLY_TO_EMAIL = "bfc@bendigoflyingclub.com.au";
+const CLUB_CONTACT_PHONE = "(03) 5443 8395";
+
 const json = (req: Request, payload: Record<string, unknown>, status = 200) =>
   new Response(JSON.stringify(payload), {
     status,
@@ -138,6 +141,7 @@ const sendBrevoEmail = async ({
         name: clean(Deno.env.get("BREVO_SENDER_NAME"), 200) || "Bendigo Flying Club",
       },
       to: [{ email: to, name: toName || to }],
+      replyTo: { email: CLUB_REPLY_TO_EMAIL, name: "Bendigo Flying Club" },
       subject,
       htmlContent: await brandPortalEmailHtml(html),
       textContent: text,
@@ -191,7 +195,7 @@ Deno.serve(async (req: Request) => {
   const siteUrl = (clean(Deno.env.get("PUBLIC_SITE_URL"), 1000)
     || "https://portal.bendigoflyingclub.com.au").replace(/\/$/, "");
   const { data: organisation } = await admin.from("organisation_settings")
-    .select("contact_email")
+    .select("contact_email,contact_phone")
     .limit(1)
     .maybeSingle();
   let sent = 0;
@@ -201,6 +205,15 @@ Deno.serve(async (req: Request) => {
 
   for (const delivery of deliveries || []) {
     try {
+      const { data: deliverySnapshot, error: deliverySnapshotError } = await admin
+        .from("guest_booking_email_deliveries")
+        .select("source,booking_end_time")
+        .eq("id", delivery.delivery_id)
+        .maybeSingle();
+      if (deliverySnapshotError || !deliverySnapshot) {
+        throw deliverySnapshotError || new Error("Email delivery snapshot no longer exists");
+      }
+
       const { data: booking, error: bookingError } = await admin.from("bookings")
         .select("id,is_guest_booking,guest_name,guest_email,start_time,end_time,status,deleted_at,aircraft_id,instructor_id,location")
         .eq("id", delivery.booking_id)
@@ -209,12 +222,14 @@ Deno.serve(async (req: Request) => {
 
       const recipientEmail = validEmail(delivery.recipient_email);
       const currentEmail = validEmail(booking?.guest_email);
+      const isBookingTimeUpdate = deliverySnapshot.source === "booking_time_update";
       if (
         !booking
         || !booking.is_guest_booking
         || booking.deleted_at
         || ["cancelled", "no-show", "completed"].includes(booking.status)
         || booking.start_time !== delivery.booking_start_time
+        || (isBookingTimeUpdate && booking.end_time !== deliverySnapshot.booking_end_time)
         || new Date(booking.start_time).getTime() <= Date.now()
         || !recipientEmail
         || currentEmail !== recipientEmail
@@ -247,7 +262,7 @@ Deno.serve(async (req: Request) => {
       ]);
       const calendarToken = await ensureCalendarLink(admin, booking.id);
       const email = buildGuestBookingEmail({
-        kind: delivery.delivery_kind,
+        kind: isBookingTimeUpdate ? "booking_update" : delivery.delivery_kind,
         guestName: clean(booking.guest_name || delivery.recipient_name, 200) || "there",
         startTime: booking.start_time,
         endTime: booking.end_time,
@@ -258,7 +273,8 @@ Deno.serve(async (req: Request) => {
         instructorName: clean(instructor?.name, 200) || "To be advised",
         location: clean(booking.location, 200) || "Bendigo Flying Club",
         calendarUrl: `${siteUrl}/calendar-booking?event=${encodeURIComponent(calendarToken)}`,
-        contactEmail: validEmail(organisation?.contact_email) || undefined,
+        contactEmail: validEmail(organisation?.contact_email) || CLUB_REPLY_TO_EMAIL,
+        contactPhone: clean(organisation?.contact_phone, 80) || CLUB_CONTACT_PHONE,
       });
       const providerMessageId = await sendBrevoEmail({
         to: recipientEmail,

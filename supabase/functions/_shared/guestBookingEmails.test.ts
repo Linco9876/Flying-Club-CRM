@@ -15,6 +15,7 @@ const details = {
   location: "Bendigo",
   calendarUrl: "https://portal.bendigoflyingclub.com.au/calendar-booking?event=test",
   contactEmail: "flying@bendigoflyingclub.com.au",
+  contactPhone: "(03) 5443 8395",
 } as const;
 
 Deno.test("confirmation email includes clear operational details", () => {
@@ -23,6 +24,10 @@ Deno.test("confirmation email includes clear operational details", () => {
   assertStringIncludes(email.text, "Robin Guest");
   assertStringIncludes(email.text, "24-4852 Tecnam P92");
   assertStringIncludes(email.text, "Lincoln Cottingham");
+  assertStringIncludes(email.text, "flying@bendigoflyingclub.com.au");
+  assertStringIncludes(email.text, "(03) 5443 8395");
+  assertStringIncludes(email.html, "mailto:flying@bendigoflyingclub.com.au");
+  assertStringIncludes(email.html, "tel:+61354438395");
   assertStringIncludes(email.html, "View booking and add to calendar");
 });
 
@@ -41,6 +46,16 @@ Deno.test("day-prior reminder has a direct, readable subject", () => {
   const email = buildGuestBookingEmail({ ...details, kind: "day_prior_reminder" });
   assertStringIncludes(email.subject, "flight is tomorrow");
   assertStringIncludes(email.text, "reminder");
+});
+
+Deno.test("booking time update clearly states the new date and time", () => {
+  const email = buildGuestBookingEmail({ ...details, kind: "booking_update" });
+  assertStringIncludes(email.subject, "Updated:");
+  assertStringIncludes(email.subject, "Thursday 20 August 2026");
+  assertStringIncludes(email.text, "date or time");
+  assertStringIncludes(email.text, "Date: Thursday 20 August 2026");
+  assertStringIncludes(email.text, "Time: 10:00 am");
+  assertStringIncludes(email.html, "Your booking has been updated");
 });
 
 Deno.test("reminder suppression uses a strict rolling twelve-hour window", () => {
@@ -64,6 +79,12 @@ Deno.test("database outbox is idempotent, scheduled and auditable", async () => 
   const worker = await Deno.readTextFile(
     "supabase/functions/guest-booking-emails/index.ts",
   );
+  const timeUpdateMigration = await Deno.readTextFile(
+    "supabase/migrations/20260819113000_email_guest_booking_time_updates.sql",
+  );
+  const bookingForm = await Deno.readTextFile(
+    "src/components/Bookings/BookingForm.tsx",
+  );
   const voucherSender = await Deno.readTextFile(
     "supabase/functions/trial-voucher-public/index.ts",
   );
@@ -80,5 +101,22 @@ Deno.test("database outbox is idempotent, scheduled and auditable", async () => 
   assertStringIncludes(migration, "notification_push_worker_secret");
   assertStringIncludes(worker, "shouldSuppressGuestReminder");
   assertStringIncludes(worker, "brandPortalEmailHtml");
+  assertStringIncludes(worker, 'replyTo: { email: CLUB_REPLY_TO_EMAIL');
+  assertStringIncludes(worker, '.select("contact_email,contact_phone")');
+  assertStringIncludes(worker, 'deliverySnapshot.source === "booking_time_update"');
+  assertStringIncludes(worker, 'kind: isBookingTimeUpdate ? "booking_update"');
   assertStringIncludes(voucherSender, "recordTrialBookingConfirmationDelivery");
+  assertStringIncludes(voucherSender, 'replyTo: { email: CLUB_CONTACT_EMAIL');
+  assertStringIncludes(voucherSender, 'const CLUB_CONTACT_PHONE = "(03) 5443 8395"');
+  assertStringIncludes(voucherSender, "booking_end_time: booking.endTime || null");
+  assert(/rescheduleInfoFor[\s\S]{0,600}isUpdate: true/.test(voucherSender));
+  assertStringIncludes(timeUpdateMigration, "after update of start_time, end_time");
+  assertStringIncludes(timeUpdateMigration, "old.start_time is distinct from new.start_time");
+  assertStringIncludes(timeUpdateMigration, "old.end_time is distinct from new.end_time");
+  assertStringIncludes(timeUpdateMigration, "booking_end_time");
+  assertStringIncludes(timeUpdateMigration, "booking_time_update");
+  assert(!timeUpdateMigration.includes("after update of instructor_id"));
+  assert(!timeUpdateMigration.includes("after update of aircraft_id"));
+  assert(!bookingForm.includes("Email the updated booking details?"));
+  assert(!bookingForm.includes("staff-booking-update-email"));
 });

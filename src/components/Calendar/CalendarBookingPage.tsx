@@ -13,7 +13,6 @@ interface CalendarBookingPayload {
     end: string;
     status: BrowserCalendarEvent['status'];
   };
-  manageUrl: string;
   downloadUrl: string;
 }
 
@@ -66,7 +65,6 @@ export const CalendarBookingPage: React.FC = () => {
         <header className="bg-gradient-to-br from-[#06152f] to-[#0d3b78] px-6 py-7 text-white sm:px-8">
           <div className="flex items-center gap-3 text-xs font-bold uppercase tracking-[0.18em] text-blue-200"><span className="rounded-xl bg-white/10 p-2"><Plane className="h-5 w-5" /></span>Bendigo Flying Club</div>
           <h1 className="mt-5 text-2xl font-bold sm:text-3xl">{isCancelled ? 'Booking cancelled' : 'Add booking to calendar'}</h1>
-          <p className="mt-2 text-sm leading-6 text-blue-100">Use the calendar you already know. The BFC portal remains the source of truth.</p>
         </header>
 
         <section className="p-6 sm:p-8" aria-live="polite">
@@ -102,7 +100,6 @@ export const CalendarBookingPage: React.FC = () => {
                 </div>
               )}
 
-              <a href={payload.manageUrl} className="mt-6 block text-center text-sm font-semibold text-blue-700 hover:underline dark:text-blue-300">View current booking in the BFC portal</a>
               <div className="mt-6 flex items-start gap-2 border-t border-slate-200 pt-5 text-xs leading-5 text-slate-500 dark:border-slate-700 dark:text-slate-400"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" /><span>This private link shows only the calendar details for this booking. Do not forward it.</span></div>
             </>
           )}

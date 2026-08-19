@@ -53,6 +53,9 @@ const VOUCHER_SELF_BOOKING_MIN_LEAD_DAYS = 2;
 const VOUCHER_SELF_BOOKING_LOOKAHEAD_DAYS = 62;
 const VOUCHER_MAX_AVAILABLE_SLOTS = 1500;
 const VOUCHER_RESCHEDULE_CUTOFF_HOURS = 72;
+const CLUB_CONTACT_EMAIL = "bfc@bendigoflyingclub.com.au";
+const CLUB_CONTACT_PHONE = "(03) 5443 8395";
+const CLUB_CONTACT_PHONE_LINK = "+61354438395";
 
 type LocalDateParts = { year: number; month: number; day: number };
 
@@ -287,6 +290,7 @@ const sendVoucherAccountSetupEmail = async ({
     body: JSON.stringify({
       sender: { email: senderEmail, name: senderName },
       to: [{ email, name: fullName || email }],
+      replyTo: { email: CLUB_CONTACT_EMAIL, name: "Bendigo Flying Club" },
       subject: testModeSubject(isTestMode ? "test" : "live", "Set up your Bendigo Flying Club trial flight booking account"),
       htmlContent: await brandPortalEmailHtml(html),
     }),
@@ -320,6 +324,7 @@ const recordTrialBookingConfirmationDelivery = async ({
     recipient_email: recipientEmail.trim().toLowerCase(),
     recipient_name: recipientName || null,
     booking_start_time: booking.startTime,
+    booking_end_time: booking.endTime || null,
     scheduled_for: sentAt,
     status: "sent",
     source: "trial_voucher_confirmation",
@@ -422,7 +427,8 @@ const sendTrialBookingConfirmationEmail = async ({
     `Add to calendar: ${calendarUrl}`,
     `Voucher code: ${voucher.code}`,
     "",
-    "Please wear comfortable clothing and enclosed shoes. Contact Bendigo Flying Club if you need help.",
+    "Please wear comfortable clothing and enclosed shoes.",
+    `Need help? Email ${CLUB_CONTACT_EMAIL} or call ${CLUB_CONTACT_PHONE}.`,
   ].join("\n");
   const html = `<!doctype html>
 <html>
@@ -532,7 +538,7 @@ const sendTrialBookingConfirmationEmail = async ({
                 </table>
 
                 <p style="margin:0;color:#64748b;font-size:13px;line-height:1.65;">Voucher code: <strong style="color:#0f172a;">${escapeHtml(voucher.code)}</strong></p>
-                <p style="margin:8px 0 0;color:#64748b;font-size:13px;line-height:1.65;">Need help? Contact Bendigo Flying Club and we will be happy to assist.</p>
+                <p style="margin:8px 0 0;color:#64748b;font-size:13px;line-height:1.65;">Need help? Email <a href="mailto:${CLUB_CONTACT_EMAIL}" style="color:#1d4ed8;font-weight:700;text-decoration:none;">${CLUB_CONTACT_EMAIL}</a> or call <a href="tel:${CLUB_CONTACT_PHONE_LINK}" style="color:#1d4ed8;font-weight:700;text-decoration:none;">${CLUB_CONTACT_PHONE}</a>.</p>
               </td>
             </tr>
           </table>
@@ -551,6 +557,7 @@ const sendTrialBookingConfirmationEmail = async ({
     body: JSON.stringify({
       sender: { email: senderEmail, name: senderName },
       to: [{ email: to, name: toName }],
+      replyTo: { email: CLUB_CONTACT_EMAIL, name: "Bendigo Flying Club" },
       subject: testModeSubject(
         voucher?.stripe_mode === "test" || voucher?.is_test_mode ? "test" : "live",
         isUpdate ? "Your Bendigo Flying Club trial flight booking has been updated" : "Your Bendigo Flying Club trial flight is booked",
@@ -1757,6 +1764,7 @@ Deno.serve(async (req: Request) => {
         voucher,
         product,
         booking: bookedSummary,
+        isUpdate: true,
       });
 
       return json({
