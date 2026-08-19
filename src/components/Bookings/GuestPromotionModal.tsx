@@ -1,12 +1,21 @@
 import React from 'react';
 import { ArrowRight, CheckCircle2, Loader2, Mail, ShieldCheck, UserPlus, Users, X } from 'lucide-react';
-import type { Booking, User } from '../../types';
+import type { User } from '../../types';
 import { useGuestBookingConversion } from '../../hooks/useGuestBookingConversion';
 import { SearchableSelect } from '../common/SearchableSelect';
 
+export interface GuestPromotionSource {
+  bookingId?: string;
+  casualContactId?: string;
+  name: string;
+  email: string;
+  phone?: string;
+}
+
 interface GuestPromotionModalProps {
-  booking: Booking;
+  source: GuestPromotionSource;
   users: User[];
+  reinstateArchivedProfiles?: boolean;
   onClose: () => void;
   onComplete: (memberId: string) => void | Promise<void>;
 }
@@ -14,19 +23,20 @@ interface GuestPromotionModalProps {
 type PromotionMode = 'existing' | 'create';
 
 export const GuestPromotionModal: React.FC<GuestPromotionModalProps> = ({
-  booking,
+  source,
   users,
+  reinstateArchivedProfiles = false,
   onClose,
   onComplete,
 }) => {
   const { convertGuestBookingToMember } = useGuestBookingConversion();
   const availableUsers = React.useMemo(() => users.filter(user =>
     user.portalAccessScope !== 'guest_placeholder'
-    && user.isActive !== false
-  ), [users]);
+    && (reinstateArchivedProfiles || user.isActive !== false)
+  ), [reinstateArchivedProfiles, users]);
   const exactEmailMatch = React.useMemo(() => availableUsers.find(user =>
-    user.email.trim().toLowerCase() === (booking.guestEmail || '').trim().toLowerCase()
-  ), [availableUsers, booking.guestEmail]);
+    user.email.trim().toLowerCase() === source.email.trim().toLowerCase()
+  ), [availableUsers, source.email]);
   const [mode, setMode] = React.useState<PromotionMode>(exactEmailMatch ? 'existing' : 'create');
   const [targetUserId, setTargetUserId] = React.useState(exactEmailMatch?.id || '');
   const [profileSearch, setProfileSearch] = React.useState(exactEmailMatch?.name || '');
@@ -69,11 +79,13 @@ export const GuestPromotionModal: React.FC<GuestPromotionModalProps> = ({
     setError('');
     try {
       const result = await convertGuestBookingToMember({
-        bookingId: booking.id,
+        bookingId: source.bookingId,
+        casualContactId: source.casualContactId,
         targetUserId: mode === 'existing' ? targetUserId : undefined,
         role,
         linkAll,
         sendInvitation: mode === 'create' && sendInvitation,
+        reactivateProfile: reinstateArchivedProfiles,
       });
       await onComplete(result.memberId);
     } catch (caught) {
@@ -91,7 +103,7 @@ export const GuestPromotionModal: React.FC<GuestPromotionModalProps> = ({
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-blue-600">Casual contact</p>
             <h2 id="guest-promotion-title" className="mt-1 text-lg font-bold text-slate-950">Create or attach an official profile</h2>
-            <p className="mt-1 text-sm text-slate-600">{booking.guestName} · {booking.guestEmail}</p>
+            <p className="mt-1 text-sm text-slate-600">{source.name} · {source.email}</p>
           </div>
           <button type="button" onClick={onClose} disabled={isSubmitting} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-slate-500 hover:bg-slate-100" aria-label="Close">
             <X className="h-5 w-5" />
@@ -162,8 +174,11 @@ export const GuestPromotionModal: React.FC<GuestPromotionModalProps> = ({
                   )) : <p className="px-3 py-2 text-sm text-slate-500">No profile starts with that search.</p>}
                 </div>
               )}
-              {selectedUser && selectedUser.email.toLowerCase() !== (booking.guestEmail || '').toLowerCase() && (
+              {selectedUser && selectedUser.email.toLowerCase() !== source.email.toLowerCase() && (
                 <p className="mt-2 text-xs font-medium text-amber-700">The selected profile uses a different email. Confirm the identity before transferring records.</p>
+              )}
+              {selectedUser?.isActive === false && reinstateArchivedProfiles && (
+                <p className="mt-2 text-xs font-medium text-blue-700">This archived profile will be restored when the visitor history is attached.</p>
               )}
             </div>
           ) : (

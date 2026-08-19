@@ -14,6 +14,26 @@ const singleBookingRelinkHardening = readFileSync(
   new URL('../../supabase/migrations/20260819104500_harden_single_guest_booking_relink.sql', import.meta.url),
   'utf8',
 ).toLowerCase();
+const pastVisitorsDirectory = readFileSync(
+  new URL('../../supabase/migrations/20260819110000_add_past_visitors_directory.sql', import.meta.url),
+  'utf8',
+).toLowerCase();
+const bookingForm = readFileSync(
+  new URL('../components/Bookings/BookingForm.tsx', import.meta.url),
+  'utf8',
+);
+const membersPage = readFileSync(
+  new URL('../components/Students/StudentList.tsx', import.meta.url),
+  'utf8',
+);
+const pastVisitorsModal = readFileSync(
+  new URL('../components/Students/PastVisitorsModal.tsx', import.meta.url),
+  'utf8',
+);
+const conversionFunction = readFileSync(
+  new URL('../../supabase/functions/convert-guest-booking-to-member/index.ts', import.meta.url),
+  'utf8',
+);
 
 test('casual contact migration keeps a reusable identity and booking snapshot link', () => {
   assert.match(migration, /create table if not exists public\.casual_contacts/);
@@ -64,4 +84,35 @@ test('a single-booking correction never transfers contact-wide Xero or promotion
     assert.match(source, /else\s+update public\.casual_contacts\s+set updated_at = now\(\)/);
   }
   assert.match(singleBookingRelinkHardening, /select private\.assert_function_permission_manifest\(\)/);
+});
+
+test('new bookings stay minimal while visitor recovery lives in Members', () => {
+  assert.doesNotMatch(bookingForm, /Special booking/);
+  assert.doesNotMatch(bookingForm, /Find returning visitor/);
+  assert.doesNotMatch(bookingForm, /search_casual_contacts/);
+  assert.match(bookingForm, />\s*Visitor\s*</);
+  assert.match(bookingForm, /Link unused gift voucher/);
+  assert.match(membersPage, /Past visitors/);
+  assert.match(membersPage, /PastVisitorsModal/);
+  assert.match(pastVisitorsModal, /Upgrade to portal user/);
+  assert.match(pastVisitorsModal, /Restore portal user/);
+});
+
+test('the past visitor directory returns every real visit with portal-profile state', () => {
+  assert.match(pastVisitorsDirectory, /create or replace function public\.list_past_visitors/);
+  assert.match(pastVisitorsDirectory, /public\.current_user_has_staff_role\(\)/);
+  assert.match(pastVisitorsDirectory, /contact\.status <> 'merged'/);
+  assert.match(pastVisitorsDirectory, /coalesce\(visit\.booking_count, 0\) > 0/);
+  assert.match(pastVisitorsDirectory, /guest_booking_count/);
+  assert.match(pastVisitorsDirectory, /promoted_user_is_active/);
+  assert.match(pastVisitorsDirectory, /offset greatest\(coalesce\(p_offset, 0\), 0\)/);
+  assert.match(pastVisitorsDirectory, /select private\.assert_function_permission_manifest\(\)/);
+});
+
+test('visitor promotion can resolve a contact directly and restore an archived profile', () => {
+  assert.match(conversionFunction, /const casualContactId = cleanText\(body\.casualContactId\)/);
+  assert.match(conversionFunction, /const reactivateProfile = body\.reactivateProfile === true/);
+  assert.match(conversionFunction, /portal_access_scope: needsFullAccess \? "full"/);
+  assert.match(conversionFunction, /action: profileReactivated \? "reactivated_profile"/);
+  assert.match(conversionFunction, /\.eq\("casual_contact_id", contact\.id\)/);
 });

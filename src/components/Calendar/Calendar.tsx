@@ -5595,7 +5595,12 @@ export const Calendar: React.FC<CalendarProps> = ({
 
       {guestPromotionBooking && (
         <GuestPromotionModal
-          booking={guestPromotionBooking}
+          source={{
+            bookingId: guestPromotionBooking.id,
+            name: guestPromotionBooking.guestName || 'Visitor',
+            email: guestPromotionBooking.guestEmail || '',
+            phone: guestPromotionBooking.guestPhone,
+          }}
           users={users}
           onClose={() => setGuestPromotionBooking(null)}
           onComplete={async (memberId) => {
