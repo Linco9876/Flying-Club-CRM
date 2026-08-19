@@ -207,7 +207,7 @@ Deno.serve(async (req: Request) => {
     try {
       const { data: deliverySnapshot, error: deliverySnapshotError } = await admin
         .from("guest_booking_email_deliveries")
-        .select("source,booking_end_time")
+        .select("source,booking_end_time,previous_booking_start_time,previous_booking_end_time")
         .eq("id", delivery.delivery_id)
         .maybeSingle();
       if (deliverySnapshotError || !deliverySnapshot) {
@@ -275,6 +275,8 @@ Deno.serve(async (req: Request) => {
         calendarUrl: `${siteUrl}/calendar-booking?event=${encodeURIComponent(calendarToken)}`,
         contactEmail: validEmail(organisation?.contact_email) || CLUB_REPLY_TO_EMAIL,
         contactPhone: clean(organisation?.contact_phone, 80) || CLUB_CONTACT_PHONE,
+        previousStartTime: isBookingTimeUpdate ? deliverySnapshot.previous_booking_start_time : null,
+        previousEndTime: isBookingTimeUpdate ? deliverySnapshot.previous_booking_end_time : null,
       });
       const providerMessageId = await sendBrevoEmail({
         to: recipientEmail,

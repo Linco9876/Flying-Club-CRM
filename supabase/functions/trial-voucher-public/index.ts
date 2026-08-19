@@ -8,6 +8,7 @@ import {
 import { getConnectedStripeAccountId, stripeHeaders } from "../_shared/stripeConnectAccount.ts";
 import { getActiveStripeMode, stripePriceIdForMode, testModeSubject, type StripeMode } from "../_shared/stripeMode.ts";
 import { brandPortalEmailHtml } from "../_shared/emailBranding.ts";
+import { buildBookingScheduleChangeRows } from "../_shared/guestBookingEmails.ts";
 
 type SupabaseAdminClient = any;
 
@@ -349,12 +350,16 @@ const sendTrialBookingConfirmationEmail = async ({
   product,
   booking,
   isUpdate = false,
+  previousStartTime = null,
+  previousEndTime = null,
 }: {
   adminClient: SupabaseAdminClient;
   voucher: any;
   product: any;
   booking: any;
   isUpdate?: boolean;
+  previousStartTime?: string | null;
+  previousEndTime?: string | null;
 }) => {
   const apiKey = Deno.env.get("BREVO_API_KEY");
   if (!apiKey) return { sent: false, error: "BREVO_API_KEY is not configured" };
@@ -383,6 +388,14 @@ const sendTrialBookingConfirmationEmail = async ({
     minute: "2-digit",
     timeZone,
   }).format(new Date(booking.endTime));
+  const scheduleChanges = isUpdate
+    ? buildBookingScheduleChangeRows({
+      previousStartTime,
+      previousEndTime,
+      startTime: booking.startTime,
+      endTime: booking.endTime,
+    })
+    : [];
   const flightMinutes = Number(product.duration_minutes || 0);
   const blockMinutes = flightMinutes + 30;
   const bookingUrl = `${siteOrigin()}/trial-flight-voucher?voucherCode=${encodeURIComponent(voucher.code)}`;
@@ -418,6 +431,19 @@ const sendTrialBookingConfirmationEmail = async ({
     "",
     `Your ${product.name || "trial instructional flight"} booking ${isUpdate ? "has been updated" : "is confirmed"}.`,
     "",
+    ...(scheduleChanges.length > 0
+      ? [
+        "What changed:",
+        ...scheduleChanges.flatMap((change) => [
+          `${change.label}:`,
+          `  Was: ${change.before}`,
+          `  Now: ${change.after}`,
+        ]),
+        "",
+        "Updated booking details:",
+        "",
+      ]
+      : []),
     `Date: ${dateLabel}`,
     `Arrive: ${startTimeLabel}`,
     `Allow: ${blockMinutes ? `about ${blockMinutes} minutes` : "time for your trial flight"}`,
@@ -430,6 +456,18 @@ const sendTrialBookingConfirmationEmail = async ({
     "Please wear comfortable clothing and enclosed shoes.",
     `Need help? Email ${CLUB_CONTACT_EMAIL} or call ${CLUB_CONTACT_PHONE}.`,
   ].join("\n");
+  const changeSummaryHtml = scheduleChanges.length > 0
+    ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 22px;border:1px solid #bfdbfe;border-radius:16px;background:#eff6ff;">
+        <tr><td style="padding:18px;">
+          <p style="margin:0 0 12px;color:#1e3a8a;font-size:14px;font-weight:800;">What changed</p>
+          ${scheduleChanges.map((change) => `<div style="margin-top:10px;padding-top:10px;border-top:1px solid #dbeafe;">
+            <p style="margin:0 0 5px;color:#334155;font-size:13px;font-weight:800;">${escapeHtml(change.label)}</p>
+            <p style="margin:0 0 3px;color:#64748b;font-size:13px;line-height:1.5;"><strong>Was:</strong> ${escapeHtml(change.before)}</p>
+            <p style="margin:0;color:#0f172a;font-size:14px;line-height:1.5;"><strong>Now:</strong> ${escapeHtml(change.after)}</p>
+          </div>`).join("")}
+        </td></tr>
+      </table>`
+    : "";
   const html = `<!doctype html>
 <html>
   <head>
@@ -462,6 +500,7 @@ const sendTrialBookingConfirmationEmail = async ({
               <td style="padding:30px;">
                 <p style="margin:0 0 16px;font-size:16px;line-height:1.65;color:#0f172a;">Hi ${escapeHtml(toName)},</p>
                 <p style="margin:0 0 22px;font-size:16px;line-height:1.65;color:#334155;">Your ${escapeHtml(product.name || "trial instructional flight")} booking ${isUpdate ? "has been updated. The current details are below." : "is confirmed."}</p>
+                ${changeSummaryHtml}
 
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 22px;">
                   <tr>
@@ -1765,6 +1804,8 @@ Deno.serve(async (req: Request) => {
         product,
         booking: bookedSummary,
         isUpdate: true,
+        previousStartTime: currentBooking.start_time,
+        previousEndTime: currentBooking.end_time,
       });
 
       return json({

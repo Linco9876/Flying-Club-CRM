@@ -1,5 +1,6 @@
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import {
+  buildBookingScheduleChangeRows,
   buildGuestBookingEmail,
   guestBookingEmailRetryDelaySeconds,
   shouldSuppressGuestReminder,
@@ -49,13 +50,45 @@ Deno.test("day-prior reminder has a direct, readable subject", () => {
 });
 
 Deno.test("booking time update clearly states the new date and time", () => {
-  const email = buildGuestBookingEmail({ ...details, kind: "booking_update" });
+  const email = buildGuestBookingEmail({
+    ...details,
+    kind: "booking_update",
+    previousStartTime: "2026-08-19T00:30:00.000Z",
+    previousEndTime: "2026-08-19T02:00:00.000Z",
+  });
   assertStringIncludes(email.subject, "Updated:");
   assertStringIncludes(email.subject, "Thursday 20 August 2026");
   assertStringIncludes(email.text, "date or time");
+  assertStringIncludes(email.text, "What changed:");
+  assertStringIncludes(email.text, "Was: Wednesday 19 August 2026");
+  assertStringIncludes(email.text, "Now: Thursday 20 August 2026");
+  assertStringIncludes(email.text, "Was: 10:30 am - 12:00 pm");
+  assertStringIncludes(email.text, "Now: 10:00 am - 11:30 am");
   assertStringIncludes(email.text, "Date: Thursday 20 August 2026");
   assertStringIncludes(email.text, "Time: 10:00 am");
   assertStringIncludes(email.html, "Your booking has been updated");
+  assertStringIncludes(email.html, "What changed");
+  assertStringIncludes(email.html, "<strong>Was:</strong>");
+  assertStringIncludes(email.html, "<strong>Now:</strong>");
+});
+
+Deno.test("change summary includes only schedule fields that actually changed", () => {
+  assertEquals(buildBookingScheduleChangeRows({
+    previousStartTime: "2026-08-20T00:30:00.000Z",
+    previousEndTime: "2026-08-20T02:00:00.000Z",
+    startTime: details.startTime,
+    endTime: details.endTime,
+  }), [{
+    label: "Time",
+    before: "10:30 am - 12:00 pm",
+    after: "10:00 am - 11:30 am",
+  }]);
+  assertEquals(buildBookingScheduleChangeRows({
+    previousStartTime: null,
+    previousEndTime: null,
+    startTime: details.startTime,
+    endTime: details.endTime,
+  }), []);
 });
 
 Deno.test("reminder suppression uses a strict rolling twelve-hour window", () => {
@@ -82,6 +115,9 @@ Deno.test("database outbox is idempotent, scheduled and auditable", async () => 
   const timeUpdateMigration = await Deno.readTextFile(
     "supabase/migrations/20260819113000_email_guest_booking_time_updates.sql",
   );
+  const changeSnapshotMigration = await Deno.readTextFile(
+    "supabase/migrations/20260819130500_add_guest_booking_change_snapshots.sql",
+  );
   const bookingForm = await Deno.readTextFile(
     "src/components/Bookings/BookingForm.tsx",
   );
@@ -105,16 +141,25 @@ Deno.test("database outbox is idempotent, scheduled and auditable", async () => 
   assertStringIncludes(worker, '.select("contact_email,contact_phone")');
   assertStringIncludes(worker, 'deliverySnapshot.source === "booking_time_update"');
   assertStringIncludes(worker, 'kind: isBookingTimeUpdate ? "booking_update"');
+  assertStringIncludes(worker, "previous_booking_start_time,previous_booking_end_time");
+  assertStringIncludes(worker, "previousStartTime: isBookingTimeUpdate");
   assertStringIncludes(voucherSender, "recordTrialBookingConfirmationDelivery");
   assertStringIncludes(voucherSender, 'replyTo: { email: CLUB_CONTACT_EMAIL');
   assertStringIncludes(voucherSender, 'const CLUB_CONTACT_PHONE = "(03) 5443 8395"');
   assertStringIncludes(voucherSender, "booking_end_time: booking.endTime || null");
   assert(/rescheduleInfoFor[\s\S]{0,600}isUpdate: true/.test(voucherSender));
+  assertStringIncludes(voucherSender, "previousStartTime: currentBooking.start_time");
+  assertStringIncludes(voucherSender, "previousEndTime: currentBooking.end_time");
   assertStringIncludes(timeUpdateMigration, "after update of start_time, end_time");
   assertStringIncludes(timeUpdateMigration, "old.start_time is distinct from new.start_time");
   assertStringIncludes(timeUpdateMigration, "old.end_time is distinct from new.end_time");
   assertStringIncludes(timeUpdateMigration, "booking_end_time");
   assertStringIncludes(timeUpdateMigration, "booking_time_update");
+  assertStringIncludes(changeSnapshotMigration, "previous_booking_start_time");
+  assertStringIncludes(changeSnapshotMigration, "previous_booking_end_time");
+  assertStringIncludes(changeSnapshotMigration, "delivery.source = 'booking_time_update'");
+  assertStringIncludes(changeSnapshotMigration, "old.start_time");
+  assertStringIncludes(changeSnapshotMigration, "old.end_time");
   assert(!timeUpdateMigration.includes("after update of instructor_id"));
   assert(!timeUpdateMigration.includes("after update of aircraft_id"));
   assert(!bookingForm.includes("Email the updated booking details?"));
