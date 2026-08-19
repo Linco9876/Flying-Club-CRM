@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "reviewed_at": "2026-08-18",
+  "reviewed_at": "2026-08-19",
   "source_project": "Flying Club CRM Australia",
   "rules": {
     "anonymous_token_public": [
@@ -674,6 +674,18 @@
       "security_definer": true,
       "fixed_search_path": true,
       "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.get_member_directory_membership_summaries()",
+      "name": "get_member_directory_membership_summaries",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Staff-only directory summary. The RPC checks the caller role and returns no financial or private membership-application details."
     },
     {
       "signature": "public.get_public_membership_configuration()",

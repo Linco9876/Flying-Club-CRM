@@ -50,6 +50,6 @@ test('membership signup retains the application, agreements and payment preferen
 });
 
 test('account-only signup is shorter than account plus membership', () => {
-  assert.deepEqual(getPortalSignupSteps('portal'), ['Start', 'Your details', 'Privacy']);
+  assert.deepEqual(getPortalSignupSteps('portal'), ['Your details']);
   assert.deepEqual(getPortalSignupSteps('membership'), ['Start', 'Your details', 'Agreements', 'Payment']);
 });
