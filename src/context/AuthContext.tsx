@@ -1,11 +1,12 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { User, UserRole } from '../types';
+import { detachPwaPushSubscription } from '../utils/pushNotifications';
 
 interface AuthContextType {
   user: User | null;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  logout: () => void;
+  logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   isLoading: boolean;
 }
@@ -349,6 +350,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
+    try {
+      await detachPwaPushSubscription('portal');
+    } catch (error) {
+      console.warn('Could not detach this device from phone notifications during sign out', error);
+    }
     await supabase.auth.signOut();
     setUser(null);
     window.history.replaceState(null, '', '/');

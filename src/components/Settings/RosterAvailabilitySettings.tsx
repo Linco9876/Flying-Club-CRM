@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, MapPin, Plus, Trash2, AlertCircle, Save, ShieldCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -7,10 +8,10 @@ import { useInstructorAvailability, WeeklySchedule } from '../../hooks/useInstru
 import { useOrganisationLocations } from '../../hooks/useOrganisationLocations';
 import { supabase } from '../../lib/supabase';
 import {
-  getSupervisorLocationValidationError,
   toggleSupervisorLocation,
 } from '../../utils/supervisorRosterLocations';
 import { TimeSelect } from '../common/TimeSelect';
+import { SettingsLoadError } from './SettingsLoadError';
 
 interface RosterAvailabilitySettingsProps {
   canEdit: boolean;
@@ -59,11 +60,13 @@ const getTodayDate = () => {
 
 export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProps> = ({ canEdit }) => {
   const { user } = useAuth();
-  const { getInstructors } = useUsers();
+  const { getInstructors, loading: usersLoading, error: usersError, refetch: refetchUsers } = useUsers();
   const {
     activeLocations,
     primaryLocation,
     loading: locationsLoading,
+    error: locationsError,
+    refetch: refetchLocations,
   } = useOrganisationLocations();
   const userRoles = user?.roles && user.roles.length > 0 ? user.roles : user?.role ? [user.role] : [];
   const isAdmin = userRoles.includes('admin');
@@ -76,6 +79,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
   const [newSchedule, setNewSchedule] = useState<{[key: number]: Omit<WeeklySchedule, 'id' | 'userId'>}>({});
   const [authorisedSupervisorIds, setAuthorisedSupervisorIds] = useState<Set<string>>(new Set());
   const [supervisorsLoading, setSupervisorsLoading] = useState(true);
+  const [supervisorsError, setSupervisorsError] = useState<string | null>(null);
 
   // Local draft state for weekly schedule — keyed by day of week
   const [drafts, setDrafts] = useState<{[day: number]: DayDraft}>({});
@@ -86,43 +90,40 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
     absences,
     scheduleChanges,
     loading,
+    error: availabilityError,
     upsertWeeklySchedules,
     addAbsence,
     deleteAbsence,
     addScheduleChange,
-    deleteScheduleChange
+    deleteScheduleChange,
+    refetch: refetchAvailability,
   } = useInstructorAvailability(selectedInstructorId);
 
   const instructors = getInstructors();
   const isAuthorisedSupervisor = authorisedSupervisorIds.has(selectedInstructorId);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadAuthorisedSupervisors = async () => {
-      setSupervisorsLoading(true);
+  const loadAuthorisedSupervisors = React.useCallback(async () => {
+    setSupervisorsLoading(true);
+    try {
       const { data, error } = await supabase
         .from('senior_instructor_authorisations')
         .select('instructor_id')
         .eq('is_active', true);
-
-      if (!cancelled) {
-        if (error) {
-          console.error('Failed to load authorised supervisors', error);
-          toast.error('Supervisor roster settings could not be loaded');
-          setAuthorisedSupervisorIds(new Set());
-        } else {
-          setAuthorisedSupervisorIds(new Set((data || []).map((row) => row.instructor_id)));
-        }
-        setSupervisorsLoading(false);
-      }
-    };
-
-    void loadAuthorisedSupervisors();
-    return () => {
-      cancelled = true;
-    };
+      if (error) throw error;
+      setAuthorisedSupervisorIds(new Set((data || []).map((row) => row.instructor_id)));
+      setSupervisorsError(null);
+    } catch (caught) {
+      console.error('Failed to load authorised supervisors', caught);
+      setSupervisorsError(caught instanceof Error ? caught.message : 'Supervisor roster settings could not be loaded');
+      toast.error('Supervisor roster settings could not be loaded');
+    } finally {
+      setSupervisorsLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void loadAuthorisedSupervisors();
+  }, [loadAuthorisedSupervisors]);
 
   useEffect(() => {
     if (isInstructorUser && !isAdmin && user?.id) {
@@ -184,16 +185,6 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
       const dayName = DAYS_OF_WEEK.find(day => day.value === schedule.dayOfWeek)?.label || 'Day';
       if (activeLocations.length > 1 && !schedule.locationId) {
         toast.error(`${dayName}: choose a working location`);
-        return;
-      }
-      const supervisionLocationError = getSupervisorLocationValidationError({
-        isAuthorisedSupervisor,
-        isAvailable: schedule.isAvailable,
-        supervisionLocationIds: schedule.supervisionLocationIds,
-        dayLabel: dayName,
-      });
-      if (supervisionLocationError) {
-        toast.error(supervisionLocationError);
         return;
       }
       if (schedule.startTime >= schedule.endTime) {
@@ -299,14 +290,6 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
           const dayName = DAYS_OF_WEEK.find((day) => day.value === Number(dayOfWeek))?.label || 'Day';
           throw new Error(`${dayName}: choose a working location`);
         }
-        const dayName = DAYS_OF_WEEK.find((day) => day.value === Number(dayOfWeek))?.label || 'Day';
-        const supervisionLocationError = getSupervisorLocationValidationError({
-          isAuthorisedSupervisor,
-          isAvailable: schedule.isAvailable,
-          supervisionLocationIds: schedule.supervisionLocationIds,
-          dayLabel: dayName,
-        });
-        if (supervisionLocationError) throw new Error(supervisionLocationError);
         await addScheduleChange({
           userId: selectedInstructorId,
           effectiveFrom: newScheduleEffectiveDate,
@@ -329,11 +312,28 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
     }
   };
 
-  if (loading || locationsLoading || supervisorsLoading) {
+  if (loading || usersLoading || locationsLoading || supervisorsLoading) {
     return (
       <div className="p-6 flex items-center justify-center">
         <div className="text-gray-500">Loading...</div>
       </div>
+    );
+  }
+  const loadError = usersError || locationsError || availabilityError || supervisorsError;
+  if (loadError) {
+    return (
+      <SettingsLoadError
+        section="Roster & Availability"
+        error={loadError}
+        onRetry={async () => {
+          await Promise.all([
+            refetchUsers(),
+            refetchLocations(),
+            refetchAvailability(),
+            loadAuthorisedSupervisors(),
+          ]);
+        }}
+      />
     );
   }
 
@@ -355,7 +355,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Select Instructor
           </label>
-          <select
+          <SearchableSelect
             value={selectedInstructorId}
             onChange={(e) => setSelectedInstructorId(e.target.value)}
             className="w-full max-w-md px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -366,7 +366,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                 {instructor.name || instructor.email}
               </option>
             ))}
-          </select>
+          </SearchableSelect>
         </div>
       )}
 
@@ -440,7 +440,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                               <div className="flex items-center space-x-2">
                                 <MapPin className="h-4 w-4 shrink-0 text-gray-400" />
                                 <span className="w-20 shrink-0 text-xs text-gray-600">Working at:</span>
-                                <select
+                                <SearchableSelect
                                   value={draft.locationId || primaryLocation?.id || ''}
                                   onChange={(event) => handleDraftChange(day.value, 'locationId', event.target.value)}
                                   disabled={!canManageSelectedInstructor}
@@ -451,14 +451,14 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                                       {location.name}{location.isPrimary ? ' (primary)' : ''}
                                     </option>
                                   ))}
-                                </select>
+                                </SearchableSelect>
                               </div>
                             )}
                             {isAuthorisedSupervisor && (
                               <fieldset className="rounded-md border border-blue-200 bg-blue-50/70 px-3 py-2">
                                 <legend className="flex items-center gap-1.5 px-1 text-xs font-semibold text-blue-900">
                                   <ShieldCheck className="h-3.5 w-3.5" />
-                                  Supervising at
+                                  Additional supervision coverage
                                 </legend>
                                 <div className="mt-1 flex flex-wrap gap-x-4 gap-y-2">
                                   {activeLocations.map((location) => (
@@ -482,7 +482,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                                   ))}
                                 </div>
                                 <p className="mt-1.5 text-xs text-blue-800">
-                                  Select every location this supervisor can cover on {day.label}.
+                                  Their normal working location is covered automatically. Select only extra locations they can supervise on {day.label}.
                                 </p>
                               </fieldset>
                             )}
@@ -738,7 +738,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                                   <div className="flex items-center space-x-2">
                                     <MapPin className="h-4 w-4 text-gray-400" />
                                     <span className="w-20 text-xs text-gray-600">Working at:</span>
-                                    <select
+                                    <SearchableSelect
                                       value={schedule.locationId || primaryLocation?.id || ''}
                                       onChange={(event) => handleNewScheduleChange(day.value, 'locationId', event.target.value)}
                                       className="min-w-44 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm"
@@ -748,14 +748,14 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                                           {location.name}{location.isPrimary ? ' (primary)' : ''}
                                         </option>
                                       ))}
-                                    </select>
+                                    </SearchableSelect>
                                   </div>
                                 )}
                                 {isAuthorisedSupervisor && (
                                   <fieldset className="rounded-md border border-green-200 bg-green-50/70 px-3 py-2">
                                     <legend className="flex items-center gap-1.5 px-1 text-xs font-semibold text-green-900">
                                       <ShieldCheck className="h-3.5 w-3.5" />
-                                      Supervising at
+                                      Additional supervision coverage
                                     </legend>
                                     <div className="mt-1 flex flex-wrap gap-x-4 gap-y-2">
                                       {activeLocations.map((location) => (

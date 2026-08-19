@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { brandPortalEmailHtml } from "../_shared/emailBranding.ts";
 
 type SupabaseAdminClient = any;
 
@@ -60,7 +61,7 @@ const sendBrevoEmail = async ({
       sender: { email: senderEmail, name: senderName },
       to: [{ email: to, name: toName || to }],
       subject,
-      htmlContent: html,
+      htmlContent: await brandPortalEmailHtml(html),
     }),
   });
 

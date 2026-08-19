@@ -3,6 +3,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { getConnectedStripeAccountId, stripeHeaders, stripeIdempotencyKey } from "../_shared/stripeConnectAccount.ts";
 import { addStripeModeMetadata, getActiveStripeMode, stripeModeColumns, stripePriceIdForMode, testModeSubject } from "../_shared/stripeMode.ts";
 import { trialVoucherProductBookingSetup } from "../_shared/trialVoucherReadiness.ts";
+import { brandPortalEmailHtml } from "../_shared/emailBranding.ts";
 
 type SupabaseAdminClient = any;
 
@@ -85,7 +86,7 @@ const sendBrevoEmail = async ({
       sender: { email: senderEmail, name: senderName },
       to: [{ email: to, name: toName || to }],
       subject,
-      htmlContent: html,
+      htmlContent: await brandPortalEmailHtml(html),
     }),
   });
 

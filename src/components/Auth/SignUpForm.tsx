@@ -1,3 +1,5 @@
+import { SearchableSelect } from '../common/SearchableSelect';
+import { SearchableSuggestionInput } from '../common/SearchableSuggestionInput';
 import React, { useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Plane, Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
@@ -8,6 +10,7 @@ import { AddressAutocomplete } from '../common/AddressAutocomplete';
 import { useMembershipDocuments } from '../../hooks/useMembershipDocuments';
 import { membershipDocumentsAreReady } from '../../utils/membershipDocumentRules';
 import { PRIVACY_NOTICE_VERSION } from '../../utils/privacyNotice';
+import { isUnder18On } from '../../utils/membershipChangeRules';
 
 interface SignUpFormProps {
   onBackToLogin: () => void;
@@ -55,6 +58,12 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
     membershipDocumentsLoading,
     membershipDocumentsError,
   );
+  const isUnder18 = isUnder18On(formData.dateOfBirth);
+
+  React.useEffect(() => {
+    if (formData.membershipClass !== 'junior' || isUnder18) return;
+    setFormData(current => ({ ...current, membershipClass: 'full' }));
+  }, [formData.membershipClass, isUnder18]);
 
   const addEndorsement = () => {
     if (!endorsementDraft.type.trim()) {
@@ -126,9 +135,6 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
       return;
     }
 
-    const isUnder18 = formData.dateOfBirth
-      ? new Date(formData.dateOfBirth) > new Date(new Date().setFullYear(new Date().getFullYear() - 18))
-      : false;
     if (formData.membershipClass === 'junior' && !isUnder18) {
       toast.error('Junior membership is for applicants under 18 and requires a date of birth');
       return;
@@ -287,15 +293,16 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
               <h3 className="text-sm font-bold text-blue-950">BFC membership application</h3>
               <p className="mt-1 text-xs text-blue-800">This creates a portal account and submits your Bendigo Flying Club membership application. RAAus membership is separate.</p>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <label className="block text-sm font-medium text-gray-700">Membership class
-                  <select value={formData.membershipClass} onChange={event => setFormData({ ...formData, membershipClass: event.target.value })} className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-3">
-                    <option value="full">Full — $150/year (voting)</option>
-                    <option value="junior">Junior — $75/year</option>
-                    <option value="affiliate">Affiliate — $45/year</option>
-                  </select>
-                </label>
                 <label className="block text-sm font-medium text-gray-700">Date of birth
                   <input type="date" value={formData.dateOfBirth} onChange={event => setFormData({ ...formData, dateOfBirth: event.target.value })} className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-3" />
+                  {!isUnder18 && <span className="mt-1 block text-xs font-normal text-gray-500">Junior membership appears only for applicants under 18.</span>}
+                </label>
+                <label className="block text-sm font-medium text-gray-700">Membership class
+                  <SearchableSelect value={formData.membershipClass} onChange={event => setFormData({ ...formData, membershipClass: event.target.value })} className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-3">
+                    <option value="full">Full — $150/year (voting)</option>
+                    {isUnder18 && <option value="junior">Junior — $75/year</option>}
+                    <option value="affiliate">Affiliate — $45/year</option>
+                  </SearchableSelect>
                 </label>
                 <label className="block text-sm font-medium text-gray-700 sm:col-span-2">Residential address
                   <AddressAutocomplete required value={formData.residentialAddress} onChange={residentialAddress => setFormData(current => ({ ...current, residentialAddress }))} className="mt-1" inputClassName="rounded-md" />
@@ -304,7 +311,7 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
                 {!sameServiceAddress && <label className="block text-sm font-medium text-gray-700 sm:col-span-2">Address for service
                   <AddressAutocomplete required value={formData.serviceAddress} onChange={serviceAddress => setFormData(current => ({ ...current, serviceAddress }))} className="mt-1" inputClassName="rounded-md" placeholder="Start typing your address for formal notices" autoComplete="street-address" />
                 </label>}
-                {formData.dateOfBirth && new Date(formData.dateOfBirth) > new Date(new Date().setFullYear(new Date().getFullYear() - 18)) && <>
+                {isUnder18 && <>
                   <label className="block text-sm font-medium text-gray-700">Parent or guardian name
                     <input required value={formData.guardianName} onChange={event => setFormData({ ...formData, guardianName: event.target.value })} className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-3" />
                   </label>
@@ -359,18 +366,13 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <label className="block md:col-span-2">
                   <span className="mb-1 block text-sm font-medium text-gray-700">Endorsement</span>
-                  <input
-                    list="signup-endorsement-types"
+                  <SearchableSuggestionInput
+                    options={DEFAULT_ENDORSEMENT_TYPES}
                     value={endorsementDraft.type}
-                    onChange={(e) => setEndorsementDraft({ ...endorsementDraft, type: e.target.value })}
+                    onValueChange={type => setEndorsementDraft({ ...endorsementDraft, type })}
                     className="w-full rounded-md border border-gray-300 px-3 py-3 shadow-sm placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Select or enter endorsement"
                   />
-                  <datalist id="signup-endorsement-types">
-                    {DEFAULT_ENDORSEMENT_TYPES.map((type) => (
-                      <option key={type} value={type} />
-                    ))}
-                  </datalist>
                 </label>
                 <label className="block">
                   <span className="mb-1 block text-sm font-medium text-gray-700">Obtained</span>

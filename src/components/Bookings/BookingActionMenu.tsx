@@ -1,5 +1,5 @@
 import React from 'react';
-import { CreditCard as Edit, FileText, Trash2, MoreVertical, Check, X as XIcon, User, Copy, RotateCcw, CalendarPlus } from 'lucide-react';
+import { CreditCard as Edit, FileText, Trash2, MoreVertical, Check, X as XIcon, User, Copy, RotateCcw, CalendarPlus, Loader2, ShieldCheck } from 'lucide-react';
 import { Booking } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { usePortalUxSettings } from '../../hooks/useSettings';
@@ -20,6 +20,8 @@ interface BookingActionMenuProps {
   onViewTrainingRecord?: () => void;
   onApprove?: () => void;
   onReject?: () => void;
+  onAcceptSupervision?: () => Promise<void> | void;
+  acceptingSupervision?: boolean;
   hasTrainingRecord?: boolean;
   canDelete?: boolean;
   canApprove?: boolean;
@@ -45,6 +47,8 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
   onViewTrainingRecord,
   onApprove,
   onReject,
+  onAcceptSupervision,
+  acceptingSupervision = false,
   hasTrainingRecord,
   canDelete = true,
   canApprove = false,
@@ -78,6 +82,9 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
   const menuRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
+    const originalOverflow = document.body.style.overflow;
+    const lockMobileScroll = window.matchMedia('(max-width: 767px)').matches && (isOpen || Boolean(position));
+    if (lockMobileScroll) document.body.style.overflow = 'hidden';
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setIsOpen(false);
@@ -102,6 +109,7 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
     }
 
     return () => {
+      if (lockMobileScroll) document.body.style.overflow = originalOverflow;
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('keydown', handleEscape);
     };
@@ -175,8 +183,35 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
           className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2 transition-colors"
         >
           <User className="h-4 w-4" />
-          <span>Convert Guest To Member</span>
+          <span>Create / attach official profile</span>
         </button>
+      )}
+
+      {booking.supervisionRequired
+        && booking.supervisionStatus === 'pending'
+        && onAcceptSupervision && (
+        <div className="mx-2 my-2 rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-800/70 dark:bg-amber-950/30">
+          <div className="flex items-start gap-2">
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-300" />
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-amber-950 dark:text-amber-100">No rostered supervisor</p>
+              <p className="mt-1 text-[11px] leading-4 text-amber-800 dark:text-amber-200">
+                Accept only if you will be present and responsible for supervising this booking.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            disabled={acceptingSupervision}
+            onClick={() => void onAcceptSupervision()}
+            className="mt-3 flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-amber-700 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-amber-800 disabled:cursor-wait disabled:opacity-70"
+          >
+            {acceptingSupervision
+              ? <Loader2 className="h-4 w-4 animate-spin" />
+              : <ShieldCheck className="h-4 w-4" />}
+            <span>{acceptingSupervision ? 'Authorising…' : 'I will supervise this booking'}</span>
+          </button>
+        </div>
       )}
 
       {canEdit && !isFlightLogged && (
@@ -291,14 +326,41 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
     </>
   );
 
+  const mobileMenuHeader = (
+    <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 md:hidden">
+      <div>
+        <p className="text-sm font-bold text-gray-900">Booking actions</p>
+        <p className="text-xs text-gray-500">Choose what you want to do</p>
+      </div>
+      <button
+        type="button"
+        onClick={() => position && onClose ? onClose() : setIsOpen(false)}
+        className="flex h-11 w-11 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100"
+        aria-label="Close booking actions"
+      >
+        <XIcon className="h-5 w-5" />
+      </button>
+    </div>
+  );
+
   if (position) {
     return (
       <>
+        <button
+          type="button"
+          className="booking-action-backdrop fixed inset-0 z-[49] bg-black/35 md:bg-transparent"
+          onClick={() => onClose?.()}
+          aria-label="Close booking actions"
+        />
         <div
           ref={menuRef}
-          className="fixed z-50 min-w-[200px] rounded-lg border border-gray-200 bg-white py-2 shadow-lg"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Booking actions"
+          className="booking-action-menu fixed z-50 min-w-[200px] rounded-lg border border-gray-200 bg-white py-2 shadow-lg"
           style={fixedMenuStyle}
         >
+          {mobileMenuHeader}
           {menuContent}
         </div>
         {showCalendarModal && (
@@ -326,9 +388,18 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 z-50 mt-2 w-56 rounded-lg border border-gray-200 bg-white py-2 shadow-lg">
-          {menuContent}
-        </div>
+        <>
+          <button
+            type="button"
+            className="booking-action-backdrop fixed inset-0 z-[49] bg-black/35 md:hidden"
+            onClick={() => setIsOpen(false)}
+            aria-label="Close booking actions"
+          />
+          <div className="booking-action-menu absolute right-0 z-50 mt-2 w-56 rounded-lg border border-gray-200 bg-white py-2 shadow-lg" role="dialog" aria-modal="true" aria-label="Booking actions">
+            {mobileMenuHeader}
+            {menuContent}
+          </div>
+        </>
       )}
     </div>
     {showCalendarModal && (

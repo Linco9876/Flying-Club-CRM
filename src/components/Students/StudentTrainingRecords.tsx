@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useTrainingModules } from '../../context/TrainingModulesContext';
-import { shouldCompactAcknowledgedLesson } from '../../utils/lessonRecordPresentation';
+import { shouldUseCompactLessonRecord } from '../../utils/lessonRecordPresentation';
 import { AcknowledgedLessonSummary } from './AcknowledgedLessonSummary';
 
 const competenceColors: Record<string, string> = {
@@ -69,19 +69,20 @@ interface RecordRowProps {
   record: TrainingRecord;
   instructorName: string;
   lessonName: string;
+  requiresAcknowledgement: boolean;
+  criterionNames: Map<string, string>;
   onAcknowledge: (id: string, name: string, comments: string) => Promise<void>;
 }
 
-const RecordRow: React.FC<RecordRowProps> = ({ record, instructorName, lessonName, onAcknowledge }) => {
+const RecordRow: React.FC<RecordRowProps> = ({ record, instructorName, lessonName, requiresAcknowledgement, criterionNames, onAcknowledge }) => {
   const { user } = useAuth();
   const [expanded, setExpanded] = useState(false);
-  const [acknowledgedDetailsExpanded, setAcknowledgedDetailsExpanded] = useState(false);
   const [acknowledging, setAcknowledging] = useState(false);
   const [comments, setComments] = useState(record.studentComments || '');
   const [savingComments, setSavingComments] = useState(false);
   const [commentsChanged, setCommentsChanged] = useState(false);
 
-  const canAcknowledge = record.status === 'submitted' && !record.studentAck;
+  const canAcknowledge = requiresAcknowledgement && record.status === 'submitted' && !record.studentAck;
   const canComment = record.status === 'submitted' || record.status === 'locked';
 
   const handleAcknowledge = async () => {
@@ -113,15 +114,18 @@ const RecordRow: React.FC<RecordRowProps> = ({ record, instructorName, lessonNam
 
   const dualHrs = (record.dualTimeMin / 60).toFixed(1);
   const soloHrs = (record.soloTimeMin / 60).toFixed(1);
-  const detailsOpen = record.studentAck ? acknowledgedDetailsExpanded : expanded;
+  const detailsOpen = expanded;
 
-  if (shouldCompactAcknowledgedLesson(record, acknowledgedDetailsExpanded)) {
+  if (shouldUseCompactLessonRecord(record, {
+    detailsExpanded: false,
+    requiresAcknowledgement,
+    viewerCanExpand: false,
+  })) {
     return (
       <AcknowledgedLessonSummary
         record={record}
         instructorName={instructorName}
         lessonName={lessonName}
-        onExpand={() => setAcknowledgedDetailsExpanded(true)}
       />
     );
   }
@@ -131,8 +135,7 @@ const RecordRow: React.FC<RecordRowProps> = ({ record, instructorName, lessonNam
       {/* Row header */}
       <button
         onClick={() => {
-          if (record.studentAck) setAcknowledgedDetailsExpanded(false);
-          else setExpanded(current => !current);
+          setExpanded(current => !current);
         }}
         className="w-full flex items-center gap-4 px-5 py-4 text-left hover:bg-gray-50 transition-colors"
       >
@@ -154,6 +157,7 @@ const RecordRow: React.FC<RecordRowProps> = ({ record, instructorName, lessonNam
             )}
           </div>
           <div className="flex items-center gap-3 mt-1">
+            <span className="truncate text-xs font-semibold text-blue-700">{lessonName}</span>
             <span className="text-xs text-gray-500">Dual {dualHrs}h</span>
             <span className="text-xs text-gray-500">Solo {soloHrs}h</span>
             {record.lessonCodes.length > 0 && (
@@ -218,6 +222,26 @@ const RecordRow: React.FC<RecordRowProps> = ({ record, instructorName, lessonNam
                     <span className="hidden sm:inline opacity-70">— {seq.sequenceTitle}</span>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {Object.entries(record.criteriaGrades ?? {}).filter(([, grade]) => grade && grade !== '-').length > 0 && (
+            <div>
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">Assessment Grades</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {Object.entries(record.criteriaGrades ?? {})
+                  .filter(([, grade]) => grade && grade !== '-')
+                  .map(([criterionId, grade]) => (
+                    <div key={criterionId} className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                      <span className="min-w-0 truncate text-xs font-medium text-gray-700">
+                        {criterionNames.get(criterionId) || 'Assessment item'}
+                      </span>
+                      <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-bold ${competenceColors[grade] || 'border-blue-200 bg-blue-100 text-blue-800'}`}>
+                        {grade}
+                      </span>
+                    </div>
+                  ))}
               </div>
             </div>
           )}
@@ -416,7 +440,6 @@ export const StudentTrainingRecords: React.FC = () => {
     }
   };
 
-  const pending = records.filter(r => r.status === 'submitted' && !r.studentAck);
   const lessonNames = useMemo(() => {
     const names = new Map<string, string>();
     modules.forEach(module => module.lessons.forEach(lesson => {
@@ -424,9 +447,26 @@ export const StudentTrainingRecords: React.FC = () => {
     }));
     return names;
   }, [modules]);
+  const criterionNames = useMemo(() => {
+    const names = new Map<string, string>();
+    modules.forEach(module => module.assessmentCriteria.forEach(criterion => {
+      names.set(criterion.id, criterion.name);
+    }));
+    return names;
+  }, [modules]);
+  const courseAcknowledgementRequirements = useMemo(
+    () => new Map(modules.map(module => [module.id, module.requiresStudentAcknowledgement ?? true])),
+    [modules],
+  );
+  const requiresAcknowledgement = (record: TrainingRecord) => (
+    record.courseId ? (courseAcknowledgementRequirements.get(record.courseId) ?? true) : true
+  );
+  const pending = records.filter(record => (
+    requiresAcknowledgement(record) && record.status === 'submitted' && !record.studentAck
+  ));
   const filtered =
     filter === 'pending' ? pending :
-    filter === 'acknowledged' ? records.filter(r => r.studentAck || r.status === 'locked') :
+    filter === 'acknowledged' ? records.filter(record => !requiresAcknowledgement(record) || record.studentAck || record.status === 'locked') :
     records;
 
   if (loading) {
@@ -488,6 +528,8 @@ export const StudentTrainingRecords: React.FC = () => {
               record={record}
               instructorName={record.sourceInstructorName || instructorNames[record.instructorId] || ''}
               lessonName={(record.lessonId && lessonNames.get(record.lessonId)) || record.lessonCodes.join(', ') || 'Lesson not recorded'}
+              requiresAcknowledgement={requiresAcknowledgement(record)}
+              criterionNames={criterionNames}
               onAcknowledge={handleAcknowledge}
             />
           ))}

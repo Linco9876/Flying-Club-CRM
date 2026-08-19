@@ -1,13 +1,16 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useStudents } from '../../hooks/useStudents';
 import { useSafetySettings } from '../../hooks/useSafetySettings';
 import type { FlightLog } from '../../hooks/useFlightLogs';
+import { useExternalLogbook } from '../../hooks/useExternalLogbook';
 import { buildSafetyComplianceSummary, getBfrDueDate, isStudentOnly } from '../../utils/safetyCompliance';
 import { Download, Search, AlertTriangle, CheckCircle, Clock, CalendarDays, ShieldCheck, Loader2 } from 'lucide-react';
 import { hasAnyRole } from '../../utils/rbac';
 import { supabase } from '../../lib/supabase';
 import { StudentFileLink } from '../Students/StudentFileLink';
+import { filterActiveSafetyMembers } from '../../utils/safetyMemberVisibility';
 
 interface PilotCurrency {
   id: string;
@@ -28,10 +31,16 @@ interface PilotCurrency {
 export const PilotCurrencyTab: React.FC = () => {
   const { user } = useAuth();
   const { students, loading: studentsLoading } = useStudents();
-  const [flightLogs, setFlightLogs] = useState<Array<Pick<FlightLog, 'student_id' | 'instructor_id' | 'start_time' | 'solo_time' | 'flight_duration'>>>([]);
+  const [flightLogs, setFlightLogs] = useState<Array<Pick<FlightLog, 'student_id' | 'instructor_id' | 'start_time' | 'solo_time' | 'dual_time' | 'flight_duration'>>>([]);
   const [flightLogsLoading, setFlightLogsLoading] = useState(true);
   const [flightLogsError, setFlightLogsError] = useState<string | null>(null);
   const { settings } = useSafetySettings();
+  const {
+    baselines: logbookBaselines,
+    entries: externalLogbookEntries,
+    loading: externalLogbookLoading,
+    error: externalLogbookError,
+  } = useExternalLogbook();
   const [searchTerm, setSearchTerm] = useState('');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [endorsementFilter, setEndorsementFilter] = useState('');
@@ -49,7 +58,7 @@ export const PilotCurrencyTab: React.FC = () => {
       try {
         const { data, error } = await supabase
           .from('flight_logs')
-          .select('student_id, instructor_id, start_time, solo_time, flight_duration');
+          .select('student_id, instructor_id, start_time, solo_time, dual_time, flight_duration');
 
         if (error) throw error;
         if (active) setFlightLogs(data || []);
@@ -69,9 +78,10 @@ export const PilotCurrencyTab: React.FC = () => {
   }, []);
 
   const calculatePilotCurrency = (): PilotCurrency[] => {
+    const activeStudents = filterActiveSafetyMembers(students);
     const pilots = isMemberSelfView
-      ? students.filter(candidate => candidate.id === user?.id)
-      : students.filter(candidate =>
+      ? activeStudents.filter(candidate => candidate.id === user?.id)
+      : activeStudents.filter(candidate =>
           !isStudentOnly(candidate) && (
             candidate.roles?.some(role => ['pilot', 'instructor', 'senior_instructor', 'admin'].includes(role)) ||
             ['pilot', 'instructor', 'senior_instructor', 'admin'].includes(candidate.role)
@@ -81,7 +91,10 @@ export const PilotCurrencyTab: React.FC = () => {
     const today = new Date();
 
     return pilots.map(pilot => {
-      const summary = buildSafetyComplianceSummary(pilot, settings, flightLogs);
+      const summary = buildSafetyComplianceSummary(pilot, settings, flightLogs, {
+        baselines: logbookBaselines,
+        externalEntries: externalLogbookEntries,
+      });
       const bfrDue = getBfrDueDate(pilot);
 
       // Calculate days until expiry
@@ -220,7 +233,7 @@ export const PilotCurrencyTab: React.FC = () => {
     return `${days} days`;
   };
 
-  if (studentsLoading || flightLogsLoading) {
+  if (studentsLoading || flightLogsLoading || externalLogbookLoading) {
     return (
       <div className="flex min-h-[18rem] items-center justify-center rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
         <div className="text-center">
@@ -232,14 +245,14 @@ export const PilotCurrencyTab: React.FC = () => {
     );
   }
 
-  if (flightLogsError) {
+  if (flightLogsError || externalLogbookError) {
     return (
       <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-red-800 shadow-sm">
         <div className="flex items-start gap-3">
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
           <div>
             <p className="font-semibold">Pilot currency could not be calculated</p>
-            <p className="mt-1 text-sm">{flightLogsError}</p>
+            <p className="mt-1 text-sm">{flightLogsError || externalLogbookError}</p>
           </div>
         </div>
       </div>
@@ -390,7 +403,7 @@ export const PilotCurrencyTab: React.FC = () => {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Endorsement</label>
-            <select
+            <SearchableSelect
               value={endorsementFilter}
               onChange={(e) => setEndorsementFilter(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -401,7 +414,7 @@ export const PilotCurrencyTab: React.FC = () => {
               <option value="CROSS-COUNTRY">Cross Country</option>
               <option value="RADIO">Radio Operator</option>
               <option value="NAVIGATION">Navigation</option>
-            </select>
+            </SearchableSelect>
           </div>
         </div>
 

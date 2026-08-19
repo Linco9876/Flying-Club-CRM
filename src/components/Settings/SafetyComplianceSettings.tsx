@@ -3,6 +3,8 @@ import { Shield, Users, Plus, Trash2, Loader2 } from 'lucide-react';
 import { SafetyReportCategory, useSafetySettings } from '../../hooks/useSafetySettings';
 import { useTrainingSettings } from '../../hooks/useTrainingSettings';
 import { useLatestEffect } from '../../hooks/useLatestEffect';
+import { getSafetySettingsValidationError } from '../../utils/safetySettingsRules';
+import { SettingsLoadError } from './SettingsLoadError';
 
 interface SafetyComplianceSettingsProps {
   canEdit: boolean;
@@ -14,13 +16,14 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
     settings,
     categories,
     loading,
+    error,
     updateSettings,
-    addCategory,
-    updateCategory,
-    deleteCategory
+    replaceCategories,
+    refetch,
   } = useSafetySettings();
-  const { settings: trainingSettings } = useTrainingSettings();
+  const { settings: trainingSettings, error: trainingError, refetch: refetchTraining } = useTrainingSettings();
   const [formData, setFormData] = useState(settings);
+  const [categoryDrafts, setCategoryDrafts] = useState<SafetyReportCategory[]>(categories);
 
   const handleInputChange = (field: string, value: string | number | boolean | string[]) => {
     setFormData(current => ({ ...current, [field]: value }));
@@ -39,17 +42,27 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
     const updates: Partial<SafetyReportCategory> = field === 'name'
       ? { name: value }
       : { defaultAssignee: value };
-    updateCategory(id, updates);
+    setCategoryDrafts(current => current.map(category =>
+      category.id === id ? { ...category, ...updates } : category
+    ));
     onFormChange();
   };
 
   const handleAddCategory = () => {
-    addCategory('New Category', 'Safety Officer');
+    setCategoryDrafts(current => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        name: 'New Category',
+        defaultAssignee: 'Safety Officer',
+        displayOrder: current.length,
+      },
+    ]);
     onFormChange();
   };
 
   const handleRemoveCategory = (id: string) => {
-    deleteCategory(id);
+    setCategoryDrafts(current => current.filter(category => category.id !== id));
     onFormChange();
   };
 
@@ -57,24 +70,48 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
     setFormData(settings);
   }, [settings]);
 
+  useEffect(() => {
+    setCategoryDrafts(categories);
+  }, [categories]);
+
   useLatestEffect(() => {
     const settingsWindow = window as Window & {
       __safetySettingsSave?: () => Promise<void>;
       __safetySettingsCancel?: () => void;
     };
-    settingsWindow.__safetySettingsSave = async () => updateSettings(formData);
-    settingsWindow.__safetySettingsCancel = () => setFormData(settings);
+    settingsWindow.__safetySettingsSave = async () => {
+      const validationError = getSafetySettingsValidationError(formData);
+      if (validationError) throw new Error(validationError);
+      const names = categoryDrafts.map(category => category.name.trim().toLowerCase());
+      if (names.some(name => !name)) throw new Error('Every safety report category needs a name.');
+      if (new Set(names).size !== names.length) throw new Error('Safety report category names must be unique.');
+      await updateSettings(formData);
+      await replaceCategories(categoryDrafts);
+    };
+    settingsWindow.__safetySettingsCancel = () => {
+      setFormData(settings);
+      setCategoryDrafts(categories);
+    };
     return () => {
       delete settingsWindow.__safetySettingsSave;
       delete settingsWindow.__safetySettingsCancel;
     };
-  }, [formData, settings]);
+  }, [categories, categoryDrafts, formData, replaceCategories, settings]);
 
   if (loading) {
     return (
       <div className="p-6 flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
       </div>
+    );
+  }
+  if (error || trainingError) {
+    return (
+      <SettingsLoadError
+        section="Safety & Compliance"
+        error={error || trainingError || 'Safety settings could not be loaded'}
+        onRetry={async () => { await Promise.all([refetch(), refetchTraining()]); }}
+      />
     );
   }
 
@@ -101,7 +138,7 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
           </div>
           <div className="rounded-lg border border-white bg-white p-3 shadow-sm">
             <p className="font-semibold text-slate-950">Instructor S&amp;P checks</p>
-            <p className="mt-1 text-xs leading-5">CFI-only protected records use a 90-day interval for Instructors, 12 months for Senior Instructors and a two-year rating renewal cycle.</p>
+            <p className="mt-1 text-xs leading-5">CFI/DCFI-protected records use a 90-day interval for Instructors, 12 months for Senior Instructors and a two-year rating renewal cycle. A satisfactory renewal also resets BFR currency.</p>
           </div>
         </div>
       </div>
@@ -210,7 +247,7 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
             <div className="rounded-lg border border-cyan-100 bg-cyan-50 p-4">
               <p className="text-sm font-semibold text-cyan-950">Instructor S&amp;P</p>
               <p className="mt-2 text-2xl font-bold text-cyan-900">90 days</p>
-              <p className="mt-1 text-xs leading-5 text-cyan-800">Recorded by a CFI before instructional duties begin and at each recurring check.</p>
+              <p className="mt-1 text-xs leading-5 text-cyan-800">Recorded by an authorised CFI or DCFI before instructional duties begin and at each recurring check.</p>
             </div>
             <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
               <p className="text-sm font-semibold text-blue-950">Senior Instructor S&amp;P</p>
@@ -220,7 +257,7 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
             <div className="rounded-lg border border-indigo-100 bg-indigo-50 p-4">
               <p className="text-sm font-semibold text-indigo-950">Rating renewal</p>
               <p className="mt-2 text-2xl font-bold text-indigo-900">2 years</p>
-              <p className="mt-1 text-xs leading-5 text-indigo-800">The completed RAAus renewal form must be attached before the protected record can be finalised.</p>
+              <p className="mt-1 text-xs leading-5 text-indigo-800">Requires a satisfactory assessment, both logbook entries, the completed current RAAus form and confirmation it was supplied to RAAus. Completion resets BFR and S&amp;P currency.</p>
             </div>
           </div>
         </div>
@@ -233,7 +270,7 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
               <div className="text-sm font-medium text-gray-600">Category Name</div>
               <div className="text-sm font-medium text-gray-600">Default Assignee</div>
             </div>
-            {categories.map(category => (
+            {categoryDrafts.map(category => (
               <div key={category.id} className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
                 <input
                   type="text"
@@ -356,7 +393,7 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
                   disabled={!canEdit}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
                 />
-                <p className="text-xs text-gray-500 mt-1">Shown when a non-student books outside the recency period. Keep the PIC-hour guidance here if your club requires it.</p>
+                <p className="text-xs text-gray-500 mt-1">Shown when a non-student books without an instructor outside the recency period. Keep the PIC-hour guidance here if your club requires it.</p>
               </div>
 
               <div>

@@ -36,6 +36,9 @@ const isUuid = (value: string | undefined): value is string =>
 
 const encodeQuery = (value: string) => encodeURIComponent(value);
 
+const getBookingCalendarRoute = (bookingId: string) =>
+  `/calendar?view=day&bookingId=${encodeQuery(bookingId)}`;
+
 export const getSafeNotificationRoute = (route: string | undefined): string | null => {
   if (!route || !route.startsWith('/') || route.startsWith('//')) return null;
 
@@ -80,19 +83,27 @@ export const getNotificationDestination = (
   }
 
   if (notification.type === 'booking_approval' && isUuid(metadata.booking_id)) {
-    return `/calendar?view=list&bookingId=${encodeQuery(metadata.booking_id)}`;
+    return getBookingCalendarRoute(metadata.booking_id);
   }
 
   if (
     notification.type === 'duty_auto_started' ||
-    notification.type === 'duty_auto_closed'
+    notification.type === 'duty_auto_closed' ||
+    notification.type === 'duty_break_reminder'
   ) {
     return '/duty';
   }
 
   const bookingId = metadata.booking_id || notification.bookingId;
   if (isUuid(bookingId)) {
-    return `/calendar?view=list&bookingId=${encodeQuery(bookingId)}`;
+    return getBookingCalendarRoute(bookingId);
+  }
+
+  if (notification.type === 'outstanding_record') {
+    const query = isUuid(metadata.outstanding_flight_log_id)
+      ? `?outstandingFlightLogId=${encodeQuery(metadata.outstanding_flight_log_id)}`
+      : '';
+    return `/training/outstanding-records${query}`;
   }
 
   return getSafeNotificationRoute(metadata.route);

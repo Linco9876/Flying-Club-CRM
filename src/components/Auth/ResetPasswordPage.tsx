@@ -4,6 +4,7 @@ import { Plane, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import { clearPasswordSetupMarker, hasRecentPasswordSetupMarker } from '../../utils/invitationSetup';
+import { getAuthErrorMessage } from '../../utils/authErrorMessage';
 
 const PASSWORD_RESET_RETURN_KEY = 'bfc_password_reset_return_to';
 
@@ -191,12 +192,12 @@ export const ResetPasswordPage: React.FC = () => {
 
         sessionFallback.then((hasSession) => {
           if (!hasSession && !cancelled) {
-            toast.error(error.message || 'Invalid or expired reset link');
+            toast.error(getAuthErrorMessage(error, 'Invalid or expired reset link'));
             navigate('/', { replace: true });
           }
         }).catch(() => {
           if (!cancelled) {
-            toast.error(error.message || 'Invalid or expired reset link');
+            toast.error(getAuthErrorMessage(error, 'Invalid or expired reset link'));
             navigate('/', { replace: true });
           }
         });
@@ -330,9 +331,12 @@ export const ResetPasswordPage: React.FC = () => {
       setTimeout(() => {
         window.location.replace(redirect.redirectTo);
       }, 1200);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Password update error:', error);
-      const message = error.message || 'Failed to update password';
+      const message = getAuthErrorMessage(
+        error,
+        'The password could not be updated. Request a fresh reset link and try again.',
+      );
 
       if (message.toLowerCase().includes('same as the old')) {
         clearPasswordSetupMarker();
@@ -397,6 +401,7 @@ export const ResetPasswordPage: React.FC = () => {
                   id="password"
                   name="password"
                   type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -425,6 +430,7 @@ export const ResetPasswordPage: React.FC = () => {
                 id="confirmPassword"
                 name="confirmPassword"
                 type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password"
                 required
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}

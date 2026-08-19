@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useDashboardStats } from '../../hooks/useDashboardStats';
-import { usePortalUxSettings } from '../../hooks/useSettings';
+import { usePortalUxSettings, useUserPreferences } from '../../hooks/useSettings';
 import { useTrainingRecords } from '../../hooks/useTrainingRecords';
 import { useStudentCourseEnrolments } from '../../hooks/useStudentCourseEnrolments';
 import { useTrainingModules } from '../../context/TrainingModulesContext';
@@ -46,6 +46,10 @@ import {
 import type { BrowserCalendarEvent } from '../../utils/calendar';
 import { profilePictureSettingsDestination } from '../../utils/profilePicture';
 import { safeImageSource } from '../../utils/imageSource';
+import {
+  getCourseFlightTestCompletion,
+  getCourseLessonCompletionPercentage,
+} from '../../utils/courseFlightTestCompletion';
 import { AddToCalendarModal } from '../Bookings/AddToCalendarModal';
 
 interface ProfileStudentDetails {
@@ -54,7 +58,8 @@ interface ProfileStudentDetails {
   medicalType?: string;
   medicalExpiry?: Date;
   licenceExpiry?: Date;
-  lastFlightReview?: Date;
+  lastRaausBfrDate?: Date;
+  lastCasaAfrDate?: Date;
   licences: Array<{
     type?: string;
     issuingAuthority?: string;
@@ -144,6 +149,7 @@ export const ProfileDashboard: React.FC = () => {
 
   const { stats, loading } = useDashboardStats(user?.id, operationalRole, 'user');
   const { settings: portalSettings } = usePortalUxSettings();
+  const { preferences: userPreferences, loading: preferencesLoading } = useUserPreferences(user?.id || '');
   const { trainingRecords, loading: trainingRecordsLoading } = useTrainingRecords(user?.id);
   const { modules: trainingCourses, loading: trainingCoursesLoading } = useTrainingModules();
   const { enrolments: courseEnrolments, loading: courseEnrolmentsLoading } = useStudentCourseEnrolments(user?.id);
@@ -151,6 +157,9 @@ export const ProfileDashboard: React.FC = () => {
   const [studentDetails, setStudentDetails] = useState<ProfileStudentDetails | null>(null);
   const [studentDetailsLoading, setStudentDetailsLoading] = useState(true);
   const [showCalendarModal, setShowCalendarModal] = useState(false);
+  const showUpcomingBookings = userPreferences?.show_upcoming_bookings ?? true;
+  const showTrainingProgress = userPreferences?.show_progress_dashboard ?? true;
+  const showRecentActivity = userPreferences?.show_recent_activity ?? true;
 
   const timePattern = portalSettings.time_format === '12h' ? 'h:mm a' : 'HH:mm';
   const datePattern = portalSettings.date_format || 'dd/MM/yyyy';
@@ -170,10 +179,18 @@ export const ProfileDashboard: React.FC = () => {
 
       const courseRecords = studentTrainingRecords.filter(record => record.courseId === course.id);
       const completedLessonIds = new Set(courseRecords.map(record => record.lessonId).filter(Boolean));
+      const flightTestCompletion = getCourseFlightTestCompletion(
+        course.lessons,
+        courseRecords,
+        record => record.lessonId,
+      );
+      flightTestCompletion.inferredPassedLessonIds.forEach(lessonId => completedLessonIds.add(lessonId));
       const totalLessons = course.lessons.length;
-      const percent = totalLessons > 0
-        ? Math.min(100, Math.round((completedLessonIds.size / totalLessons) * 100))
-        : 0;
+      const percent = getCourseLessonCompletionPercentage(
+        completedLessonIds.size,
+        totalLessons,
+        flightTestCompletion.completedByFlightTest,
+      );
       const latestRecord = [...courseRecords].sort((a, b) =>
         (b.bookingStartTime || b.date).getTime() - (a.bookingStartTime || a.date).getTime()
       )[0];
@@ -192,7 +209,7 @@ export const ProfileDashboard: React.FC = () => {
         recentRecords: [...courseRecords]
           .sort((a, b) => (b.bookingStartTime || b.date).getTime() - (a.bookingStartTime || a.date).getTime())
           .slice(0, 3),
-        isComplete: totalLessons > 0 && completedLessonIds.size >= totalLessons,
+        isComplete: flightTestCompletion.completedByFlightTest || (totalLessons > 0 && completedLessonIds.size >= totalLessons),
       };
     })
     .filter((summary): summary is NonNullable<typeof summary> => Boolean(summary))
@@ -243,7 +260,7 @@ export const ProfileDashboard: React.FC = () => {
       setStudentDetailsLoading(true);
       const studentQuery = supabase
         .from('students')
-        .select('raaus_id, casa_id, medical_type, medical_expiry, licence_expiry, last_flight_review, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship')
+        .select('raaus_id, casa_id, medical_type, medical_expiry, licence_expiry, last_raaus_bfr_date, last_casa_afr_date, last_flight_review, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship')
         .eq('id', user.id)
         .maybeSingle();
       const licencesQuery = supabase
@@ -281,7 +298,8 @@ export const ProfileDashboard: React.FC = () => {
           medicalType: data.medical_type,
           medicalExpiry: data.medical_expiry ? new Date(data.medical_expiry) : undefined,
           licenceExpiry: data.licence_expiry ? new Date(data.licence_expiry) : undefined,
-          lastFlightReview: data.last_flight_review ? new Date(data.last_flight_review) : undefined,
+          lastRaausBfrDate: data.last_raaus_bfr_date ? new Date(data.last_raaus_bfr_date) : data.last_flight_review ? new Date(data.last_flight_review) : undefined,
+          lastCasaAfrDate: data.last_casa_afr_date ? new Date(data.last_casa_afr_date) : undefined,
           licences: (licenceRows || []).map(licence => ({
             type: licence.type,
             issuingAuthority: licence.issuing_authority || undefined,
@@ -325,6 +343,7 @@ export const ProfileDashboard: React.FC = () => {
   }, [isInstructor, user?.emergencyContact, user?.id]);
 
   const pageLoading = loading ||
+    preferencesLoading ||
     trainingRecordsLoading ||
     trainingCoursesLoading ||
     courseEnrolmentsLoading ||
@@ -362,13 +381,13 @@ export const ProfileDashboard: React.FC = () => {
     : getDatedReadinessStatus(studentDetails?.medicalExpiry),
   [hasSelfDeclaredMedical, studentDetails?.medicalExpiry]);
   const needsFlightReview = requiresFlightReview(roles);
-  const flightReviewDue = useMemo(() => studentDetails?.lastFlightReview
+  const flightReviewDue = useMemo(() => studentDetails?.lastRaausBfrDate
     ? new Date(
-        studentDetails.lastFlightReview.getFullYear() + 2,
-        studentDetails.lastFlightReview.getMonth(),
-        studentDetails.lastFlightReview.getDate()
+        studentDetails.lastRaausBfrDate.getFullYear() + 2,
+        studentDetails.lastRaausBfrDate.getMonth(),
+        studentDetails.lastRaausBfrDate.getDate()
       )
-    : undefined, [studentDetails?.lastFlightReview]);
+    : undefined, [studentDetails?.lastRaausBfrDate]);
   const flightReviewStatus = useMemo(
     () => getDatedReadinessStatus(flightReviewDue),
     [flightReviewDue]
@@ -813,6 +832,7 @@ export const ProfileDashboard: React.FC = () => {
 
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1.45fr)_minmax(19rem,0.75fr)]">
           <div className="space-y-5">
+            {showUpcomingBookings && (
             <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900" aria-labelledby="next-booking-title">
               <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 dark:border-slate-700">
                 <div className="flex items-start gap-3">
@@ -919,8 +939,9 @@ export const ProfileDashboard: React.FC = () => {
                 </div>
               )}
             </section>
+            )}
 
-            {isStudentOnly && currentCourseSummary && (
+            {showTrainingProgress && isStudentOnly && currentCourseSummary && (
               <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="flex items-start gap-3">
@@ -962,6 +983,7 @@ export const ProfileDashboard: React.FC = () => {
               </section>
             )}
 
+            {showRecentActivity && (
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex items-start gap-3">
@@ -994,6 +1016,7 @@ export const ProfileDashboard: React.FC = () => {
                 Last flight: <span className="font-semibold text-slate-800 dark:text-slate-100">{lastFlightDate ? format(lastFlightDate, datePattern) : 'No flight recorded'}</span>
               </p>
             </section>
+            )}
           </div>
 
           <aside className="space-y-5">
@@ -1116,6 +1139,8 @@ export const ProfileDashboard: React.FC = () => {
                   {studentDetails?.casaId && (
                     <div className="flex justify-between gap-3"><span className="text-slate-500 dark:text-slate-400">CASA ARN</span><span className="text-right font-semibold text-slate-900 dark:text-white">{studentDetails.casaId}</span></div>
                   )}
+                  <div className="flex justify-between gap-3"><span className="text-slate-500 dark:text-slate-400">Last RAAus BFR</span><span className="text-right font-semibold text-slate-900 dark:text-white">{studentDetails?.lastRaausBfrDate ? format(studentDetails.lastRaausBfrDate, datePattern) : 'Not recorded'}</span></div>
+                  <div className="flex justify-between gap-3"><span className="text-slate-500 dark:text-slate-400">Last CASA AFR</span><span className="text-right font-semibold text-slate-900 dark:text-white">{studentDetails?.lastCasaAfrDate ? format(studentDetails.lastCasaAfrDate, datePattern) : 'Not recorded'}</span></div>
                   {hasRecordedMedical && (
                     <div className="flex justify-between gap-3"><span className="text-slate-500 dark:text-slate-400">Medical</span><span className="text-right font-semibold text-slate-900 dark:text-white">{studentDetails?.medicalType || 'Expiry recorded'}</span></div>
                   )}

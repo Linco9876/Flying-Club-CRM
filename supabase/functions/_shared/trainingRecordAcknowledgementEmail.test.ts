@@ -14,6 +14,9 @@ Deno.test("lesson acknowledgement email provides a clear login-free action", () 
   const message = renderTrainingRecordAcknowledgementEmail(input);
   assertEquals(message.subject, "Your Climbing and descending record is ready to review");
   assertStringIncludes(message.html, "Review and approve lesson");
+  assertStringIncludes(message.html, "mso-padding-alt");
+  assertStringIncludes(message.html, "bgcolor=\"#2563eb\"");
+  assertStringIncludes(message.html, "Takes about a minute");
   assertStringIncludes(message.html, "No portal login is required");
   assertStringIncludes(message.html, "@media only screen and (max-width:620px)");
   assertStringIncludes(message.html, "@media (prefers-color-scheme:dark)");
@@ -23,6 +26,7 @@ Deno.test("lesson acknowledgement email provides a clear login-free action", () 
 Deno.test("edited lesson email explains that the record changed", () => {
   const message = renderTrainingRecordAcknowledgementEmail({ ...input, isRevision: true });
   assertStringIncludes(message.subject, "has been updated");
+  assertStringIncludes(message.html, "Record updated");
   assertStringIncludes(message.text, "has updated your lesson record");
 });
 

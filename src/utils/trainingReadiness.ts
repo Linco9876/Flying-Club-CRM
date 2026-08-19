@@ -1,4 +1,15 @@
 import { LessonAssessmentCriterion, TrainingLesson, TrainingModule, TrainingRecord } from '../types';
+import {
+  isFlightTestGateLesson,
+  isSoloGateLesson,
+} from './trainingDeficiencyRules';
+
+export {
+  getDefaultTrainingDeficiencyStage,
+  getTrainingDeficiencyGate,
+  isFlightTestGateLesson,
+  isSoloGateLesson,
+} from './trainingDeficiencyRules';
 
 const SOLO_READY_GRADE = 'S';
 const FLIGHT_TEST_READY_GRADE = 'C';
@@ -14,11 +25,6 @@ const isGradeAtLeast = (grade: string | undefined, target: string, criterion?: L
   return gradeRank(grade) >= gradeRank(target);
 };
 
-const isSoloGateLesson = (lesson: TrainingLesson) =>
-  /\b(first\s+)?solo\b/i.test(`${lesson.name} ${lesson.sequenceTitle} ${lesson.objective}`);
-
-const isFlightTestGateLesson = (lesson: TrainingLesson) =>
-  Boolean(lesson.isFlightTest || /flight\s*(test|review)|practice\s+flight\s+test/i.test(`${lesson.name} ${lesson.sequenceTitle}`));
 
 const getPriorCriterionIdsForGate = (
   course: TrainingModule,

@@ -1,8 +1,11 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useMemo, useState } from 'react';
 import {
   AlertTriangle,
+  ArrowRight,
   BadgeCheck,
   Banknote,
+  BarChart3,
   CalendarClock,
   CheckCircle2,
   CircleDollarSign,
@@ -10,6 +13,7 @@ import {
   Download,
   Clock3,
   FileCheck2,
+  FileSpreadsheet,
   Heart,
   HelpCircle,
   Landmark,
@@ -29,7 +33,7 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { isFinanciallyCleared, membershipStatusLabel, rolloutModeDescription, useMembership } from '../../hooks/useMembership';
 import { useUsers } from '../../hooks/useUsers';
-import { MembershipApplication, MembershipClass, MembershipFinancialPeriod, MembershipPaymentMethod, MembershipProrationMethod, MembershipRolloutMode } from '../../types';
+import { MembershipApplication, MembershipChangeRequest, MembershipClass, MembershipFinancialPeriod, MembershipPaymentMethod, MembershipProrationMethod, MembershipRolloutMode } from '../../types';
 import { MembershipDocumentLinks } from './MembershipDocumentLinks';
 import { AddressAutocomplete } from '../common/AddressAutocomplete';
 import { useMembershipDocuments } from '../../hooks/useMembershipDocuments';
@@ -44,6 +48,23 @@ import {
 import { membershipSettingHelp, type MembershipSettingHelpKey } from '../../utils/membershipSettingHelp';
 import { useFinancialProviders } from '../../context/financialProviderState';
 import { FinancialProviderStatus } from '../Billing/FinancialProviderStatus';
+import { ExistingMemberCsvImportModal } from './ExistingMemberCsvImportModal';
+import { MembershipChangeModal } from './MembershipChangeModal';
+import { MembershipAdminControlModal } from './MembershipAdminControlModal';
+import {
+  isUnder18On,
+  localDateString,
+  membershipClassEligibility,
+  membershipClassRequiresFinancialStatus,
+} from '../../utils/membershipChangeRules';
+import {
+  buildMembershipDashboardSummary,
+  currentMembershipPeriodMap,
+  membershipMatchesDashboardFocus,
+  type MembershipRegisterFocus,
+} from '../../utils/membershipDashboard';
+
+type MembershipTab = 'dashboard' | 'mine' | 'applications' | 'register' | 'settings';
 
 type MembershipSettingHelpHandler = (
   setting: MembershipSettingHelpKey,
@@ -186,7 +207,7 @@ const MembershipSettingHelpPanel = ({
       role="dialog"
       aria-modal="false"
       aria-labelledby="membership-setting-help-title"
-      className="fixed inset-x-4 bottom-4 z-[110] rounded-2xl border border-blue-200 bg-white p-4 shadow-2xl sm:left-auto sm:w-96"
+      className="app-mobile-toast fixed inset-x-4 bottom-4 z-[110] rounded-2xl border border-blue-200 bg-white p-4 shadow-2xl sm:left-auto sm:w-96"
     >
       <div className="flex items-start gap-3">
         <HelpCircle className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" aria-hidden="true" />
@@ -267,12 +288,17 @@ const MembershipApplicationForm = ({ onSubmit, busy, classes }: {
     guardianName: '',
     guardianConsent: false,
   });
-  const isJunior = form.dateOfBirth ? new Date(form.dateOfBirth) > new Date(new Date().setFullYear(new Date().getFullYear() - 18)) : false;
+  const isJunior = isUnder18On(form.dateOfBirth);
   const membershipDocumentsReady = membershipDocumentsAreReady(
     membershipDocuments,
     membershipDocumentsLoading,
     membershipDocumentsError,
   );
+
+  React.useEffect(() => {
+    if (form.membershipClassCode !== 'junior' || isJunior) return;
+    setForm(current => ({ ...current, membershipClassCode: 'full' }));
+  }, [form.membershipClassCode, isJunior]);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -294,9 +320,12 @@ const MembershipApplicationForm = ({ onSubmit, busy, classes }: {
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <label className="text-sm font-semibold text-slate-700">Membership class
-          <select value={form.membershipClassCode} onChange={event => setForm(current => ({ ...current, membershipClassCode: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal">
-            {classes.map(item => <option key={item.code} value={item.code}>{item.name} — {moneyLabel(item.annualFee)}/year</option>)}
-          </select>
+          <SearchableSelect value={form.membershipClassCode} onChange={event => setForm(current => ({ ...current, membershipClassCode: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal">
+            {classes
+              .filter(item => item.code !== 'junior' || isJunior)
+              .map(item => <option key={item.code} value={item.code}>{item.name} — {moneyLabel(item.annualFee)}/year</option>)}
+          </SearchableSelect>
+          {!isJunior && <span className="mt-1 block text-xs font-normal text-slate-500">Junior becomes available only when the recorded date of birth shows the applicant is under 18.</span>}
         </label>
         <label className="text-sm font-semibold text-slate-700">Date of birth
           <input type="date" value={form.dateOfBirth} onChange={event => setForm(current => ({ ...current, dateOfBirth: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal" />
@@ -457,6 +486,89 @@ const MembershipCancellation = ({ membershipApi }: { membershipApi: ReturnType<t
   </div>;
 };
 
+const OwnMembershipChangeCard = ({
+  membershipApi,
+  currentPeriod,
+}: {
+  membershipApi: ReturnType<typeof useMembership>;
+  currentPeriod?: MembershipFinancialPeriod;
+}) => {
+  const [open, setOpen] = useState(false);
+  const { ownMembership, ownChangeRequest } = membershipApi;
+  if (!ownMembership || ownMembership.legalStatus !== 'current') return null;
+
+  if (ownChangeRequest) {
+    const waitingForReview = ownChangeRequest.status === 'needs_review';
+    return (
+      <div className={`rounded-2xl border p-5 ${waitingForReview ? 'border-red-200 bg-red-50' : 'border-blue-200 bg-blue-50'}`}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="font-bold text-slate-950">Membership change</h3>
+              <StatusPill value={ownChangeRequest.status} />
+            </div>
+            <p className="mt-2 text-sm text-slate-700">
+              {ownChangeRequest.fromMembershipClassName} → {ownChangeRequest.toMembershipClassName}
+            </p>
+            <p className="mt-1 text-xs text-slate-600">
+              {ownChangeRequest.requestedEffectiveTiming === 'immediate'
+                ? 'Requested immediately'
+                : `Scheduled for ${dateLabel(ownChangeRequest.effectiveOn)}`}
+              {' · '}{ownChangeRequest.requestReason}
+            </p>
+            {waitingForReview && (
+              <p className="mt-2 text-sm font-semibold text-red-800">
+                An administrator must resolve a prepared invoice or payment before this change can be applied.
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            disabled={membershipApi.busyAction === `membership-change:${ownChangeRequest.id}`}
+            onClick={() => void membershipApi.cancelMembershipChange(ownChangeRequest.id)}
+            className="self-start rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Cancel request
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="font-bold text-slate-950">Need a different membership?</h3>
+          <p className="mt-1 text-sm text-slate-600">Request an immediate change or schedule it for your next renewal.</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="inline-flex self-start items-center gap-2 rounded-lg border border-blue-300 px-3 py-2 text-sm font-bold text-blue-800 hover:bg-blue-50"
+        >
+          <Repeat2 className="h-4 w-4" /> Change membership
+        </button>
+      </div>
+      {open && (
+        <MembershipChangeModal
+          membership={ownMembership}
+          classes={membershipApi.classes}
+          currentFinancialYearEnd={currentPeriod?.financialYearEnd}
+          financialYearStartMonth={membershipApi.settings.financialYearStartMonth}
+          financialYearStartDay={membershipApi.settings.financialYearStartDay}
+          busy={membershipApi.busyAction === 'membership-change:request'}
+          onClose={() => setOpen(false)}
+          onSubmit={async input => {
+            await membershipApi.requestMembershipChange(input);
+            setOpen(false);
+          }}
+        />
+      )}
+    </>
+  );
+};
+
 const MyMembership = ({ membershipApi }: { membershipApi: ReturnType<typeof useMembership> }) => {
   const { capabilities: financialProviders } = useFinancialProviders();
   const { ownApplication, ownMembership, ownPeriods, classes, busyAction, submitApplication, refreshOwnXeroInvoices } = membershipApi;
@@ -513,6 +625,7 @@ const MyMembership = ({ membershipApi }: { membershipApi: ReturnType<typeof useM
       {ownMembership.canSelfBookAircraft === false && <div className="rounded-2xl border border-amber-300 bg-amber-50 p-5 text-amber-950"><div className="flex gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" /><div><h3 className="font-bold">Aircraft self-booking is not included</h3><p className="mt-1 text-sm">Your membership remains current, but this membership product requires an instructor or administrator to create aircraft bookings for you.</p></div></div></div>}
       {currentPeriod?.waiverReason && <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><span className="font-bold">Fee waiver:</span> {currentPeriod.waiverReason}</div>}
       {financialProviders.financeEnabled && ownMembership.legalStatus === 'current' && <MembershipPaymentPreferencesCard membershipApi={membershipApi} />}
+      <OwnMembershipChangeCard membershipApi={membershipApi} currentPeriod={currentPeriod} />
       <MembershipCancellation membershipApi={membershipApi} />
     </> : <>
       <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
@@ -524,13 +637,107 @@ const MyMembership = ({ membershipApi }: { membershipApi: ReturnType<typeof useM
   </div>;
 };
 
+const MembershipChangeRequestsAdmin = ({ membershipApi }: { membershipApi: ReturnType<typeof useMembership> }) => {
+  const requests = membershipApi.changeRequests.filter(item => ['pending', 'needs_review'].includes(item.status));
+  const [deciding, setDeciding] = useState<MembershipChangeRequest | null>(null);
+  const [decision, setDecision] = useState<'approve' | 'reject'>('approve');
+  const [reason, setReason] = useState('');
+
+  if (requests.length === 0) return null;
+  return (
+    <section className="space-y-3">
+      <div>
+        <h2 className="text-lg font-extrabold text-slate-950">Membership change requests</h2>
+        <p className="mt-1 text-sm text-slate-600">Review class changes separately from new membership applications.</p>
+      </div>
+      {requests.map(request => (
+        <article key={request.id} className={`rounded-2xl border bg-white p-5 shadow-sm ${request.status === 'needs_review' ? 'border-red-300' : 'border-slate-200'}`}>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-lg font-bold text-slate-950">
+                  <StudentFileLink studentId={request.userId} name={request.userName || 'Member'} />
+                </h3>
+                <StatusPill value={request.status} />
+              </div>
+              <p className="mt-2 font-semibold text-slate-800">{request.fromMembershipClassName} → {request.toMembershipClassName}</p>
+              <p className="mt-1 text-sm text-slate-600">
+                {request.requestedEffectiveTiming === 'immediate' ? 'Requested immediately' : `Requested for ${dateLabel(request.effectiveOn)}`}
+                {' · '}{request.requestReason}
+              </p>
+              {request.status === 'needs_review' && (
+                <p className="mt-2 max-w-2xl text-sm font-semibold text-red-700">
+                  {request.decisionReason || 'A prepared invoice or payment must be resolved before retrying.'}
+                </p>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => { setDeciding(request); setDecision('approve'); setReason('Approved membership change'); }}
+                className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-bold text-white hover:bg-emerald-800"
+              >
+                <CheckCircle2 className="h-4 w-4" /> {request.status === 'needs_review' ? 'Retry' : 'Approve'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setDeciding(request); setDecision('reject'); setReason(''); }}
+                className="inline-flex items-center gap-2 rounded-lg border border-red-300 px-3 py-2 text-sm font-bold text-red-700 hover:bg-red-50"
+              >
+                <XCircle className="h-4 w-4" /> Reject
+              </button>
+            </div>
+          </div>
+        </article>
+      ))}
+      {deciding && (
+        <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/55 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+            <h3 className="text-lg font-bold text-slate-950">
+              {decision === 'approve' ? 'Approve' : 'Reject'} membership change
+            </h3>
+            <p className="mt-1 text-sm text-slate-600">
+              {deciding.userName}: {deciding.fromMembershipClassName} → {deciding.toMembershipClassName}
+            </p>
+            <label className="mt-4 block text-sm font-bold text-slate-700">
+              Decision reason
+              <textarea
+                autoFocus
+                rows={3}
+                value={reason}
+                onChange={event => setReason(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal"
+                placeholder="Minimum 5 characters"
+              />
+            </label>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setDeciding(null)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold">Cancel</button>
+              <button
+                type="button"
+                disabled={reason.trim().length < 5 || membershipApi.busyAction === `membership-change:${deciding.id}`}
+                onClick={async () => {
+                  await membershipApi.decideMembershipChange(deciding.id, decision, reason);
+                  setDeciding(null);
+                }}
+                className={`rounded-lg px-3 py-2 text-sm font-bold text-white disabled:opacity-50 ${decision === 'approve' ? 'bg-emerald-700' : 'bg-red-700'}`}
+              >
+                Confirm {decision}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+};
+
 const ApplicationsAdmin = ({ membershipApi }: { membershipApi: ReturnType<typeof useMembership> }) => {
   const pending = membershipApi.applications.filter(item => item.status === 'pending');
   const [approving, setApproving] = useState<MembershipApplication | null>(null);
   const [rejecting, setRejecting] = useState<MembershipApplication | null>(null);
   const [reason, setReason] = useState('');
   return <div className="space-y-4">
-    {pending.length === 0 ? <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-600"><BadgeCheck className="mx-auto mb-3 h-8 w-8 text-emerald-600" />No applications are waiting for a decision.</div> : pending.map(application => {
+    {pending.length === 0 ? <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-600"><BadgeCheck className="mx-auto mb-3 h-8 w-8 text-emerald-600" />No new membership applications are waiting for a decision.</div> : pending.map(application => {
       const daysLeft = Math.max(0, Math.ceil((new Date(application.automaticCommencementAt).getTime() - Date.now()) / 86400000));
       return <article key={application.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -541,17 +748,265 @@ const ApplicationsAdmin = ({ membershipApi }: { membershipApi: ReturnType<typeof
     })}
     {approving && <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 p-4"><div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"><h3 className="text-lg font-bold text-slate-950">Approve <StudentFileLink studentId={approving.userId} name={approving.userName} />'s application</h3><p className="mt-1 text-sm text-slate-600">Membership commences immediately. Add the committee meeting or delegated-authority reference when one is available.</p><input autoFocus value={reason} onChange={event => setReason(event.target.value)} className="mt-4 w-full rounded-lg border border-slate-300 px-3 py-2" placeholder="e.g. Committee minutes 28 July 2026 (optional)" /><div className="mt-4 flex justify-end gap-2"><button onClick={() => setApproving(null)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold">Cancel</button><button disabled={membershipApi.busyAction === `application:${approving.id}`} onClick={async () => { await membershipApi.decideApplication(approving.id, 'approve', reason); setApproving(null); }} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-bold text-white disabled:opacity-50">Approve and commence</button></div></div></div>}
     {rejecting && <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 p-4"><div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"><h3 className="text-lg font-bold text-slate-950">Reject <StudentFileLink studentId={rejecting.userId} name={rejecting.userName} />'s application</h3><p className="mt-1 text-sm text-slate-600">The reason is retained in the audit history.</p><textarea autoFocus value={reason} onChange={event => setReason(event.target.value)} rows={4} className="mt-4 w-full rounded-lg border border-slate-300 px-3 py-2" placeholder="Reason for rejection" /><div className="mt-4 flex justify-end gap-2"><button onClick={() => setRejecting(null)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold">Cancel</button><button disabled={!reason.trim()} onClick={async () => { await membershipApi.decideApplication(rejecting.id, 'reject', reason); setRejecting(null); }} className="rounded-lg bg-red-700 px-3 py-2 text-sm font-bold text-white disabled:opacity-50">Reject application</button></div></div></div>}
+    <MembershipChangeRequestsAdmin membershipApi={membershipApi} />
   </div>;
+};
+
+const MembershipMetricCard = ({
+  label,
+  value,
+  detail,
+  icon: Icon,
+  onClick,
+  tone = 'blue',
+}: {
+  label: string;
+  value: React.ReactNode;
+  detail: string;
+  icon: React.ComponentType<{ className?: string }>;
+  onClick?: () => void;
+  tone?: 'blue' | 'emerald' | 'amber' | 'red';
+}) => {
+  const tones = {
+    blue: 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-200',
+    emerald: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-200',
+    amber: 'bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-200',
+    red: 'bg-red-50 text-red-700 dark:bg-red-950/60 dark:text-red-200',
+  };
+  const content = (
+    <>
+      <span className={`inline-flex h-10 w-10 items-center justify-center rounded-xl ${tones[tone]}`}><Icon className="h-5 w-5" /></span>
+      <span className="mt-4 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</span>
+      <span className="mt-1 block text-2xl font-extrabold text-slate-950 dark:text-white">{value}</span>
+      <span className="mt-1 block text-sm text-slate-600 dark:text-slate-300">{detail}</span>
+    </>
+  );
+  const className = 'rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm dark:border-slate-700 dark:bg-slate-900';
+  return onClick ? (
+    <button type="button" onClick={onClick} className={`${className} transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500`}>{content}</button>
+  ) : <div className={className}>{content}</div>;
+};
+
+const MembershipAdminDashboard = ({
+  membershipApi,
+  onOpenApplications,
+  onOpenRegister,
+}: {
+  membershipApi: ReturnType<typeof useMembership>;
+  onOpenApplications: () => void;
+  onOpenRegister: (focus: MembershipRegisterFocus) => void;
+}) => {
+  const { capabilities: financialProviders } = useFinancialProviders();
+  const today = localDateString();
+  const summary = useMemo(() => buildMembershipDashboardSummary({
+    memberships: membershipApi.memberships,
+    applications: membershipApi.applications,
+    changes: membershipApi.changeRequests,
+    periods: membershipApi.periods,
+    paymentPreferences: membershipApi.paymentPreferences,
+    options: {
+      today,
+      financeEnabled: financialProviders.financeEnabled,
+      xeroAccountingAvailable: financialProviders.xero.accountingAvailable,
+      xeroRequiredForBilling: financialProviders.xero.accountingAvailable && !financialProviders.stripe.paymentsAvailable,
+    },
+  }), [financialProviders, membershipApi.applications, membershipApi.changeRequests, membershipApi.memberships, membershipApi.paymentPreferences, membershipApi.periods, today]);
+
+  const clearancePercentage = summary.currentMembers
+    ? Math.round((summary.financiallyCleared / summary.currentMembers) * 100)
+    : 0;
+  const warnings = [
+    summary.graceExpiredAccounts > 0 ? {
+      key: 'grace-expired',
+      tone: 'red',
+      title: `${summary.graceExpiredAccounts} membership${summary.graceExpiredAccounts === 1 ? '' : 's'} past the payment grace period`,
+      detail: 'Review these records before the lifecycle process changes legal membership status.',
+      action: () => onOpenRegister('outstanding'),
+    } : null,
+    summary.billingIssues > 0 ? {
+      key: 'billing-issues',
+      tone: 'red',
+      title: `${summary.billingIssues} billing sync issue${summary.billingIssues === 1 ? '' : 's'} need review`,
+      detail: 'A payment or accounting update failed or was marked for manual review.',
+      action: () => onOpenRegister('billing_issue'),
+    } : null,
+    summary.applicationsOverdueForCommencement > 0 ? {
+      key: 'applications-overdue',
+      tone: 'red',
+      title: `${summary.applicationsOverdueForCommencement} application${summary.applicationsOverdueForCommencement === 1 ? '' : 's'} reached automatic commencement`,
+      detail: 'Approve, reject, or run membership checks to resolve the overdue decision.',
+      action: onOpenApplications,
+    } : null,
+    summary.overdueAccounts > 0 ? {
+      key: 'overdue',
+      tone: 'amber',
+      title: `${summary.overdueAccounts} overdue membership account${summary.overdueAccounts === 1 ? '' : 's'}`,
+      detail: `${moneyLabel(summary.outstandingAmount)} remains outstanding across all uncleared current accounts.`,
+      action: () => onOpenRegister('outstanding'),
+    } : null,
+    summary.financiallyOutstanding > 0 && summary.overdueAccounts === 0 ? {
+      key: 'not-cleared',
+      tone: 'blue',
+      title: `${summary.financiallyOutstanding} current member${summary.financiallyOutstanding === 1 ? ' is' : 's are'} not financially cleared`,
+      detail: `${moneyLabel(summary.outstandingAmount)} is awaiting payment or financial clearance.`,
+      action: () => onOpenRegister('outstanding'),
+    } : null,
+    summary.failedPaymentAuthorities > 0 ? {
+      key: 'payment-authorities',
+      tone: 'amber',
+      title: `${summary.failedPaymentAuthorities} failed payment authorit${summary.failedPaymentAuthorities === 1 ? 'y' : 'ies'}`,
+      detail: 'The member may need to update their saved payment method before renewal can be collected.',
+      action: () => onOpenRegister('attention'),
+    } : null,
+    summary.missingCurrentPeriods > 0 ? {
+      key: 'missing-periods',
+      tone: 'amber',
+      title: `${summary.missingCurrentPeriods} current member${summary.missingCurrentPeriods === 1 ? '' : 's'} without a current fee period`,
+      detail: 'Their financial clearance cannot be confirmed until the period is created.',
+      action: () => onOpenRegister('attention'),
+    } : null,
+    summary.agedOutJuniorMembers > 0 ? {
+      key: 'aged-out-juniors',
+      tone: 'amber',
+      title: `${summary.agedOutJuniorMembers} Junior membership${summary.agedOutJuniorMembers === 1 ? '' : 's'} no longer age eligible`,
+      detail: 'Change the membership class and record the effective date.',
+      action: () => onOpenRegister('aged_out'),
+    } : null,
+    summary.duplicateCurrentMembers > 0 ? {
+      key: 'duplicates',
+      tone: 'amber',
+      title: `${summary.duplicateCurrentMembers} member${summary.duplicateCurrentMembers === 1 ? ' has' : 's have'} duplicate current records`,
+      detail: 'Resolve the duplicate legal status before relying on exports or billing.',
+      action: () => onOpenRegister('attention'),
+    } : null,
+    summary.archivedCurrentProfiles > 0 ? {
+      key: 'archived-profiles',
+      tone: 'amber',
+      title: `${summary.archivedCurrentProfiles} current membership${summary.archivedCurrentProfiles === 1 ? '' : 's'} linked to an archived profile`,
+      detail: 'Confirm whether the profile should be restored or the membership should be ceased.',
+      action: () => onOpenRegister('attention'),
+    } : null,
+    financialProviders.xero.accountingAvailable && !financialProviders.stripe.paymentsAvailable && summary.xeroUnlinkedMembers > 0 ? {
+      key: 'xero-unlinked',
+      tone: 'amber',
+      title: `${summary.xeroUnlinkedMembers} current member${summary.xeroUnlinkedMembers === 1 ? '' : 's'} not linked to Xero`,
+      detail: 'Xero is the available billing route, so these memberships cannot be billed until their contacts are linked.',
+      action: () => onOpenRegister('attention'),
+    } : null,
+    summary.changesNeedingReview > 0 ? {
+      key: 'changes-review',
+      tone: 'amber',
+      title: `${summary.changesNeedingReview} membership change${summary.changesNeedingReview === 1 ? '' : 's'} need manual review`,
+      detail: 'The requested class change could not be applied automatically.',
+      action: onOpenApplications,
+    } : null,
+    summary.pendingApplications > 0 && summary.applicationsOverdueForCommencement === 0 ? {
+      key: 'applications-due',
+      tone: 'blue',
+      title: `${summary.pendingApplications} membership application${summary.pendingApplications === 1 ? '' : 's'} awaiting a decision`,
+      detail: summary.applicationsCommencingWithinSevenDays
+        ? `${summary.applicationsCommencingWithinSevenDays} will commence automatically within 7 days.`
+        : 'Review applications before their automatic commencement date.',
+      action: onOpenApplications,
+    } : null,
+    summary.pendingChanges > 0 ? {
+      key: 'changes-pending',
+      tone: 'blue',
+      title: `${summary.pendingChanges} membership change${summary.pendingChanges === 1 ? '' : 's'} awaiting a decision`,
+      detail: 'Review the requested class and effective date.',
+      action: onOpenApplications,
+    } : null,
+    summary.graceExpiringWithinFourteenDays > 0 ? {
+      key: 'grace-due',
+      tone: 'blue',
+      title: `${summary.graceExpiringWithinFourteenDays} payment grace period${summary.graceExpiringWithinFourteenDays === 1 ? '' : 's'} expire within 14 days`,
+      detail: 'Follow up outstanding accounts before their grace period ends.',
+      action: () => onOpenRegister('outstanding'),
+    } : null,
+  ].filter(Boolean) as Array<{ key: string; tone: 'red' | 'amber' | 'blue'; title: string; detail: string; action: () => void }>;
+
+  const recentActivity = useMemo(() => [
+    ...membershipApi.memberships.map(item => ({ id: `membership-${item.id}`, date: item.commencedAt, title: `${item.userName || 'Member'} commenced ${item.membershipClassName || 'membership'}`, type: 'Membership' })),
+    ...membershipApi.applications.map(item => ({ id: `application-${item.id}`, date: item.submittedAt, title: `${item.userName || 'Applicant'} submitted ${item.membershipClassName || 'a membership application'}`, type: 'Application' })),
+    ...membershipApi.changeRequests.map(item => ({ id: `change-${item.id}`, date: item.submittedAt, title: `${item.userName || 'Member'} requested ${item.toMembershipClassName || 'a membership change'}`, type: 'Change' })),
+  ].sort((left, right) => right.date.localeCompare(left.date)).slice(0, 5), [membershipApi.applications, membershipApi.changeRequests, membershipApi.memberships]);
+
+  return <div className="space-y-5">
+    <section className="flex flex-col gap-4 rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-5 shadow-sm dark:border-blue-800 dark:from-blue-950/60 dark:to-slate-900 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <div className="flex items-center gap-2"><BarChart3 className="h-5 w-5 text-blue-700 dark:text-blue-300" /><h2 className="text-lg font-extrabold text-slate-950 dark:text-white">Membership health</h2></div>
+        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">A live operational view of legal memberships, approvals, eligibility and financial readiness.</p>
+        <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">As at {dateLabel(today)}</p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={membershipApi.busyAction === 'lifecycle'} onClick={() => void membershipApi.runLifecycle()} title="Process automatic commencements and membership payment-status rules now. No emails are sent." className="inline-flex items-center gap-2 rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm font-bold text-blue-800 hover:bg-blue-50 disabled:opacity-50 dark:border-blue-700 dark:bg-slate-900 dark:text-blue-200 dark:hover:bg-blue-950/60"><CalendarClock className="h-4 w-4" />{membershipApi.busyAction === 'lifecycle' ? 'Processing…' : 'Run membership checks'}</button>
+        <button type="button" onClick={() => void membershipApi.refetch()} className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-3 py-2 text-sm font-bold text-white hover:bg-blue-800"><RefreshCw className="h-4 w-4" />Refresh</button>
+      </div>
+    </section>
+
+    <section aria-label="Membership headline statistics" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <MembershipMetricCard label="Current legal members" value={summary.currentMembers} detail={`${summary.votingMembers} voting · ${summary.newMembersLast30Days} new in 30 days`} icon={Users} onClick={() => onOpenRegister('current')} />
+      <MembershipMetricCard label="Financially cleared" value={financialProviders.financeEnabled ? `${summary.financiallyCleared} / ${summary.currentMembers}` : 'Not tracked'} detail={financialProviders.financeEnabled ? `${clearancePercentage}% of current members` : 'Connect Stripe or Xero to track clearance'} icon={CircleDollarSign} tone={financialProviders.financeEnabled && summary.financiallyOutstanding > 0 ? 'amber' : 'emerald'} onClick={() => onOpenRegister(financialProviders.financeEnabled ? 'outstanding' : 'current')} />
+      <MembershipMetricCard label="Pending applications" value={summary.pendingApplications} detail={`${summary.pendingChanges + summary.changesNeedingReview} membership changes in progress`} icon={FileCheck2} tone={summary.pendingApplications ? 'amber' : 'emerald'} onClick={onOpenApplications} />
+      <MembershipMetricCard label="Members requiring attention" value={summary.membersRequiringAttention} detail={`${summary.totalActionItems} total member and workflow actions`} icon={AlertTriangle} tone={summary.totalActionItems ? 'red' : 'emerald'} onClick={() => onOpenRegister('attention')} />
+    </section>
+
+    {!financialProviders.financeEnabled && <FinancialProviderStatus compact />}
+
+    <div className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        <div className="flex items-start justify-between gap-4"><div><h2 className="font-extrabold text-slate-950 dark:text-white">Action queue</h2><p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Important membership issues, ordered by urgency.</p></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">{warnings.length}</span></div>
+        {warnings.length === 0 ? <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-800 dark:bg-emerald-950/50"><div className="flex items-center gap-3"><CheckCircle2 className="h-6 w-6 text-emerald-700 dark:text-emerald-300" /><div><p className="font-bold text-emerald-900 dark:text-emerald-100">No membership warnings</p><p className="text-sm text-emerald-800 dark:text-emerald-200">Applications, eligibility and current membership records are up to date.</p></div></div></div> : <div className="mt-4 space-y-2">{warnings.map(warning => {
+          const tone = warning.tone === 'red' ? 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/40' : warning.tone === 'amber' ? 'border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40' : 'border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/40';
+          const iconTone = warning.tone === 'red' ? 'text-red-700 dark:text-red-300' : warning.tone === 'amber' ? 'text-amber-700 dark:text-amber-300' : 'text-blue-700 dark:text-blue-300';
+          return <button key={warning.key} type="button" onClick={warning.action} className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left transition hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-blue-500 ${tone}`}><AlertTriangle className={`mt-0.5 h-5 w-5 shrink-0 ${iconTone}`} /><span className="min-w-0 flex-1"><span className="block font-bold text-slate-950 dark:text-white">{warning.title}</span><span className="mt-0.5 block text-sm text-slate-600 dark:text-slate-300">{warning.detail}</span></span><ArrowRight className={`mt-1 h-4 w-4 shrink-0 ${iconTone}`} /></button>;
+        })}</div>}
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        <h2 className="font-extrabold text-slate-950 dark:text-white">Membership mix</h2><p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Current legal members by class.</p>
+        <div className="mt-5 space-y-4">{summary.classBreakdown.length ? summary.classBreakdown.map(item => <div key={`${item.code}-${item.name}`}><div className="mb-1.5 flex items-center justify-between gap-3 text-sm"><span className="font-semibold text-slate-800 dark:text-slate-200">{item.name}</span><span className="font-bold text-slate-950 dark:text-white">{item.count} <span className="font-normal text-slate-500 dark:text-slate-400">({item.percentage}%)</span></span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full rounded-full bg-blue-600" style={{ width: `${item.percentage}%` }} /></div></div>) : <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600 dark:bg-slate-800 dark:text-slate-300">No current memberships are recorded.</p>}</div>
+        <button type="button" onClick={() => onOpenRegister('all')} className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-blue-700 hover:text-blue-900 dark:text-blue-300 dark:hover:text-blue-100">View membership register <ArrowRight className="h-4 w-4" /></button>
+      </section>
+    </div>
+
+    <div className="grid gap-5 lg:grid-cols-3">
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        <h2 className="font-extrabold text-slate-950 dark:text-white">Financial overview</h2>
+        {financialProviders.financeEnabled ? <dl className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3"><dt className="text-slate-600 dark:text-slate-300">Outstanding balance</dt><dd className="font-bold text-slate-950 dark:text-white">{moneyLabel(summary.outstandingAmount)}</dd></div><div className="flex justify-between gap-3"><dt className="text-slate-600 dark:text-slate-300">Uncleared members</dt><dd className="font-bold text-slate-950 dark:text-white">{summary.financiallyOutstanding}</dd></div><div className="flex justify-between gap-3"><dt className="text-slate-600 dark:text-slate-300">Overdue</dt><dd className="font-bold text-amber-700 dark:text-amber-300">{summary.overdueAccounts}</dd></div><div className="flex justify-between gap-3"><dt className="text-slate-600 dark:text-slate-300">Auto-renew enabled</dt><dd className="font-bold text-slate-950 dark:text-white">{summary.autoRenewEnabled}</dd></div></dl> : <p className="mt-4 text-sm text-slate-600 dark:text-slate-300">Membership finance is disabled, so no payment status or balance is inferred.</p>}
+      </section>
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        <h2 className="font-extrabold text-slate-950 dark:text-white">Systems readiness</h2><dl className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3"><dt className="text-slate-600 dark:text-slate-300">Stripe payments</dt><dd className={`font-bold ${financialProviders.stripe.paymentsAvailable ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-500 dark:text-slate-400'}`}>{financialProviders.stripe.paymentsAvailable ? 'Available' : 'Unavailable'}</dd></div><div className="flex justify-between gap-3"><dt className="text-slate-600 dark:text-slate-300">Xero accounting</dt><dd className={`font-bold ${financialProviders.xero.accountingAvailable ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-500 dark:text-slate-400'}`}>{financialProviders.xero.accountingAvailable ? 'Connected' : 'Not connected'}</dd></div>{financialProviders.xero.accountingAvailable && <div className="flex justify-between gap-3"><dt className="text-slate-600 dark:text-slate-300">Members linked to Xero</dt><dd className="font-bold text-slate-950 dark:text-white">{summary.xeroLinkedMembers} / {summary.currentMembers}</dd></div>}<div className="flex justify-between gap-3"><dt className="text-slate-600 dark:text-slate-300">Lifecycle mode</dt><dd className="font-bold text-slate-950 dark:text-white">{membershipStatusLabel(membershipApi.settings.rolloutMode)}</dd></div></dl>
+      </section>
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        <h2 className="font-extrabold text-slate-950 dark:text-white">Recent activity</h2><div className="mt-4 space-y-3">{recentActivity.length ? recentActivity.map(item => <div key={item.id} className="border-l-2 border-blue-200 pl-3 dark:border-blue-800"><p className="text-sm font-semibold text-slate-800 dark:text-slate-200">{item.title}</p><p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{item.type} · {dateLabel(item.date)}</p></div>) : <p className="text-sm text-slate-600 dark:text-slate-300">No membership activity is recorded yet.</p>}</div>
+      </section>
+    </div>
+  </div>;
+};
+
+const JuniorEligibilityBadge = ({ membership }: { membership: ReturnType<typeof useMembership>['memberships'][number] }) => {
+  if (membership.membershipClassCode !== 'junior') return null;
+  const eligibility = membershipClassEligibility('junior', membership.dateOfBirth, localDateString());
+  if (eligibility.eligible) return null;
+  return (
+    <span className="mt-1 inline-flex rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-bold text-red-700" title={eligibility.reason || undefined}>
+      Must change — aged out
+    </span>
+  );
 };
 
 const RegisterAdmin = ({
   membershipApi,
+  initialFocus = 'all',
 }: {
   membershipApi: ReturnType<typeof useMembership>;
+  initialFocus?: MembershipRegisterFocus;
 }) => {
   const { capabilities: financialProviders } = useFinancialProviders();
   const { users } = useUsers();
   const [query, setQuery] = useState("");
+  const [focus, setFocus] = useState<MembershipRegisterFocus>(initialFocus);
   const [waiverPeriod, setWaiverPeriod] =
     useState<MembershipFinancialPeriod | null>(null);
   const [waiverType, setWaiverType] = useState(
@@ -560,6 +1015,9 @@ const RegisterAdmin = ({
   const [waiverReason, setWaiverReason] = useState("");
   const [waiverAuthorityReference, setWaiverAuthorityReference] = useState("");
   const [showImport, setShowImport] = useState(false);
+  const [showCsvImport, setShowCsvImport] = useState(false);
+  const [changingMembership, setChangingMembership] = useState<ReturnType<typeof useMembership>['memberships'][number] | null>(null);
+  const [managingMembership, setManagingMembership] = useState<ReturnType<typeof useMembership>['memberships'][number] | null>(null);
   const [importForm, setImportForm] = useState({
     userId: "",
     membershipClassCode: "full",
@@ -567,37 +1025,63 @@ const RegisterAdmin = ({
     feeDisposition: "paid" as "paid" | "invoice_required" | "waived",
     reason: "",
   });
-  const periodByMembership = useMemo(() => {
-    const latest = new Map<string, MembershipFinancialPeriod>();
-    const today = new Date().toISOString().slice(0, 10);
-    membershipApi.periods.forEach((period) => {
-      const existing = latest.get(period.membershipId);
-      const isCurrent =
-        period.financialYearStart <= today && period.financialYearEnd >= today;
-      const existingIsCurrent = Boolean(
-        existing &&
-        existing.financialYearStart <= today &&
-        existing.financialYearEnd >= today,
-      );
-      if (!existing || (isCurrent && !existingIsCurrent))
-        latest.set(period.membershipId, period);
-    });
-    return latest;
-  }, [membershipApi.periods]);
+  const today = localDateString();
+  const periodByMembership = useMemo(
+    () => currentMembershipPeriodMap(membershipApi.periods, today),
+    [membershipApi.periods, today],
+  );
+  const dashboardSummary = useMemo(() => buildMembershipDashboardSummary({
+    memberships: membershipApi.memberships,
+    applications: membershipApi.applications,
+    changes: membershipApi.changeRequests,
+    periods: membershipApi.periods,
+    paymentPreferences: membershipApi.paymentPreferences,
+    options: {
+      today,
+      financeEnabled: financialProviders.financeEnabled,
+      xeroAccountingAvailable: financialProviders.xero.accountingAvailable,
+      xeroRequiredForBilling: financialProviders.xero.accountingAvailable && !financialProviders.stripe.paymentsAvailable,
+    },
+  }), [financialProviders, membershipApi.applications, membershipApi.changeRequests, membershipApi.memberships, membershipApi.paymentPreferences, membershipApi.periods, today]);
   const filtered = membershipApi.memberships.filter((item) =>
-    `${item.userName} ${item.userEmail} ${item.membershipClassName}`
+    membershipMatchesDashboardFocus(item, focus, dashboardSummary)
+    && `${item.userName} ${item.userEmail} ${item.membershipClassName}`
       .toLowerCase()
       .includes(query.trim().toLowerCase()),
   );
+  const selectedImportUser = users.find(item => item.id === importForm.userId);
+  const selectedImportClass = membershipApi.classes.find(item => item.code === importForm.membershipClassCode);
+  const importRequiresFinancialStatus = membershipClassRequiresFinancialStatus(selectedImportClass);
+  const importJuniorEligible = membershipClassEligibility(
+    'junior',
+    selectedImportUser?.dateOfBirth,
+    localDateString(),
+  ).eligible;
+  React.useEffect(() => {
+    if (importForm.membershipClassCode !== 'junior' || importJuniorEligible) return;
+    setImportForm(current => ({ ...current, membershipClassCode: 'full' }));
+  }, [importForm.membershipClassCode, importJuniorEligible]);
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search membership records"
-          className="w-full max-w-md rounded-lg border border-slate-300 px-3 py-2.5"
-        />
+        <div className="grid w-full gap-2 sm:max-w-2xl sm:grid-cols-[minmax(0,1fr)_220px]">
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search membership records"
+            aria-label="Search membership records"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2.5 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+          />
+          <SearchableSelect value={focus} onChange={event => setFocus(event.target.value as MembershipRegisterFocus)} aria-label="Filter membership register" className="w-full rounded-lg border border-slate-300 px-3 py-2.5 dark:border-slate-600 dark:bg-slate-900 dark:text-white">
+            <option value="all">All membership records</option>
+            <option value="current">Current members</option>
+            <option value="attention">Requires attention</option>
+            <option value="outstanding">Financially outstanding</option>
+            <option value="billing_issue">Billing sync issues</option>
+            <option value="aged_out">Aged-out Junior members</option>
+            <option value="ceased">Ceased memberships</option>
+          </SearchableSelect>
+        </div>
         <div className="flex flex-wrap gap-2">
           <button
             disabled={membershipApi.busyAction === "register:export"}
@@ -611,6 +1095,12 @@ const RegisterAdmin = ({
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-700 px-3 py-2.5 text-sm font-bold text-white hover:bg-blue-800"
           >
             <UserCheck className="h-4 w-4" /> Add existing member
+          </button>
+          <button
+            onClick={() => setShowCsvImport(true)}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-300 bg-blue-50 px-3 py-2.5 text-sm font-bold text-blue-800 hover:bg-blue-100"
+          >
+            <FileSpreadsheet className="h-4 w-4" /> Import existing members CSV
           </button>
           {financialProviders.xero.postingAvailable && (
             <>
@@ -646,7 +1136,7 @@ const RegisterAdmin = ({
         <FinancialProviderStatus compact />
       )}
       <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <table className="min-w-full divide-y divide-slate-200 text-sm">
+        <table className="mobile-card-table min-w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-3">Member</th>
@@ -663,7 +1153,7 @@ const RegisterAdmin = ({
               if (!financialProviders.financeEnabled) {
                 return (
                   <tr key={membership.id}>
-                    <td className="px-4 py-3">
+                    <td data-label="Member" className="px-4 py-3">
                       <p className="font-bold text-slate-900">
                         <StudentFileLink
                           studentId={membership.userId}
@@ -674,27 +1164,30 @@ const RegisterAdmin = ({
                         {membership.userEmail}
                       </p>
                     </td>
-                    <td className="px-4 py-3">
+                    <td data-label="Class" className="px-4 py-3">
                       <p>{membership.membershipClassName}</p>
                       {membership.hasVotingRights && (
                         <p className="text-xs font-semibold text-blue-700">
                           Voting
                         </p>
                       )}
+                      <JuniorEligibilityBadge membership={membership} />
                     </td>
-                    <td className="px-4 py-3">
+                    <td data-label="Legal status" className="px-4 py-3">
                       <StatusPill value={membership.legalStatus} />
                     </td>
-                    <td className="px-4 py-3">
+                    <td data-label="Fee status" className="px-4 py-3">
                       <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">
                         Financial features disabled
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-xs text-slate-500">
+                    <td data-label="Invoice / due" className="px-4 py-3 text-xs text-slate-500">
                       Stripe and Xero disconnected
                     </td>
-                    <td className="px-4 py-3 text-right text-xs text-slate-500">
-                      No financial actions
+                    <td data-label="Actions" className="px-4 py-3 text-right">
+                      <button type="button" onClick={() => setManagingMembership(membership)} className="rounded-lg border border-blue-300 px-2.5 py-1.5 text-xs font-bold text-blue-800 hover:bg-blue-50">
+                        Manage
+                      </button>
                     </td>
                   </tr>
                 );
@@ -706,7 +1199,7 @@ const RegisterAdmin = ({
               if (xeroSetupRequired) {
                 return (
                   <tr key={membership.id}>
-                    <td className="px-4 py-3">
+                    <td data-label="Member" className="px-4 py-3">
                       <p className="font-bold text-slate-900">
                         <StudentFileLink
                           studentId={membership.userId}
@@ -717,27 +1210,33 @@ const RegisterAdmin = ({
                         {membership.userEmail}
                       </p>
                     </td>
-                    <td className="px-4 py-3">
+                    <td data-label="Class" className="px-4 py-3">
                       <p>{membership.membershipClassName}</p>
                       {membership.hasVotingRights && (
                         <p className="text-xs font-semibold text-blue-700">
                           Voting
                         </p>
                       )}
+                      <JuniorEligibilityBadge membership={membership} />
                     </td>
-                    <td className="px-4 py-3">
+                    <td data-label="Legal status" className="px-4 py-3">
                       <StatusPill value={membership.legalStatus} />
                     </td>
-                    <td className="px-4 py-3">
+                    <td data-label="Fee status" className="px-4 py-3">
                       <span className="inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800">
                         Xero setup required
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-xs text-slate-500">
+                    <td data-label="Invoice / due" className="px-4 py-3 text-xs text-slate-500">
                       Financial information hidden
                     </td>
-                    <td className="px-4 py-3 text-right text-xs text-slate-500">
-                      Link in Xero settings first
+                    <td data-label="Actions" className="px-4 py-3 text-right">
+                      <div className="flex flex-col items-end gap-1">
+                        <button type="button" onClick={() => setManagingMembership(membership)} className="rounded-lg border border-blue-300 px-2.5 py-1.5 text-xs font-bold text-blue-800 hover:bg-blue-50">
+                          Manage
+                        </button>
+                        <span className="text-xs text-slate-500">Link in Xero settings for billing</span>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -748,7 +1247,7 @@ const RegisterAdmin = ({
               const canUseStripe = financialProviders.stripe.paymentsAvailable;
               return (
                 <tr key={membership.id}>
-                  <td className="px-4 py-3">
+                  <td data-label="Member" className="px-4 py-3">
                     <p className="font-bold text-slate-900">
                       <StudentFileLink
                         studentId={membership.userId}
@@ -759,18 +1258,19 @@ const RegisterAdmin = ({
                       {membership.userEmail}
                     </p>
                   </td>
-                  <td className="px-4 py-3">
+                  <td data-label="Class" className="px-4 py-3">
                     <p>{membership.membershipClassName}</p>
                     {membership.hasVotingRights && (
                       <p className="text-xs font-semibold text-blue-700">
                         Voting
                       </p>
                     )}
+                    <JuniorEligibilityBadge membership={membership} />
                   </td>
-                  <td className="px-4 py-3">
+                  <td data-label="Legal status" className="px-4 py-3">
                     <StatusPill value={membership.legalStatus} />
                   </td>
-                  <td className="px-4 py-3">
+                  <td data-label="Fee status" className="px-4 py-3">
                     <StatusPill value={period?.feeDisposition} />
                     {financialProviders.xero.accountingAvailable &&
                       !membership.xeroLinked &&
@@ -803,7 +1303,7 @@ const RegisterAdmin = ({
                       </p>
                     )}
                   </td>
-                  <td className="px-4 py-3">
+                  <td data-label="Invoice / due" className="px-4 py-3">
                     <p>
                       {period?.xeroInvoiceNumber ||
                         (period ? moneyLabel(period.amountDue) : "No period")}
@@ -817,8 +1317,15 @@ const RegisterAdmin = ({
                       </p>
                     )}
                   </td>
-                  <td className="px-4 py-3">
+                  <td data-label="Actions" className="px-4 py-3">
                     <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setManagingMembership(membership)}
+                        className="rounded-lg border border-blue-300 px-2.5 py-1.5 text-xs font-bold text-blue-800 hover:bg-blue-50"
+                      >
+                        Manage
+                      </button>
                       {period &&
                         canUseXero &&
                         !["waived", "fee_exempt"].includes(
@@ -883,9 +1390,47 @@ const RegisterAdmin = ({
                 </tr>
               );
             })}
+            {filtered.length === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500 dark:text-slate-400">No membership records match this filter.</td></tr>}
           </tbody>
         </table>
       </div>
+      {managingMembership && (
+        <MembershipAdminControlModal
+          membership={managingMembership}
+          period={periodByMembership.get(managingMembership.id)}
+          classes={membershipApi.classes}
+          financeEnabled={financialProviders.financeEnabled}
+          busy={membershipApi.busyAction === `membership-status:${managingMembership.id}`}
+          onClose={() => setManagingMembership(null)}
+          onChangeClass={() => {
+            setManagingMembership(null);
+            setChangingMembership(managingMembership);
+          }}
+          onUpdateStatus={async input => {
+            await membershipApi.updateMembershipStatus({
+              membershipId: managingMembership.id,
+              ...input,
+            });
+            setManagingMembership(null);
+          }}
+        />
+      )}
+      {changingMembership && (
+        <MembershipChangeModal
+          membership={changingMembership}
+          classes={membershipApi.classes}
+          currentFinancialYearEnd={periodByMembership.get(changingMembership.id)?.financialYearEnd}
+          financialYearStartMonth={membershipApi.settings.financialYearStartMonth}
+          financialYearStartDay={membershipApi.settings.financialYearStartDay}
+          adminMode
+          busy={membershipApi.busyAction === `membership-change:${changingMembership.id}`}
+          onClose={() => setChangingMembership(null)}
+          onSubmit={async input => {
+            await membershipApi.changeMembership({ membershipId: changingMembership.id, ...input });
+            setChangingMembership(null);
+          }}
+        />
+      )}
       {waiverPeriod && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
@@ -898,7 +1443,7 @@ const RegisterAdmin = ({
             </p>
             <label className="mt-4 block text-sm font-semibold text-slate-700">
               Waiver type
-              <select
+              <SearchableSelect
                 value={waiverType}
                 onChange={(event) => setWaiverType(event.target.value)}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal"
@@ -908,7 +1453,7 @@ const RegisterAdmin = ({
                     {type}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
             </label>
             <label className="mt-3 block text-sm font-semibold text-slate-700">
               Reason
@@ -978,7 +1523,7 @@ const RegisterAdmin = ({
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <label className="text-sm font-semibold text-slate-700 sm:col-span-2">
                 Portal user
-                <select
+                <SearchableSelect
                   value={importForm.userId}
                   onChange={(event) =>
                     setImportForm((current) => ({
@@ -1001,26 +1546,32 @@ const RegisterAdmin = ({
                         {item.name} — {item.email}
                       </option>
                     ))}
-                </select>
+                </SearchableSelect>
               </label>
               <label className="text-sm font-semibold text-slate-700">
                 Membership class
-                <select
+                <SearchableSelect
                   value={importForm.membershipClassCode}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const membershipClassCode = event.target.value;
+                    const selectedClass = membershipApi.classes.find(item => item.code === membershipClassCode);
                     setImportForm((current) => ({
                       ...current,
-                      membershipClassCode: event.target.value,
-                    }))
-                  }
+                      membershipClassCode,
+                      reason: membershipClassRequiresFinancialStatus(selectedClass) ? current.reason : '',
+                    }));
+                  }}
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal"
                 >
-                  {membershipApi.classes.map((item) => (
+                  {membershipApi.classes
+                    .filter(item => item.code !== 'junior' || importJuniorEligible)
+                    .map((item) => (
                     <option key={item.code} value={item.code}>
                       {item.name}
                     </option>
                   ))}
-                </select>
+                </SearchableSelect>
+                {!importJuniorEligible && <span className="mt-1 block text-xs font-normal text-slate-500">Junior is available only for a selected member who is under 18.</span>}
               </label>
               <label className="text-sm font-semibold text-slate-700">
                 Original commencement
@@ -1036,25 +1587,31 @@ const RegisterAdmin = ({
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal"
                 />
               </label>
-              <label className="text-sm font-semibold text-slate-700 sm:col-span-2">
-                Current financial status
-                <select
-                  value={importForm.feeDisposition}
-                  onChange={(event) =>
-                    setImportForm((current) => ({
-                      ...current,
-                      feeDisposition: event.target
-                        .value as typeof importForm.feeDisposition,
-                    }))
-                  }
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal"
-                >
-                  <option value="paid">Already paid</option>
-                  <option value="invoice_required">Invoice required</option>
-                  <option value="waived">Fee waived</option>
-                </select>
-              </label>
-              {importForm.feeDisposition === "waived" && (
+              {importRequiresFinancialStatus ? (
+                <label className="text-sm font-semibold text-slate-700 sm:col-span-2">
+                  Current financial status
+                  <SearchableSelect
+                    value={importForm.feeDisposition}
+                    onChange={(event) =>
+                      setImportForm((current) => ({
+                        ...current,
+                        feeDisposition: event.target
+                          .value as typeof importForm.feeDisposition,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal"
+                  >
+                    <option value="paid">Already paid</option>
+                    <option value="invoice_required">Invoice required</option>
+                    <option value="waived">Fee waived</option>
+                  </SearchableSelect>
+                </label>
+              ) : (
+                <p className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900 sm:col-span-2">
+                  {selectedImportClass?.name || 'This membership'} is fee-exempt. No financial status is required.
+                </p>
+              )}
+              {importRequiresFinancialStatus && importForm.feeDisposition === "waived" && (
                 <label className="text-sm font-semibold text-slate-700 sm:col-span-2">
                   Waiver reason
                   <textarea
@@ -1082,11 +1639,15 @@ const RegisterAdmin = ({
                 disabled={
                   !importForm.userId ||
                   membershipApi.busyAction === "membership:import" ||
-                  (importForm.feeDisposition === "waived" &&
+                  (importRequiresFinancialStatus && importForm.feeDisposition === "waived" &&
                     importForm.reason.trim().length < 10)
                 }
                 onClick={async () => {
-                  await membershipApi.importLegacyMembership(importForm);
+                  await membershipApi.importLegacyMembership({
+                    ...importForm,
+                    feeDisposition: importRequiresFinancialStatus ? importForm.feeDisposition : 'paid',
+                    reason: importRequiresFinancialStatus ? importForm.reason : undefined,
+                  });
                   setShowImport(false);
                 }}
                 className="rounded-lg bg-blue-700 px-3 py-2 text-sm font-bold text-white disabled:opacity-50"
@@ -1096,6 +1657,16 @@ const RegisterAdmin = ({
             </div>
           </div>
         </div>
+      )}
+      {showCsvImport && (
+        <ExistingMemberCsvImportModal
+          users={users}
+          membershipClasses={membershipApi.classes}
+          memberships={membershipApi.memberships}
+          busy={membershipApi.busyAction === 'membership:csv-import'}
+          onClose={() => setShowCsvImport(false)}
+          onImport={membershipApi.importLegacyMembershipCsv}
+        />
       )}
     </div>
   );
@@ -1224,7 +1795,7 @@ const MembershipSettingsPanel = ({ membershipApi }: { membershipApi: ReturnType<
                   <input id={`membership-${membershipClass.id}-xero-item`} value={membershipClass.xeroItemCode || ''} onChange={event => updateClass(membershipClass.id, { xeroItemCode: event.target.value.toUpperCase() })} className={inputClass} placeholder={`BFC-${code || 'MEMBERSHIP'}`} />
                 </MembershipSettingField>
                 <MembershipSettingField inputId={`membership-${membershipClass.id}-xero-account`} label="Accounting code" setting="productXeroAccount" activeHelp={activeHelp} onHelp={openHelp} hint={<span className="mt-1 block text-xs text-slate-500">Xero revenue account; may be the same or different for each product.</span>}>
-                  {xeroAccounts.length > 0 ? <select id={`membership-${membershipClass.id}-xero-account`} value={membershipClass.xeroAccountCode || ''} onChange={event => updateClass(membershipClass.id, { xeroAccountCode: event.target.value || null })} className={inputClass}><option value="">Use the default Xero revenue account</option>{membershipClass.xeroAccountCode && !xeroAccounts.some(account => account.code === membershipClass.xeroAccountCode) && <option value={membershipClass.xeroAccountCode}>{membershipClass.xeroAccountCode} — saved code</option>}{xeroAccounts.map(account => <option key={account.code} value={account.code}>{account.code} — {account.name}</option>)}</select> : <input id={`membership-${membershipClass.id}-xero-account`} value={membershipClass.xeroAccountCode || ''} onChange={event => updateClass(membershipClass.id, { xeroAccountCode: event.target.value.toUpperCase() })} className={inputClass} placeholder={xeroAccountsLoading ? 'Loading Xero accounts…' : 'Example: 200'} />}
+                  {xeroAccounts.length > 0 ? <SearchableSelect id={`membership-${membershipClass.id}-xero-account`} value={membershipClass.xeroAccountCode || ''} onChange={event => updateClass(membershipClass.id, { xeroAccountCode: event.target.value || null })} className={inputClass}><option value="">Use the default Xero revenue account</option>{membershipClass.xeroAccountCode && !xeroAccounts.some(account => account.code === membershipClass.xeroAccountCode) && <option value={membershipClass.xeroAccountCode}>{membershipClass.xeroAccountCode} — saved code</option>}{xeroAccounts.map(account => <option key={account.code} value={account.code}>{account.code} — {account.name}</option>)}</SearchableSelect> : <input id={`membership-${membershipClass.id}-xero-account`} value={membershipClass.xeroAccountCode || ''} onChange={event => updateClass(membershipClass.id, { xeroAccountCode: event.target.value.toUpperCase() })} className={inputClass} placeholder={xeroAccountsLoading ? 'Loading Xero accounts…' : 'Example: 200'} />}
                 </MembershipSettingField>
               </div>
             </article>;
@@ -1237,7 +1808,7 @@ const MembershipSettingsPanel = ({ membershipApi }: { membershipApi: ReturnType<
         <div><h2 className="text-lg font-bold text-slate-950">Membership year and commencement</h2><p className="mt-1 text-sm text-slate-600">These values affect legal commencement and future fee periods. Confirm governance changes before saving them.</p></div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <MembershipSettingField inputId="membership-financial-year-month" label="Financial year starts" setting="financialYearStartMonth" activeHelp={activeHelp} onHelp={openHelp}>
-            <select id="membership-financial-year-month" value={draft.financialYearStartMonth} onChange={event => setDraft(current => ({ ...current, financialYearStartMonth: Number(event.target.value) }))} className={inputClass}>{months.map((month, index) => <option key={month} value={index + 1}>{month}</option>)}</select>
+            <SearchableSelect id="membership-financial-year-month" value={draft.financialYearStartMonth} onChange={event => setDraft(current => ({ ...current, financialYearStartMonth: Number(event.target.value) }))} className={inputClass}>{months.map((month, index) => <option key={month} value={index + 1}>{month}</option>)}</SearchableSelect>
           </MembershipSettingField>
           <MembershipSettingField inputId="membership-financial-year-day" label="Start day" setting="financialYearStartDay" activeHelp={activeHelp} onHelp={openHelp}>
             <input id="membership-financial-year-day" type="number" min={1} max={28} value={draft.financialYearStartDay} onChange={event => setDraft(current => ({ ...current, financialYearStartDay: Number(event.target.value) }))} className={inputClass} />
@@ -1251,7 +1822,7 @@ const MembershipSettingsPanel = ({ membershipApi }: { membershipApi: ReturnType<
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <MembershipSettingField inputId="membership-proration" label="New-member proration" setting="prorationMethod" activeHelp={activeHelp} onHelp={openHelp}>
-            <select id="membership-proration" value={draft.prorationMethod} onChange={event => setDraft(current => ({ ...current, prorationMethod: event.target.value as MembershipProrationMethod }))} className={inputClass}><option value="daily">Daily to financial year end</option><option value="monthly">Whole months remaining</option><option value="none">No proration</option></select>
+            <SearchableSelect id="membership-proration" value={draft.prorationMethod} onChange={event => setDraft(current => ({ ...current, prorationMethod: event.target.value as MembershipProrationMethod }))} className={inputClass}><option value="daily">Daily to financial year end</option><option value="monthly">Whole months remaining</option><option value="none">No proration</option></SearchableSelect>
           </MembershipSettingField>
           <MembershipSettingField inputId="membership-minimum-prorated-fee" label="Minimum prorated fee (incl. GST)" setting="minimumProratedFee" activeHelp={activeHelp} onHelp={openHelp} hint={<span className="mt-1 block text-xs text-slate-500">AUD; use $0 for no minimum</span>}>
             <input id="membership-minimum-prorated-fee" type="number" min={0} step="0.01" value={draft.minimumProratedFee} onChange={event => setDraft(current => ({ ...current, minimumProratedFee: Number(event.target.value) }))} className={inputClass} />
@@ -1301,7 +1872,7 @@ const MembershipSettingsPanel = ({ membershipApi }: { membershipApi: ReturnType<
               <input id="membership-scholarship-item" value={draft.xeroScholarshipItemCode || ''} onChange={event => setDraft(current => ({ ...current, xeroScholarshipItemCode: event.target.value.toUpperCase() }))} className={inputClass} placeholder="BFC-SCHOLARSHIP" />
             </MembershipSettingField>
             <MembershipSettingField inputId="membership-scholarship-account" label="Accounting code" setting="scholarshipXeroAccount" activeHelp={activeHelp} onHelp={openHelp}>
-              {xeroAccounts.length > 0 ? <select id="membership-scholarship-account" value={draft.xeroScholarshipAccountCode || ''} onChange={event => setDraft(current => ({ ...current, xeroScholarshipAccountCode: event.target.value || null }))} className={inputClass}><option value="">Use the default Xero revenue account</option>{draft.xeroScholarshipAccountCode && !xeroAccounts.some(account => account.code === draft.xeroScholarshipAccountCode) && <option value={draft.xeroScholarshipAccountCode}>{draft.xeroScholarshipAccountCode} — saved code</option>}{xeroAccounts.map(account => <option key={account.code} value={account.code}>{account.code} — {account.name}</option>)}</select> : <input id="membership-scholarship-account" value={draft.xeroScholarshipAccountCode || ''} onChange={event => setDraft(current => ({ ...current, xeroScholarshipAccountCode: event.target.value.toUpperCase() }))} className={inputClass} placeholder={xeroAccountsLoading ? 'Loading Xero accounts…' : 'Example: 210'} />}
+              {xeroAccounts.length > 0 ? <SearchableSelect id="membership-scholarship-account" value={draft.xeroScholarshipAccountCode || ''} onChange={event => setDraft(current => ({ ...current, xeroScholarshipAccountCode: event.target.value || null }))} className={inputClass}><option value="">Use the default Xero revenue account</option>{draft.xeroScholarshipAccountCode && !xeroAccounts.some(account => account.code === draft.xeroScholarshipAccountCode) && <option value={draft.xeroScholarshipAccountCode}>{draft.xeroScholarshipAccountCode} — saved code</option>}{xeroAccounts.map(account => <option key={account.code} value={account.code}>{account.code} — {account.name}</option>)}</SearchableSelect> : <input id="membership-scholarship-account" value={draft.xeroScholarshipAccountCode || ''} onChange={event => setDraft(current => ({ ...current, xeroScholarshipAccountCode: event.target.value.toUpperCase() }))} className={inputClass} placeholder={xeroAccountsLoading ? 'Loading Xero accounts…' : 'Example: 210'} />}
             </MembershipSettingField>
           </div>
           {invalidScholarshipSettings && <p className="mt-3 text-sm font-semibold text-red-700 dark:text-red-300">The suggested contribution must be at least the minimum, and the minimum must be at least $0.01.</p>}
@@ -1332,7 +1903,22 @@ const MembershipSettingsPanel = ({ membershipApi }: { membershipApi: ReturnType<
     <aside className="space-y-4">
       <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5"><ShieldCheck className="h-6 w-6 text-blue-700" /><h3 className="mt-3 font-bold text-blue-950">Safeguards kept in place</h3><ul className="mt-2 space-y-2 text-sm text-blue-900"><li>Guests remain exempt from BFC membership.</li><li>Automatic payment waits until the due date.</li><li>Technical and payment retries remain idempotent.</li><li>Staff overrides are recorded per booking.</li><li>Safety, duty, grounding and supervision controls stay independent.</li></ul></div>
       <div className="rounded-2xl border border-violet-200 bg-violet-50 p-5 text-sm text-violet-950"><h3 className="font-bold">Current recommended defaults</h3><p className="mt-2">1 July year start · daily proration · invoices 30 days early · 60-day grace · Xero stale after 12 hours · payment retries after 3 and 7 days.</p></div>
-      <button disabled={membershipApi.busyAction === 'lifecycle'} onClick={() => void membershipApi.runLifecycle()} className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-800 hover:bg-slate-50 disabled:opacity-50"><CalendarClock className="h-4 w-4" /> Run lifecycle now</button>
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <button
+          type="button"
+          disabled={membershipApi.busyAction === 'lifecycle'}
+          onClick={() => void membershipApi.runLifecycle()}
+          aria-describedby="membership-process-updates-description"
+          title="Run the automatic membership checks now. This may commence eligible applications, update fee statuses, or cease memberships after the payment grace period. It does not send email."
+          className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+        >
+          <CalendarClock className="h-4 w-4" />
+          {membershipApi.busyAction === 'lifecycle' ? 'Processing membership updates…' : 'Process membership updates'}
+        </button>
+        <p id="membership-process-updates-description" className="mt-2 text-xs leading-5 text-slate-600">
+          Runs the automatic membership checks immediately. It can commence eligible applications, update payment statuses, and cease overdue memberships after the grace period. No emails are sent.
+        </p>
+      </div>
     </aside>
     {activeHelp && <MembershipSettingHelpPanel setting={activeHelp} onClose={closeHelp} />}
   </div>;
@@ -1340,12 +1926,26 @@ const MembershipSettingsPanel = ({ membershipApi }: { membershipApi: ReturnType<
 
 export const MembershipDashboard: React.FC = () => {
   const membershipApi = useMembership();
-  const [tab, setTab] = useState<'mine' | 'applications' | 'register' | 'settings'>('mine');
+  const [tab, setTab] = useState<MembershipTab>(() => membershipApi.isAdmin ? 'dashboard' : 'mine');
+  const [registerFocus, setRegisterFocus] = useState<MembershipRegisterFocus>('all');
   if (membershipApi.loading) return <div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-blue-700" /></div>;
   if (membershipApi.error) return <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-red-800"><AlertTriangle className="mb-2 h-5 w-5" />{membershipApi.error}</div>;
-  const pendingCount = membershipApi.applications.filter(item => item.status === 'pending').length;
-  const tabs = [{ id: 'mine' as const, label: 'My membership', icon: BadgeCheck }, ...(membershipApi.isAdmin ? [{ id: 'applications' as const, label: `Applications${pendingCount ? ` (${pendingCount})` : ''}`, icon: FileCheck2 }, { id: 'register' as const, label: 'Membership register', icon: Users }, { id: 'settings' as const, label: 'Settings', icon: Settings2 }] : [])];
-  return <div className="space-y-6 p-3 sm:p-6"><header><p className="text-sm font-bold uppercase tracking-[0.18em] text-blue-700">Bendigo Flying Club</p><h1 className="mt-1 text-2xl font-extrabold text-slate-950 sm:text-3xl">Club membership</h1><p className="mt-2 max-w-3xl text-sm text-slate-600">BFC membership, approvals and financial clearance. RAAus membership remains a separate aviation-compliance record.</p></header><nav className="flex gap-2 overflow-x-auto border-b border-slate-200 pb-2">{tabs.map(item => { const Icon = item.icon; return <button key={item.id} onClick={() => setTab(item.id)} className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold ${tab === item.id ? 'bg-blue-700 text-white' : 'text-slate-600 hover:bg-slate-100'}`}><Icon className="h-4 w-4" />{item.label}</button>; })}</nav>{tab === 'mine' && <MyMembership membershipApi={membershipApi} />}{tab === 'applications' && membershipApi.isAdmin && <ApplicationsAdmin membershipApi={membershipApi} />}{tab === 'register' && membershipApi.isAdmin && <RegisterAdmin membershipApi={membershipApi} />}{tab === 'settings' && membershipApi.isAdmin && <MembershipSettingsPanel membershipApi={membershipApi} />}</div>;
+  const pendingCount = membershipApi.applications.filter(item => item.status === 'pending').length
+    + membershipApi.changeRequests.filter(item => ['pending', 'needs_review'].includes(item.status)).length;
+  const tabs = membershipApi.isAdmin
+    ? [
+      { id: 'dashboard' as const, label: 'Dashboard', icon: BarChart3 },
+      { id: 'register' as const, label: 'Membership register', icon: Users },
+      { id: 'applications' as const, label: `Applications${pendingCount ? ` (${pendingCount})` : ''}`, icon: FileCheck2 },
+      { id: 'mine' as const, label: 'My membership', icon: BadgeCheck },
+      { id: 'settings' as const, label: 'Settings', icon: Settings2 },
+    ]
+    : [{ id: 'mine' as const, label: 'My membership', icon: BadgeCheck }];
+  const openRegister = (focus: MembershipRegisterFocus) => {
+    setRegisterFocus(focus);
+    setTab('register');
+  };
+  return <div className="space-y-6 p-3 sm:p-6"><header><p className="text-sm font-bold uppercase tracking-[0.18em] text-blue-700 dark:text-blue-300">Bendigo Flying Club</p><h1 className="mt-1 text-2xl font-extrabold text-slate-950 dark:text-white sm:text-3xl">Club membership</h1><p className="mt-2 max-w-3xl text-sm text-slate-600 dark:text-slate-300">BFC membership, approvals and financial clearance. RAAus membership remains a separate aviation-compliance record.</p></header><nav className="flex gap-2 overflow-x-auto border-b border-slate-200 pb-2 dark:border-slate-700">{tabs.map(item => { const Icon = item.icon; return <button key={item.id} onClick={() => setTab(item.id)} className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold ${tab === item.id ? 'bg-blue-700 text-white' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}`}><Icon className="h-4 w-4" />{item.label}</button>; })}</nav>{tab === 'dashboard' && membershipApi.isAdmin && <MembershipAdminDashboard membershipApi={membershipApi} onOpenApplications={() => setTab('applications')} onOpenRegister={openRegister} />}{tab === 'mine' && <MyMembership membershipApi={membershipApi} />}{tab === 'applications' && membershipApi.isAdmin && <ApplicationsAdmin membershipApi={membershipApi} />}{tab === 'register' && membershipApi.isAdmin && <RegisterAdmin membershipApi={membershipApi} initialFocus={registerFocus} />}{tab === 'settings' && membershipApi.isAdmin && <MembershipSettingsPanel membershipApi={membershipApi} />}</div>;
 };
 
 export default MembershipDashboard;

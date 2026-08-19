@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { AlertTriangle, CheckCircle2, ChevronRight, Clock3, Coffee, Download, Edit3, History, LogOut, Play, Plus, ShieldCheck, X } from 'lucide-react';
@@ -405,9 +406,9 @@ export const DutyDashboard: React.FC = () => {
         {admin && (
           <label className="block max-w-sm rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
             <span className="text-xs font-bold uppercase tracking-wide text-gray-500">Instructor</span>
-            <select value={selectedInstructorId} onChange={event => setSelectedInstructorId(event.target.value)} className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+            <SearchableSelect value={selectedInstructorId} onChange={event => setSelectedInstructorId(event.target.value)} className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
               {staff.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
-            </select>
+            </SearchableSelect>
           </label>
         )}
 
@@ -554,8 +555,8 @@ export const DutyDashboard: React.FC = () => {
                 <div className={`rounded-xl border p-4 ${form.fitForDuty ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
                   <div className="flex items-center gap-2">{form.fitForDuty ? <CheckCircle2 className="h-5 w-5 text-emerald-600" /> : <AlertTriangle className="h-5 w-5 text-red-600" />}<h3 className="font-bold text-gray-950">Pre-duty declaration</h3></div>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <label className="text-sm font-semibold text-gray-700">Fit for duty<select value={String(form.fitForDuty)} onChange={event => setForm({ ...form, fitForDuty: event.target.value === 'true' })} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2"><option value="true">Yes</option><option value="false">No</option></select></label>
-                    <label className="text-sm font-semibold text-gray-700">KSS sleepiness (optional)<select value={form.kssScore} onChange={event => setForm({ ...form, kssScore: event.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2"><option value="">Not entered</option>{Array.from({ length: 9 }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}</select></label>
+                    <label className="text-sm font-semibold text-gray-700">Fit for duty<SearchableSelect value={String(form.fitForDuty)} onChange={event => setForm({ ...form, fitForDuty: event.target.value === 'true' })} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2"><option value="true">Yes</option><option value="false">No</option></SearchableSelect></label>
+                    <label className="text-sm font-semibold text-gray-700">KSS sleepiness (optional)<SearchableSelect value={form.kssScore} onChange={event => setForm({ ...form, kssScore: event.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2"><option value="">Not entered</option>{Array.from({ length: 9 }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}</SearchableSelect></label>
                   </div>
                   <div className="mt-3 flex flex-col gap-2 text-sm text-gray-700 sm:flex-row sm:gap-5"><label className="flex items-center gap-2"><input type="checkbox" checked={form.externalDutyDeclared} onChange={event => setForm({ ...form, externalDutyDeclared: event.target.checked })} /> Relevant external duty has been entered</label><label className="flex items-center gap-2"><input type="checkbox" checked={form.sleepOpportunityConfirmed} onChange={event => setForm({ ...form, sleepOpportunityConfirmed: event.target.checked })} /> Adequate sleep opportunity</label></div>
                   {!form.fitForDuty && <p className="mt-3 text-sm font-semibold text-red-800">Duty cannot be started while marked not fit. Contact operations or a senior instructor.</p>}
@@ -624,7 +625,7 @@ export const DutyDashboard: React.FC = () => {
                   {form.breaks.map((item, index) => (
                     <div key={index} className="rounded-lg bg-gray-50 p-3">
                       <div className="grid gap-2 sm:grid-cols-2"><DutyTimePicker label="Break started" value={item.breakStart} defaultDate={form.dutyDate} onChange={nextValue => setForm({ ...form, breaks: form.breaks.map((value, itemIndex) => itemIndex === index ? { ...value, breakStart: nextValue } : value) })} /><DutyTimePicker label="Break finished" value={item.breakEnd} defaultDate={form.dutyDate} onChange={nextValue => setForm({ ...form, breaks: form.breaks.map((value, itemIndex) => itemIndex === index ? { ...value, breakEnd: nextValue } : value) })} /></div>
-                      <select aria-label="Break type" value={item.breakType} onChange={event => setForm({ ...form, breaks: form.breaks.map((value, itemIndex) => itemIndex === index ? { ...value, breakType: event.target.value as BreakDraft['breakType'] } : value) })} className="mt-2 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm"><option value="break">Break</option><option value="rest">Rest</option><option value="split_duty_rest">Split-duty rest</option></select>
+                      <SearchableSelect aria-label="Break type" value={item.breakType} onChange={event => setForm({ ...form, breaks: form.breaks.map((value, itemIndex) => itemIndex === index ? { ...value, breakType: event.target.value as BreakDraft['breakType'] } : value) })} className="mt-2 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm"><option value="break">Break</option><option value="rest">Rest</option><option value="split_duty_rest">Split-duty rest</option></SearchableSelect>
                       <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-gray-700"><label className="flex items-center gap-1.5"><input type="checkbox" checked={item.freeOfDuty} onChange={event => setForm({ ...form, breaks: form.breaks.map((value, itemIndex) => itemIndex === index ? { ...value, freeOfDuty: event.target.checked } : value) })} /> Free of all duty</label><label className="flex items-center gap-1.5"><input type="checkbox" checked={item.affectsCalculation} onChange={event => setForm({ ...form, breaks: form.breaks.map((value, itemIndex) => itemIndex === index ? { ...value, affectsCalculation: event.target.checked } : value) })} /> Affects approved calculation</label><button type="button" onClick={() => setForm({ ...form, breaks: form.breaks.filter((_, itemIndex) => itemIndex !== index) })} className="ml-auto font-bold text-red-600">Remove</button></div>
                     </div>
                   ))}
@@ -635,7 +636,7 @@ export const DutyDashboard: React.FC = () => {
               <details className="rounded-xl border border-gray-200 bg-gray-50 p-4">
                 <summary className="cursor-pointer text-sm font-bold text-gray-800">More details</summary>
                 <div className="mt-4 space-y-4">
-                  {form.id && <label className="block text-sm font-semibold text-gray-700">Status<select value={form.status} onChange={event => setForm({ ...form, status: event.target.value as DutyPeriod['status'] })} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2"><option value="draft">Draft</option><option value="active">Active</option><option value="completed">Completed</option></select></label>}
+                  {form.id && <label className="block text-sm font-semibold text-gray-700">Status<SearchableSelect value={form.status} onChange={event => setForm({ ...form, status: event.target.value as DutyPeriod['status'] })} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2"><option value="draft">Draft</option><option value="active">Active</option><option value="completed">Completed</option></SearchableSelect></label>}
                   <div className="grid gap-3 sm:grid-cols-2"><label className="flex items-center gap-2 text-sm font-semibold text-gray-700"><input type="checkbox" checked={form.isExternal} onChange={event => setForm({ ...form, isExternal: event.target.checked })} /> Duty outside this club</label>{form.isExternal && <input value={form.externalOrganisation} onChange={event => setForm({ ...form, externalOrganisation: event.target.value })} placeholder="External organisation" className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm" />}</div>
                   <label className="block text-sm font-semibold text-gray-700">Notes<textarea value={form.notes} onChange={event => setForm({ ...form, notes: event.target.value })} rows={2} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2" /></label>
                 </div>

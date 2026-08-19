@@ -2,12 +2,15 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
-  getSupervisorLocationValidationError,
   toggleSupervisorLocation,
 } from './supervisorRosterLocations.ts';
 
 const rosteredSupervisorMigration = readFileSync(
   new URL('../../supabase/migrations/20260804043000_allow_active_supervisors_for_historical_lessons.sql', import.meta.url),
+  'utf8',
+);
+const automaticRosterCoverageMigration = readFileSync(
+  new URL('../../supabase/migrations/20260817045950_refresh_calendar_and_rostered_supervision.sql', import.meta.url),
   'utf8',
 );
 
@@ -16,37 +19,15 @@ test('adds and removes a supervision location without disturbing the others', ()
   assert.deepEqual(toggleSupervisorLocation(['bendigo', 'echuca'], 'bendigo'), ['echuca']);
 });
 
-test('requires coverage on every working day for an authorised supervisor', () => {
-  assert.equal(
-    getSupervisorLocationValidationError({
-      isAuthorisedSupervisor: true,
-      isAvailable: true,
-      supervisionLocationIds: [],
-      dayLabel: 'Monday',
-    }),
-    'Monday: choose at least one supervision location',
-  );
-});
+test('ordinary bookable roster availability covers the senior working location', () => {
+  const findSupervisorBody = automaticRosterCoverageMigration.match(
+    /create or replace function public\.find_available_supervisor[\s\S]*?as \$\$([\s\S]*?)\$\$;/i,
+  )?.[1];
 
-test('does not require supervisor coverage for non-working days or other instructors', () => {
-  assert.equal(
-    getSupervisorLocationValidationError({
-      isAuthorisedSupervisor: true,
-      isAvailable: false,
-      supervisionLocationIds: [],
-      dayLabel: 'Monday',
-    }),
-    null,
-  );
-  assert.equal(
-    getSupervisorLocationValidationError({
-      isAuthorisedSupervisor: false,
-      isAvailable: true,
-      supervisionLocationIds: [],
-      dayLabel: 'Monday',
-    }),
-    null,
-  );
+  assert.ok(findSupervisorBody, 'supervisor lookup function must be present');
+  assert.match(findSupervisorBody, /instructor_available_at_location_for_slot/i);
+  assert.match(findSupervisorBody, /supervisor_roster_locations_for_slot/i);
+  assert.doesNotMatch(findSupervisorBody, /booking\.instructor_id\s*=\s*authorisation\.instructor_id/i);
 });
 
 test('a rostered supervisor remains available while conducting their own lesson', () => {

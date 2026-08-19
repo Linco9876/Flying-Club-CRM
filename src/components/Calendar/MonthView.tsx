@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useState } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isToday, isSameDay, startOfWeek, endOfWeek } from 'date-fns';
 import { Booking } from '../../types';
@@ -13,6 +14,7 @@ interface MonthViewProps {
   weekStartsOn: 0 | 1;
   showWeekends: boolean;
   availableHours: number;
+  getBookingColorClasses: (booking: Booking) => string;
 }
 
 export const MonthView: React.FC<MonthViewProps> = ({
@@ -25,6 +27,7 @@ export const MonthView: React.FC<MonthViewProps> = ({
   weekStartsOn,
   showWeekends,
   availableHours,
+  getBookingColorClasses,
 }) => {
   const [selectedResourceType, setSelectedResourceType] = useState<'aircraft' | 'instructor'>('aircraft');
   const [selectedResourceId, setSelectedResourceId] = useState<string>('');
@@ -106,7 +109,7 @@ export const MonthView: React.FC<MonthViewProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Resource Type</label>
-            <select
+            <SearchableSelect
               value={selectedResourceType}
               onChange={(e) => {
                 setSelectedResourceType(e.target.value as 'aircraft' | 'instructor');
@@ -116,14 +119,14 @@ export const MonthView: React.FC<MonthViewProps> = ({
             >
               <option value="aircraft">Aircraft</option>
               <option value="instructor">Instructor</option>
-            </select>
+            </SearchableSelect>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               {selectedResourceType === 'aircraft' ? 'Select Aircraft' : 'Select Instructor'}
             </label>
-            <select
+            <SearchableSelect
               value={selectedResourceId}
               onChange={(e) => setSelectedResourceId(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -140,7 +143,7 @@ export const MonthView: React.FC<MonthViewProps> = ({
                       {i.name}
                     </option>
                   ))}
-            </select>
+            </SearchableSelect>
           </div>
         </div>
 
@@ -231,7 +234,7 @@ export const MonthView: React.FC<MonthViewProps> = ({
                       {dayBookings.slice(0, 2).map(booking => (
                         <div
                           key={booking.id}
-                          className="text-xs bg-blue-100 text-blue-800 px-1 py-0.5 rounded truncate"
+                          className={`truncate rounded border-l-2 px-1 py-0.5 text-xs ${getBookingColorClasses(booking)}`}
                           title={`${format(new Date(booking.startTime), 'HH:mm')} - ${format(new Date(booking.endTime), 'HH:mm')}`}
                         >
                           {format(new Date(booking.startTime), 'HH:mm')}

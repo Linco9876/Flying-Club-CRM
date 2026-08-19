@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } from 'react';
 import {
   format,
@@ -12,6 +13,7 @@ import {
   addWeeks,
   addMonths,
   subMonths,
+  differenceInCalendarDays,
 } from 'date-fns';
 import {
   ChevronLeft,
@@ -25,16 +27,16 @@ import {
   CalendarDays,
   Loader2,
   Search,
+  Sun,
 } from 'lucide-react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
 import { useFlightLogs } from '../../hooks/useFlightLogs';
 import { useGroundSessionLogs } from '../../hooks/useGroundSessionLogs';
-import { useGuestBookingConversion } from '../../hooks/useGuestBookingConversion';
 import { useKeyboardNavigation } from '../../hooks/useKeyboardNavigation';
 import { useCalendarSettings, useOrganisationSettings, useUserPreferences } from '../../hooks/useSettings';
-import { useInstructorAvailability } from '../../hooks/useInstructorAvailability';
+import { useInstructorAvailability, type Absence } from '../../hooks/useInstructorAvailability';
 import { useOrganisationLocations } from '../../hooks/useOrganisationLocations';
 import { useAuth } from '../../context/AuthContext';
 import { usePageLoadState } from '../../context/PageLoadContext';
@@ -48,10 +50,35 @@ import { BookingActionMenu } from '../Bookings/BookingActionMenu';
 import { FlightLogModal } from '../Bookings/FlightLogModal';
 import { GroundSessionLogModal } from '../Bookings/GroundSessionLogModal';
 import { BookingCancellationModal } from '../Bookings/BookingCancellationModal';
+import { GuestPromotionModal } from '../Bookings/GuestPromotionModal';
 import type { BookingCancellationInput } from '../../hooks/useBookings';
 import toast from 'react-hot-toast';
 import { NextAvailableSlotModal, type NextAvailableSlot } from './NextAvailableSlotModal';
 import { useLatestEffect } from '../../hooks/useLatestEffect';
+import { FLIGHT_LOG_ALREADY_EXISTS_MESSAGE } from '../../utils/flightLogBookingRules';
+import { resolveCalendarNotificationFocus } from '../../utils/calendarNotificationFocus';
+import { useManualBookingSupervision } from '../../hooks/useManualBookingSupervision';
+import {
+  formatCalendarMinute,
+  getCalendarDaylightTimes,
+  isCalendarSlotOutsideDaylight,
+} from '../../utils/calendarDaylight';
+import {
+  canManageCalendarDowntime,
+  getCalendarUnavailabilityBackground,
+  getTemporaryDowntimeValidationError,
+} from '../../utils/calendarDowntime';
+import {
+  buildCalendarViewSearchParams,
+  filterCalendarListBookings,
+  formatCalendarListDate,
+  getDefaultCalendarListRange,
+  isCalendarListDateRangeValid,
+  type CalendarListBookingType,
+  type CalendarListSort,
+  type CalendarListStatus,
+} from '../../utils/calendarListView';
+import { getCalendarStickyHeaderTransition } from '../../utils/calendarStickyHeader';
 
 interface CalendarProps {
   bookings: Booking[];
@@ -82,9 +109,22 @@ interface CalendarProps {
 interface Resource {
   id: string;
   name: string;
+  subtitle?: string;
   type: 'aircraft' | 'instructor';
   icon: React.ReactNode;
   status?: string;
+}
+
+interface FloatingCalendarHeaderState {
+  visible: boolean;
+  progress: number;
+  height: number;
+  left: number;
+  width: number;
+  top: number;
+  scrollLeft: number;
+  contentWidth: number;
+  gridLeft: number;
 }
 
 interface UnavailabilityPeriod {
@@ -107,8 +147,38 @@ const MAX_CALENDAR_SLOT_HEIGHT = 48;
 const MIN_CALENDAR_VISIBLE_SLOTS = 12;
 const TOUCH_HOLD_TO_DRAG_MS = 260;
 const TOUCH_TAP_MAX_MS = 160;
+const COMPACT_CALENDAR_HEADER_HEIGHT = 48;
+const CALENDAR_HEADER_SHRINK_DISTANCE = 40;
 const TOUCH_TAP_MOVE_THRESHOLD_PX = 6;
 const TOUCH_CANCEL_MOVE_THRESHOLD_PX = 24;
+const CALENDAR_DAYLIGHT_OVERLAY_STORAGE_KEY = 'bfc.calendar.shade_non_daylight';
+
+const CALENDAR_BOOKING_COLOUR_CLASSES = {
+  confirmed: 'bg-blue-100/90 border-blue-500 hover:bg-blue-100 text-blue-950',
+  pendingApproval: 'bg-amber-100/90 border-amber-500 hover:bg-amber-100 text-amber-950',
+  pendingSupervision: 'bg-orange-100/90 border-orange-500 hover:bg-orange-100 text-orange-950',
+  logged: 'bg-emerald-100/90 border-emerald-500 hover:bg-emerald-100 text-emerald-950',
+  attention: 'bg-red-100/90 border-red-500 hover:bg-red-100 text-red-950',
+  cancelled: 'bg-gray-100/90 border-gray-500 hover:bg-gray-100 text-gray-800',
+} as const;
+
+const CALENDAR_BOOKING_LEGEND = [
+  { label: 'Confirmed', classes: CALENDAR_BOOKING_COLOUR_CLASSES.confirmed },
+  { label: 'Pending approval', classes: CALENDAR_BOOKING_COLOUR_CLASSES.pendingApproval },
+  { label: 'Needs supervision', classes: CALENDAR_BOOKING_COLOUR_CLASSES.pendingSupervision },
+  { label: 'Flight logged', classes: CALENDAR_BOOKING_COLOUR_CLASSES.logged },
+  { label: 'Waitlist / past unlogged', classes: CALENDAR_BOOKING_COLOUR_CLASSES.attention },
+  { label: 'Cancelled', classes: CALENDAR_BOOKING_COLOUR_CLASSES.cancelled },
+] as const;
+
+const getStoredDaylightOverlayPreference = () => {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(CALENDAR_DAYLIGHT_OVERLAY_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+};
 
 interface CalendarResourceLayoutPreference {
   hiddenIds?: string[];
@@ -161,14 +231,19 @@ export const Calendar: React.FC<CalendarProps> = ({
   isKioskMode = false,
 }) => {
   const { user } = useAuth();
+  const {
+    acceptBooking: acceptManualSupervision,
+    acceptingBookingId,
+    canAcceptBooking: canAcceptManualSupervision,
+  } = useManualBookingSupervision();
+  const location = useLocation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { aircraft, loading: aircraftLoading } = useAircraft({ participateInPageLoad: false });
   const { users, loading: usersLoading } = useUsers();
   const [publicInstructorDirectory, setPublicInstructorDirectory] = useState<Array<{ id: string; name: string; email: string }>>([]);
-  const { deleteFlightLog, getFlightLogDeleteImpact } = useFlightLogs(undefined, { participateInPageLoad: false });
+  const { deleteFlightLog, getFlightLogDeleteImpact, findFlightLogForBooking } = useFlightLogs(undefined, { participateInPageLoad: false });
   const { deleteGroundSessionLog } = useGroundSessionLogs();
-  const { convertGuestBookingToMember } = useGuestBookingConversion();
   const bookingInstructorDirectory = useMemo(() => {
     const merged = new Map<string, { id: string; name: string; email: string }>();
     bookings.forEach((booking) => {
@@ -290,6 +365,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     scheduleChanges,
     loading: availabilityLoading,
     addAbsence,
+    updateAbsence,
     deleteAbsence,
   } = useInstructorAvailability();
   const lastAvailabilityRef = useRef({
@@ -345,7 +421,38 @@ export const Calendar: React.FC<CalendarProps> = ({
   const [showDatePicker, setShowDatePicker] = useState(false);
   const datePickerRef = useRef<HTMLDivElement | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('day');
+  const resourceCalendarGridRef = useRef<HTMLDivElement | null>(null);
+  const resourceCalendarHeaderRef = useRef<HTMLDivElement | null>(null);
+  const floatingHeaderFrameRef = useRef<number | null>(null);
+  const [floatingHeader, setFloatingHeader] = useState<FloatingCalendarHeaderState>({
+    visible: false,
+    progress: 0,
+    height: COMPACT_CALENDAR_HEADER_HEIGHT,
+    left: 0,
+    width: 0,
+    top: 64,
+    scrollLeft: 0,
+    contentWidth: 0,
+    gridLeft: 0,
+  });
+  const [notificationFocusBookingId, setNotificationFocusBookingId] = useState<string | null>(null);
+  const handledNotificationFocusRef = useRef<string | null>(null);
+  const notificationFocusAnimationFrameRef = useRef<number | null>(null);
+  const notificationFocusScrollTimerRef = useRef<number | null>(null);
+  const notificationFocusClearTimerRef = useRef<number | null>(null);
   const [listPilotFilter, setListPilotFilter] = useState<string>('');
+  const [listInstructorFilter, setListInstructorFilter] = useState<string>('');
+  const [listResourceFilter, setListResourceFilter] = useState<string>('');
+  const [listBookingTypeFilter, setListBookingTypeFilter] = useState<CalendarListBookingType>('all');
+  const [listStatusFilter, setListStatusFilter] = useState<CalendarListStatus>('all');
+  const [listSearchQuery, setListSearchQuery] = useState('');
+  const [listSort, setListSort] = useState<CalendarListSort>('ascending');
+  const [listStartDate, setListStartDate] = useState(() =>
+    getDefaultCalendarListRange(parseCalendarDateParam(searchParams.get('date')) || new Date()).startDate
+  );
+  const [listEndDate, setListEndDate] = useState(() =>
+    getDefaultCalendarListRange(parseCalendarDateParam(searchParams.get('date')) || new Date()).endDate
+  );
   const [selectedAircraftId, setSelectedAircraftId] = useState<string>('');
   const [selectedInstructorId, setSelectedInstructorId] = useState<string>('');
   const hasAutoSelectedWeekResources = useRef(false);
@@ -357,6 +464,8 @@ export const Calendar: React.FC<CalendarProps> = ({
   const [showCancelledBookings, setShowCancelledBookings] = useState(false);
   const [showUnavailableBlocks, setShowUnavailableBlocks] = useState(true);
   const [hideAllDayUnavailableResources, setHideAllDayUnavailableResources] = useState(false);
+  const [showDaylightOverlay, setShowDaylightOverlay] = useState(getStoredDaylightOverlayPreference);
+  const [daylightLocationId, setDaylightLocationId] = useState('');
   const [downtimeChoice, setDowntimeChoice] = useState<{
     date: Date;
     startTime: string;
@@ -364,6 +473,9 @@ export const Calendar: React.FC<CalendarProps> = ({
     instructorId: string;
   } | null>(null);
   const [downtimeReason, setDowntimeReason] = useState('Temporary off period');
+  const [downtimeEditor, setDowntimeEditor] = useState<Absence | null>(null);
+  const [downtimeEditorBusy, setDowntimeEditorBusy] = useState<'save' | 'delete' | null>(null);
+  const [confirmingDowntimeDelete, setConfirmingDowntimeDelete] = useState(false);
 
   // Drag and drop states
   const [draggedBooking, setDraggedBooking] = useState<Booking | null>(null);
@@ -415,6 +527,7 @@ export const Calendar: React.FC<CalendarProps> = ({
 
   // Action menu and flight log states
   const [actionMenuBooking, setActionMenuBooking] = useState<Booking | null>(null);
+  const [guestPromotionBooking, setGuestPromotionBooking] = useState<Booking | null>(null);
   const [cancellationBooking, setCancellationBooking] = useState<Booking | null>(null);
   const [actionMenuPosition, setActionMenuPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [bookingMenuLoading, setBookingMenuLoading] = useState<{ bookingId: string; x: number; y: number } | null>(null);
@@ -426,6 +539,105 @@ export const Calendar: React.FC<CalendarProps> = ({
   const [highlightUnlogged, setHighlightUnlogged] = useState(false);
   const isInteractingWithBooking = Boolean(draggedBooking || resizingBooking || pendingBookingDrag);
 
+  const updateFloatingCalendarHeader = useCallback(() => {
+    const grid = resourceCalendarGridRef.current;
+    const originalHeader = resourceCalendarHeaderRef.current;
+    if (!grid || !originalHeader) {
+      setFloatingHeader(current => current.visible ? { ...current, visible: false } : current);
+      return;
+    }
+
+    const gridBounds = grid.getBoundingClientRect();
+    const headerBounds = originalHeader.getBoundingClientRect();
+    const portalHeader = document.querySelector<HTMLElement>('.app-sticky-header');
+    const stickyTop = Math.max(0, Math.round(portalHeader?.getBoundingClientRect().bottom || 0));
+    const left = Math.max(0, Math.round(gridBounds.left));
+    const right = Math.min(window.innerWidth, Math.round(gridBounds.right));
+    const transition = getCalendarStickyHeaderTransition({
+      viewportWidth: window.innerWidth,
+      stickyTop,
+      originalHeaderTop: headerBounds.top,
+      originalHeaderHeight: headerBounds.height,
+      calendarBottom: gridBounds.bottom,
+      compactHeaderHeight: COMPACT_CALENDAR_HEADER_HEIGHT,
+      shrinkDistance: CALENDAR_HEADER_SHRINK_DISTANCE,
+      viewMode,
+      isKioskMode,
+    });
+    const next: FloatingCalendarHeaderState = {
+      visible: transition.visible,
+      progress: transition.progress,
+      height: transition.height,
+      left,
+      width: Math.max(0, right - left),
+      top: stickyTop,
+      scrollLeft: grid.scrollLeft,
+      contentWidth: grid.scrollWidth,
+      gridLeft: gridBounds.left,
+    };
+
+    setFloatingHeader(current => (
+      current.visible === next.visible
+      && Math.abs(current.progress - next.progress) < 0.001
+      && Math.abs(current.height - next.height) < 0.1
+      && current.left === next.left
+      && current.width === next.width
+      && current.top === next.top
+      && current.scrollLeft === next.scrollLeft
+      && current.contentWidth === next.contentWidth
+      && Math.abs(current.gridLeft - next.gridLeft) < 0.5
+        ? current
+        : next
+    ));
+  }, [isKioskMode, viewMode]);
+
+  useLayoutEffect(() => {
+    const grid = resourceCalendarGridRef.current;
+    if (!grid || isKioskMode || (viewMode !== 'day' && viewMode !== 'week')) {
+      setFloatingHeader(current => current.visible ? { ...current, visible: false } : current);
+      return undefined;
+    }
+
+    const scheduleUpdate = () => {
+      if (floatingHeaderFrameRef.current !== null) return;
+      floatingHeaderFrameRef.current = window.requestAnimationFrame(() => {
+        floatingHeaderFrameRef.current = null;
+        updateFloatingCalendarHeader();
+      });
+    };
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(scheduleUpdate)
+      : null;
+
+    window.addEventListener('scroll', scheduleUpdate, { passive: true });
+    window.addEventListener('resize', scheduleUpdate);
+    grid.addEventListener('scroll', scheduleUpdate, { passive: true });
+    resizeObserver?.observe(grid);
+    if (resourceCalendarHeaderRef.current) resizeObserver?.observe(resourceCalendarHeaderRef.current);
+    scheduleUpdate();
+
+    return () => {
+      window.removeEventListener('scroll', scheduleUpdate);
+      window.removeEventListener('resize', scheduleUpdate);
+      grid.removeEventListener('scroll', scheduleUpdate);
+      resizeObserver?.disconnect();
+      if (floatingHeaderFrameRef.current !== null) {
+        window.cancelAnimationFrame(floatingHeaderFrameRef.current);
+        floatingHeaderFrameRef.current = null;
+      }
+    };
+  }, [
+    currentDate,
+    hiddenIds,
+    isKioskMode,
+    orderedIds,
+    resourceFilter,
+    selectedAircraftId,
+    selectedInstructorId,
+    updateFloatingCalendarHeader,
+    viewMode,
+  ]);
+
   const parseHour = (time: string | undefined, fallback: number, roundUp = false) => {
     if (!time) return fallback;
     const [hour, minute] = time.split(':').map(Number);
@@ -435,6 +647,58 @@ export const Calendar: React.FC<CalendarProps> = ({
   const calendarStartHour = parseHour(organisationSettings?.booking_day_start, 6);
   const calendarEndHour = Math.max(calendarStartHour + 1, parseHour(organisationSettings?.booking_day_end, 20, true));
   const availableCalendarHours = calendarEndHour - calendarStartHour;
+  const daylightLocation = useMemo(
+    () => activeLocations.find((item) => item.id === daylightLocationId) || primaryLocation || activeLocations[0] || null,
+    [activeLocations, daylightLocationId, primaryLocation],
+  );
+  const daylightTimesByDate = useMemo(() => {
+    const result = new Map<string, ReturnType<typeof getCalendarDaylightTimes>>();
+    if (!showDaylightOverlay || !daylightLocation) return result;
+
+    const weekStartsOn = calendarSettings?.week_starts_on === 'sunday' ? 0 : 1;
+    const dates = viewMode === 'week'
+      ? eachDayOfInterval({
+          start: startOfWeek(currentDate, { weekStartsOn }),
+          end: endOfWeek(currentDate, { weekStartsOn }),
+        })
+      : [currentDate];
+
+    dates.forEach((date) => {
+      result.set(
+        format(date, 'yyyy-MM-dd'),
+        getCalendarDaylightTimes(
+          date,
+          daylightLocation.latitude,
+          daylightLocation.longitude,
+          organisationSettings?.timezone || 'Australia/Melbourne',
+        ),
+      );
+    });
+    return result;
+  }, [
+    calendarSettings?.week_starts_on,
+    currentDate,
+    daylightLocation,
+    organisationSettings?.timezone,
+    showDaylightOverlay,
+    viewMode,
+  ]);
+
+  useEffect(() => {
+    setDaylightLocationId((current) => {
+      if (activeLocations.some((item) => item.id === current)) return current;
+      return primaryLocation?.id || activeLocations[0]?.id || '';
+    });
+  }, [activeLocations, primaryLocation]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(CALENDAR_DAYLIGHT_OVERLAY_STORAGE_KEY, String(showDaylightOverlay));
+    } catch {
+      // This is a convenience preference; calendar shading still works for the current session.
+    }
+  }, [showDaylightOverlay]);
 
   // Tick every 30 seconds so past-unlogged bookings turn red automatically
   const [, setTick] = useState(0);
@@ -503,7 +767,8 @@ export const Calendar: React.FC<CalendarProps> = ({
   }, [showDatePicker]);
 
   useLayoutEffect(() => {
-    if (searchParams.get('view') === 'list') return;
+    const requestedView = searchParams.get('view');
+    if (requestedView && ['day', 'week', 'month', 'list'].includes(requestedView)) return;
     if (calendarSettings?.default_view) {
       const defaultView = calendarSettings.default_view === 'list'
         ? 'list'
@@ -514,15 +779,10 @@ export const Calendar: React.FC<CalendarProps> = ({
 
   useEffect(() => {
     const requestedView = searchParams.get('view');
-    if (requestedView === 'list') {
-      setViewMode('list');
+    if (requestedView && ['day', 'week', 'month', 'list'].includes(requestedView)) {
+      setViewMode(requestedView as ViewMode);
     }
   }, [searchParams]);
-
-  useEffect(() => {
-    if (viewMode !== 'list') return;
-    setListPilotFilter(prev => prev || user?.id || '');
-  }, [user?.id, viewMode]);
 
   useEffect(() => {
     if (viewMode !== 'week') return;
@@ -642,6 +902,70 @@ export const Calendar: React.FC<CalendarProps> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayAircraft.length, displayInstructors.length, calendarSettings?.resource_display_order]);
 
+  useEffect(() => {
+    if (initialCalendarLoading) return;
+
+    const focus = resolveCalendarNotificationFocus(searchParams.get('bookingId'), bookings);
+    if (!focus) return;
+
+    const navigationKey = `${location.key}:${focus.bookingId}`;
+    if (handledNotificationFocusRef.current === navigationKey) return;
+    handledNotificationFocusRef.current = navigationKey;
+
+    setViewMode('day');
+    setCurrentDate(focus.date);
+    setDatePickerMonth(focus.date);
+    setResourceFilter('both');
+    setHiddenIds((current) => {
+      const next = new Set(current);
+      focus.revealResourceIds.forEach((resourceId) => next.delete(resourceId));
+      return next;
+    });
+    if (focus.showCancelled) setShowCancelledBookings(true);
+    if (focus.showPending) setShowPendingBookings(true);
+    if (focus.showWaitlisted) setShowWaitlistedBookings(true);
+
+    if (notificationFocusAnimationFrameRef.current !== null) {
+      window.cancelAnimationFrame(notificationFocusAnimationFrameRef.current);
+    }
+    if (notificationFocusScrollTimerRef.current !== null) {
+      window.clearTimeout(notificationFocusScrollTimerRef.current);
+    }
+    if (notificationFocusClearTimerRef.current !== null) {
+      window.clearTimeout(notificationFocusClearTimerRef.current);
+    }
+
+    setNotificationFocusBookingId(null);
+    notificationFocusAnimationFrameRef.current = window.requestAnimationFrame(() => {
+      setNotificationFocusBookingId(focus.bookingId);
+      notificationFocusAnimationFrameRef.current = null;
+    });
+    notificationFocusScrollTimerRef.current = window.setTimeout(() => {
+      const matchingCards = Array.from(
+        document.querySelectorAll<HTMLElement>(`[data-booking-id="${focus.bookingId}"]`)
+      );
+      const visibleCard = matchingCards.find((card) => card.getClientRects().length > 0);
+      visibleCard?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+      notificationFocusScrollTimerRef.current = null;
+    }, 220);
+    notificationFocusClearTimerRef.current = window.setTimeout(() => {
+      setNotificationFocusBookingId((current) => current === focus.bookingId ? null : current);
+      notificationFocusClearTimerRef.current = null;
+    }, 6500);
+  }, [bookings, initialCalendarLoading, location.key, searchParams]);
+
+  useEffect(() => () => {
+    if (notificationFocusAnimationFrameRef.current !== null) {
+      window.cancelAnimationFrame(notificationFocusAnimationFrameRef.current);
+    }
+    if (notificationFocusScrollTimerRef.current !== null) {
+      window.clearTimeout(notificationFocusScrollTimerRef.current);
+    }
+    if (notificationFocusClearTimerRef.current !== null) {
+      window.clearTimeout(notificationFocusClearTimerRef.current);
+    }
+  }, []);
+
 
   // Compute slot height on mount and resize
   useLatestEffect(() => {
@@ -707,11 +1031,28 @@ export const Calendar: React.FC<CalendarProps> = ({
       setCurrentDate((prev) =>
         direction === 'next' ? addMonths(prev, 1) : subMonths(prev, 1)
       );
+    } else if (viewMode === 'list') {
+      const start = parseCalendarDateParam(listStartDate);
+      const end = parseCalendarDateParam(listEndDate);
+      if (!start || !end) return;
+      const rangeLength = Math.max(1, differenceInCalendarDays(end, start) + 1);
+      const offset = direction === 'next' ? rangeLength : -rangeLength;
+      const nextStart = addDays(start, offset);
+      const nextEnd = addDays(end, offset);
+      setListStartDate(formatCalendarListDate(nextStart));
+      setListEndDate(formatCalendarListDate(nextEnd));
+      setCurrentDate(nextStart);
+      setDatePickerMonth(nextStart);
     }
   };
 
   const goToToday = () => {
     const today = new Date();
+    if (viewMode === 'list') {
+      const range = getDefaultCalendarListRange(today);
+      setListStartDate(range.startDate);
+      setListEndDate(range.endDate);
+    }
     setCurrentDate(today);
     setDatePickerMonth(today);
     setShowDatePicker(false);
@@ -824,13 +1165,76 @@ export const Calendar: React.FC<CalendarProps> = ({
     )
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  const filteredListBookings = bookings
-    .filter((booking) => {
-      if (!passesCalendarFilters(booking)) return false;
-      if (!listPilotFilter) return true;
-      return (booking.studentId || booking.pilotId) === listPilotFilter;
-    })
-    .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+  const listDateRangeValid = isCalendarListDateRangeValid(listStartDate, listEndDate);
+  const filteredListBookings = filterCalendarListBookings(
+    bookings,
+    {
+      startDate: listStartDate,
+      endDate: listEndDate,
+      pilotId: listPilotFilter,
+      instructorId: listInstructorFilter,
+      resourceId: listResourceFilter,
+      bookingType: listBookingTypeFilter,
+      status: listStatusFilter,
+      query: listSearchQuery,
+      sort: listSort,
+    },
+    (booking) => [
+      getHirerName(booking),
+      getInstructorName(booking),
+      getAircraftName(booking),
+      booking.guestEmail,
+      booking.guestPhone,
+      booking.location,
+      booking.notes,
+      booking.status.replaceAll('_', ' '),
+    ].filter(Boolean).join(' '),
+  );
+
+  const setCalendarListRange = (start: Date, end: Date) => {
+    setListStartDate(formatCalendarListDate(start));
+    setListEndDate(formatCalendarListDate(end));
+    setCurrentDate(start);
+    setDatePickerMonth(start);
+  };
+
+  const updateListStartDate = (value: string) => {
+    setListStartDate(value);
+    if (value && listEndDate && value > listEndDate) setListEndDate(value);
+    const parsed = parseCalendarDateParam(value);
+    if (parsed) {
+      setCurrentDate(parsed);
+      setDatePickerMonth(parsed);
+    }
+  };
+
+  const updateListEndDate = (value: string) => {
+    setListEndDate(value);
+    if (value && listStartDate && value < listStartDate) setListStartDate(value);
+  };
+
+  const clearCalendarListFilters = () => {
+    setListPilotFilter('');
+    setListInstructorFilter('');
+    setListResourceFilter('');
+    setListBookingTypeFilter('all');
+    setListStatusFilter('all');
+    setListSearchQuery('');
+    setListSort('ascending');
+  };
+
+  const showListBookingOnCalendar = (booking: Booking) => {
+    const bookingDate = new Date(booking.startTime);
+    setCurrentDate(bookingDate);
+    setDatePickerMonth(bookingDate);
+    setViewMode('day');
+    setSearchParams((current) => {
+      const next = buildCalendarViewSearchParams(current, 'day');
+      next.set('date', format(bookingDate, 'yyyy-MM-dd'));
+      next.set('bookingId', booking.id);
+      return next;
+    });
+  };
 
   const formatBookingTimeRange = (booking: Booking) =>
     `${format(new Date(booking.startTime), 'HH:mm')} - ${format(new Date(booking.endTime), 'HH:mm')}`;
@@ -861,6 +1265,24 @@ export const Calendar: React.FC<CalendarProps> = ({
 
   const getBookingFlightLogId = (booking: Booking) => booking.flightLog?.id || '';
   const getBookingGroundSessionLogId = (booking: Booking) => booking.groundSessionLog?.id || '';
+
+  const openCreateFlightLog = async (booking: Booking) => {
+    const existingLog = await findFlightLogForBooking(booking.id);
+    if (existingLog.error) {
+      toast.error('The CRM could not confirm whether this booking is already logged. Refresh the calendar and try again.');
+      await Promise.resolve(onRefresh?.());
+      return;
+    }
+    if (existingLog.data) {
+      toast.error(FLIGHT_LOG_ALREADY_EXISTS_MESSAGE);
+      await Promise.resolve(onRefresh?.());
+      return;
+    }
+
+    setFlightLogBooking(booking);
+    setFlightLogMode('create');
+    setShowFlightLogModal(true);
+  };
 
   const handleDeleteBookingFlightLog = async (booking: Booking) => {
     const flightLogId = getBookingFlightLogId(booking);
@@ -951,30 +1373,30 @@ export const Calendar: React.FC<CalendarProps> = ({
 
   const getBookingColorClasses = (booking: Booking) => {
     if (booking.hasConflict) {
-      return 'bg-red-100/80 border-red-500 hover:bg-red-100 text-red-950';
+      return CALENDAR_BOOKING_COLOUR_CLASSES.attention;
     }
 
     if (booking.status === 'pending_approval') {
-      return 'bg-amber-100/90 border-amber-500 hover:bg-amber-100 text-amber-950';
+      return CALENDAR_BOOKING_COLOUR_CLASSES.pendingApproval;
     }
 
     if (booking.status === 'pending_supervision') {
-      return 'bg-orange-100/90 border-orange-500 hover:bg-orange-100 text-orange-950';
+      return CALENDAR_BOOKING_COLOUR_CLASSES.pendingSupervision;
     }
 
     if (booking.status === 'cancelled') {
-      return 'bg-gray-100/90 border-gray-500 hover:bg-gray-100 text-gray-800';
+      return CALENDAR_BOOKING_COLOUR_CLASSES.cancelled;
     }
 
     if (booking.flight_logged) {
-      return 'bg-emerald-100/90 border-emerald-500 hover:bg-emerald-100 text-emerald-950';
+      return CALENDAR_BOOKING_COLOUR_CLASSES.logged;
     }
 
     if (isPastBooking(booking)) {
-      return 'bg-red-100/90 border-red-500 hover:bg-red-100 text-red-950';
+      return CALENDAR_BOOKING_COLOUR_CLASSES.attention;
     }
 
-    return 'bg-blue-100/90 border-blue-500 hover:bg-blue-100 text-blue-950';
+    return CALENDAR_BOOKING_COLOUR_CLASSES.confirmed;
   };
 
   const getBookingAttentionClasses = (booking: Booking) => {
@@ -990,6 +1412,11 @@ export const Calendar: React.FC<CalendarProps> = ({
 
     return '';
   };
+
+  const getNotificationFocusClasses = (booking: Booking) =>
+    booking.id === notificationFocusBookingId
+      ? 'calendar-booking-notification-focus'
+      : '';
 
   const renderBookingContent = (
     booking: Booking,
@@ -1090,6 +1517,8 @@ export const Calendar: React.FC<CalendarProps> = ({
     return (
       <div
         key={booking.id}
+        data-booking-id={booking.id}
+        aria-current={booking.id === notificationFocusBookingId ? 'true' : undefined}
         role={canUseBookingActions(booking) ? 'button' : undefined}
         tabIndex={canUseBookingActions(booking) ? 0 : undefined}
         onClick={(event) => {
@@ -1101,7 +1530,7 @@ export const Calendar: React.FC<CalendarProps> = ({
           event.preventDefault();
           openBookingActionMenu(booking, { x: window.innerWidth / 2, y: window.innerHeight / 2 });
         }}
-        className={`${getBookingColorClasses(booking)} ${getBookingAttentionClasses(booking)} calendar-booking-card block w-full rounded-xl border-2 p-3 text-left shadow-sm transition-transform active:scale-[0.99]`}
+        className={`${getBookingColorClasses(booking)} ${getBookingAttentionClasses(booking)} ${getNotificationFocusClasses(booking)} calendar-booking-card block w-full rounded-xl border-2 p-3 text-left shadow-sm transition-transform active:scale-[0.99]`}
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -1145,6 +1574,42 @@ export const Calendar: React.FC<CalendarProps> = ({
     );
   };
 
+  const getDaylightTimesForDate = (date: Date) =>
+    daylightTimesByDate.get(format(date, 'yyyy-MM-dd')) || null;
+
+  const renderMobileDaylightSummary = (day: Date) => {
+    const daylight = getDaylightTimesForDate(day);
+    if (!showDaylightOverlay || !daylight || !daylightLocation) return null;
+
+    const calendarStartMinutes = calendarStartHour * 60;
+    const calendarEndMinutes = calendarEndHour * 60;
+    const calendarMinutes = Math.max(1, calendarEndMinutes - calendarStartMinutes);
+    const visibleSunrise = Math.max(calendarStartMinutes, Math.min(calendarEndMinutes, daylight.sunriseMinutes));
+    const visibleSunset = Math.max(calendarStartMinutes, Math.min(calendarEndMinutes, daylight.sunsetMinutes));
+    const beforeWidth = ((visibleSunrise - calendarStartMinutes) / calendarMinutes) * 100;
+    const daylightWidth = (Math.max(0, visibleSunset - visibleSunrise) / calendarMinutes) * 100;
+    const afterWidth = Math.max(0, 100 - beforeWidth - daylightWidth);
+
+    return (
+      <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900/60">
+        <div className="flex items-center justify-between gap-3 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+          <span className="inline-flex min-w-0 items-center gap-1.5">
+            <Sun className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+            <span className="truncate">Daylight at {daylightLocation.name}</span>
+          </span>
+          <span className="shrink-0 tabular-nums">
+            {formatCalendarMinute(daylight.sunriseMinutes)}–{formatCalendarMinute(daylight.sunsetMinutes)}
+          </span>
+        </div>
+        <div className="mt-2 flex h-2 overflow-hidden rounded-full ring-1 ring-slate-300 dark:ring-slate-600" aria-hidden="true">
+          <span className="calendar-daylight-summary-night" style={{ width: `${beforeWidth}%` }} />
+          <span className="bg-amber-100 dark:bg-amber-300/70" style={{ width: `${daylightWidth}%` }} />
+          <span className="calendar-daylight-summary-night" style={{ width: `${afterWidth}%` }} />
+        </div>
+      </div>
+    );
+  };
+
   const renderMobileAgenda = (days: Date[]) => (
     <div className="space-y-3 md:hidden">
       {days.map((day) => {
@@ -1167,6 +1632,8 @@ export const Calendar: React.FC<CalendarProps> = ({
                 {dayBookings.length}
               </span>
             </div>
+
+            {renderMobileDaylightSummary(day)}
 
             {dayBookings.length > 0 ? (
               <div className="space-y-2">
@@ -1225,6 +1692,7 @@ export const Calendar: React.FC<CalendarProps> = ({
         resourceMap.set(a.id, {
           id: a.id,
           name: a.registration,
+          subtitle: [a.make, a.model].filter(Boolean).join(' '),
           type: 'aircraft',
           icon: <Plane className="h-4 w-4" />,
           status: a.status,
@@ -1237,6 +1705,7 @@ export const Calendar: React.FC<CalendarProps> = ({
         resourceMap.set(instructor.id, {
           id: instructor.id,
           name: instructor.name || instructor.email,
+          subtitle: 'Instructor',
           type: 'instructor',
           icon: <User className="h-4 w-4" />,
         });
@@ -1285,6 +1754,16 @@ export const Calendar: React.FC<CalendarProps> = ({
     return { hour, minute };
   };
 
+  const isTimeSlotOutsideDaylight = (slot: number, date: Date) => {
+    if (!showDaylightOverlay) return false;
+    const { hour, minute } = getTimeFromSlot(slot);
+    return isCalendarSlotOutsideDaylight(
+      hour * 60 + minute,
+      calendarSettings?.snap_duration || 15,
+      getDaylightTimesForDate(date),
+    );
+  };
+
   const formatTimeSlot = (slot: number) => {
     const { hour, minute } = getTimeFromSlot(slot);
     return `${hour.toString().padStart(2, '0')}:${minute
@@ -1297,21 +1776,12 @@ export const Calendar: React.FC<CalendarProps> = ({
     return `${hour.toString().padStart(2, '0')}:00`;
   };
 
-  const isCalendarAdmin =
+  const isCalendarAdmin = Boolean(
     user?.role === 'admin' ||
-    user?.roles?.some(role => role === 'admin');
+    user?.roles?.some(role => role === 'admin')
+  );
   const canManageInstructorDowntime = (instructorId: string) =>
-    Boolean(
-      instructorId &&
-      user?.id &&
-      (
-        isCalendarAdmin ||
-        (
-          instructorId === user.id &&
-          (user.role === 'instructor' || user.role === 'senior_instructor' || user.roles?.some(role => role === 'instructor' || role === 'senior_instructor'))
-        )
-      )
-    );
+    canManageCalendarDowntime(instructorId, user?.id, isCalendarAdmin);
   const canApproveCalendarBooking = (booking: Booking) => {
     const isAssignedInstructor =
       Boolean(user?.id && booking.instructorId && user.id === booking.instructorId);
@@ -1373,8 +1843,61 @@ export const Calendar: React.FC<CalendarProps> = ({
     setDowntimeChoice(null);
   };
 
-  const handleDeleteInstructorDowntime = async (absenceId: string) => {
-    await deleteAbsence(absenceId);
+  const openInstructorDowntimeEditor = (period: UnavailabilityPeriod) => {
+    if (
+      period.source !== 'absence'
+      || !period.id
+      || !canManageInstructorDowntime(period.resourceId)
+    ) return;
+
+    const absence = displayAbsences.find((item) => item.id === period.id);
+    if (!absence) {
+      toast.error('This temporary off period changed. Refresh the calendar and try again.');
+      return;
+    }
+
+    setDowntimeEditor({ ...absence });
+    setConfirmingDowntimeDelete(false);
+  };
+
+  const handleUpdateInstructorDowntime = async () => {
+    if (!downtimeEditor || downtimeEditorBusy) return;
+    const validationError = getTemporaryDowntimeValidationError(downtimeEditor);
+    if (validationError) {
+      toast.error(validationError);
+      return;
+    }
+
+    setDowntimeEditorBusy('save');
+    try {
+      await updateAbsence(downtimeEditor.id, {
+        startDate: downtimeEditor.startDate,
+        endDate: downtimeEditor.endDate,
+        startTime: downtimeEditor.startTime || '',
+        endTime: downtimeEditor.endTime || '',
+        reason: downtimeEditor.reason?.trim() || 'Temporary off period',
+      });
+      setDowntimeEditor(null);
+      setConfirmingDowntimeDelete(false);
+    } catch {
+      // The availability hook displays the actionable database or permission error.
+    } finally {
+      setDowntimeEditorBusy(null);
+    }
+  };
+
+  const handleDeleteInstructorDowntime = async () => {
+    if (!downtimeEditor || downtimeEditorBusy) return;
+    setDowntimeEditorBusy('delete');
+    try {
+      await deleteAbsence(downtimeEditor.id);
+      setDowntimeEditor(null);
+      setConfirmingDowntimeDelete(false);
+    } catch {
+      // The availability hook displays the actionable database or permission error.
+    } finally {
+      setDowntimeEditorBusy(null);
+    }
   };
 
   const getUnavailabilityPeriods = useMemo(() => {
@@ -1415,7 +1938,7 @@ export const Calendar: React.FC<CalendarProps> = ({
             startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), startHour, startMinute),
             endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), endHour, endMinute),
             reason: absence.reason || 'Absent',
-            pattern: 'solid',
+            pattern: 'diagonal',
             source: 'absence',
           });
         });
@@ -1786,8 +2309,42 @@ export const Calendar: React.FC<CalendarProps> = ({
     );
   };
 
+  const getUnavailabilityBlockProps = (
+    period: UnavailabilityPeriod,
+  ): React.HTMLAttributes<HTMLDivElement> => {
+    const canEditDowntime =
+      period.source === 'absence'
+      && Boolean(period.id)
+      && canManageInstructorDowntime(period.resourceId);
+
+    if (!canEditDowntime) {
+      return {
+        className: 'pointer-events-none relative z-[1] overflow-hidden border-r border-gray-200',
+      };
+    }
+
+    const edit = (event: React.MouseEvent<HTMLDivElement> | React.KeyboardEvent<HTMLDivElement>) => {
+      event.stopPropagation();
+      openInstructorDowntimeEditor(period);
+    };
+
+    return {
+      className: 'relative z-[3] cursor-pointer overflow-hidden border-r border-orange-300 outline-none transition-shadow hover:ring-2 hover:ring-inset hover:ring-orange-400 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500',
+      role: 'button',
+      tabIndex: 0,
+      title: `Edit temporary off period: ${period.reason}`,
+      'aria-label': `Edit temporary off period: ${period.reason}`,
+      onClick: edit,
+      onKeyDown: (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        edit(event);
+      },
+    };
+  };
+
   const renderUnavailabilityLabel = (unavailability: UnavailabilityPeriod) => {
-    const canRemoveDowntime =
+    const canEditDowntime =
       canManageInstructorDowntime(unavailability.resourceId) &&
       unavailability.source === 'absence' &&
       Boolean(unavailability.id);
@@ -1797,22 +2354,13 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
 
     return (
-      <div className="absolute inset-0 flex items-center justify-center px-1">
-        <span className="pointer-events-auto inline-flex max-w-full items-center gap-1 rounded bg-white bg-opacity-85 px-1.5 py-0.5 text-xs font-medium text-gray-700 shadow-sm">
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-1">
+        <span className="inline-flex max-w-full items-center gap-1 rounded border border-orange-200 bg-white bg-opacity-90 px-1.5 py-0.5 text-xs font-medium text-gray-700 shadow-sm">
           <span className="truncate">{unavailability.reason}</span>
-          {canRemoveDowntime && (
-            <button
-              type="button"
-              className="rounded p-0.5 text-red-600 hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400"
-              title="Remove temporary off period"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDeleteInstructorDowntime(unavailability.id!);
-              }}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              <Trash2 className="h-3 w-3" />
-            </button>
+          {canEditDowntime && (
+            <span className="rounded bg-orange-100 px-1 py-0.5 text-[10px] font-bold uppercase tracking-wide text-orange-700">
+              Edit
+            </span>
           )}
         </span>
       </div>
@@ -2577,28 +3125,18 @@ export const Calendar: React.FC<CalendarProps> = ({
     </button>
   );
 
+  const handleViewModeChange = (mode: ViewMode) => {
+    setNotificationFocusBookingId(null);
+    setViewMode(mode);
+    setSearchParams((current) => buildCalendarViewSearchParams(current, mode));
+  };
+
   const renderViewModeButtons = () => (
     <div className={`grid w-full min-w-0 grid-cols-4 rounded-xl bg-gray-100 p-1 dark:bg-[#11141a] ${isKioskMode ? '' : 'sm:w-auto sm:min-w-[17rem] sm:flex'}`}>
         {(['day', 'week', 'month', 'list'] as ViewMode[]).map((mode) => (
           <button
             key={mode}
-            onClick={() => {
-              setViewMode(mode);
-              if (mode === 'list') {
-                setListPilotFilter(prev => prev || user?.id || '');
-                setSearchParams(prev => {
-                  const next = new URLSearchParams(prev);
-                  next.set('view', 'list');
-                  return next;
-                });
-              } else if (searchParams.get('view') === 'list') {
-                setSearchParams(prev => {
-                  const next = new URLSearchParams(prev);
-                  next.delete('view');
-                  return next;
-                });
-              }
-            }}
+            onClick={() => handleViewModeChange(mode)}
             className={`rounded-lg px-2 py-2 text-xs font-semibold transition-colors ${isKioskMode ? 'px-2.5 py-3 text-sm' : 'sm:px-3 sm:py-2 sm:text-sm'} ${
               viewMode === mode
                 ? 'bg-white text-blue-600 shadow-sm dark:bg-[#262b33] dark:text-blue-300'
@@ -2626,7 +3164,7 @@ export const Calendar: React.FC<CalendarProps> = ({
         <label className="block text-xs font-medium text-gray-700 mb-1">
           Aircraft
         </label>
-        <select
+        <SearchableSelect
           value={selectedAircraftId}
           onChange={(e) => setSelectedAircraftId(e.target.value)}
           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 sm:py-1"
@@ -2637,14 +3175,14 @@ export const Calendar: React.FC<CalendarProps> = ({
               {a.registration} - {a.make} {a.model}
             </option>
           ))}
-        </select>
+        </SearchableSelect>
       </div>
 
       <div className="min-w-0">
         <label className="block text-xs font-medium text-gray-700 mb-1">
           Instructor
         </label>
-        <select
+        <SearchableSelect
           value={selectedInstructorId}
           onChange={(e) => setSelectedInstructorId(e.target.value)}
           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 sm:py-1"
@@ -2655,10 +3193,57 @@ export const Calendar: React.FC<CalendarProps> = ({
               {instructor.name}
             </option>
           ))}
-        </select>
+        </SearchableSelect>
       </div>
     </div>
   );
+
+  const renderDaylightControls = () => {
+    if (viewMode !== 'day' && viewMode !== 'week') return null;
+    const currentDaylight = viewMode === 'day' ? getDaylightTimesForDate(currentDate) : null;
+    const inputSize = isKioskMode ? 'h-3.5 w-3.5' : 'h-4 w-4';
+    const controlPadding = isKioskMode ? 'px-2.5 py-1.5 text-xs' : 'px-2.5 py-2 text-sm';
+
+    return (
+      <div className={`flex min-w-0 flex-wrap items-center gap-1.5 ${showDaylightOverlay && activeLocations.length > 1 ? 'w-full sm:w-auto' : ''}`}>
+        <label
+          className={`inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-gray-200 bg-white font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-[#262b33] ${controlPadding} ${!daylightLocation ? 'cursor-not-allowed opacity-55' : ''}`}
+          title={daylightLocation
+            ? `Grey out time before sunrise and after sunset at ${daylightLocation.name}`
+            : 'Add an active organisation location with coordinates to calculate daylight'}
+        >
+          <input
+            type="checkbox"
+            checked={showDaylightOverlay}
+            onChange={(event) => setShowDaylightOverlay(event.target.checked)}
+            disabled={!daylightLocation}
+            className={`${inputSize} rounded border-gray-300 text-blue-600 focus:ring-blue-500`}
+          />
+          <Sun className={`${isKioskMode ? 'h-3.5 w-3.5' : 'h-4 w-4'} text-amber-500`} />
+          <span>Shade non-daylight</span>
+          {showDaylightOverlay && currentDaylight && (
+            <span className="hidden rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-bold tabular-nums text-slate-600 dark:bg-slate-700 dark:text-slate-200 xl:inline">
+              {formatCalendarMinute(currentDaylight.sunriseMinutes)}–{formatCalendarMinute(currentDaylight.sunsetMinutes)}
+            </span>
+          )}
+        </label>
+
+        {showDaylightOverlay && activeLocations.length > 1 && (
+          <SearchableSelect
+            value={daylightLocation?.id || ''}
+            onChange={(event) => setDaylightLocationId(event.target.value)}
+            aria-label="Daylight calculation location"
+            title="Location used to calculate sunrise and sunset"
+            className={`min-w-0 rounded-lg border border-gray-300 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 ${isKioskMode ? 'w-40 px-2.5 py-1.5 text-xs' : 'w-full px-2.5 py-2 text-sm sm:w-44'}`}
+          >
+            {activeLocations.map((item) => (
+              <option key={item.id} value={item.id}>{item.name}</option>
+            ))}
+          </SearchableSelect>
+        )}
+      </div>
+    );
+  };
 
   const getManagedResources = (): ManagedResource[] => {
     const result: ManagedResource[] = [];
@@ -2674,18 +3259,21 @@ export const Calendar: React.FC<CalendarProps> = ({
   };
 
   const renderFilterControls = () => (
-    <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-      <select
-        value={resourceFilter}
-        onChange={(e) =>
-          setResourceFilter(e.target.value as any)
-        }
-        className={`w-full rounded-lg border border-gray-300 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 sm:w-auto ${isKioskMode ? 'px-2.5 py-1.5 text-xs' : 'px-2.5 py-2 text-sm'}`}
-      >
-        <option value="both">Aircraft & Instructors</option>
-        <option value="aircraft">Aircraft Only</option>
-        <option value="instructors">Instructors Only</option>
-      </select>
+    <div className="flex w-full flex-wrap items-center gap-2">
+      <div className={`w-full shrink-0 ${isKioskMode ? 'sm:w-44' : 'sm:w-48 xl:w-52'}`}>
+        <SearchableSelect
+          value={resourceFilter}
+          onChange={(e) =>
+            setResourceFilter(e.target.value as any)
+          }
+          aria-label="Calendar resource type"
+          className={`w-full rounded-lg border border-gray-300 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 ${isKioskMode ? 'px-2.5 py-1.5 text-xs' : 'px-2.5 py-2 text-sm'}`}
+        >
+          <option value="both">Aircraft & Instructors</option>
+          <option value="aircraft">Aircraft Only</option>
+          <option value="instructors">Instructors Only</option>
+        </SearchableSelect>
+      </div>
 
       <ResourceManagerPanel
         resources={getManagedResources()}
@@ -2735,7 +3323,7 @@ export const Calendar: React.FC<CalendarProps> = ({
           onChange={(event) => setHideAllDayUnavailableResources(event.target.checked)}
           className={`${isKioskMode ? 'h-3.5 w-3.5' : 'h-4 w-4'} rounded border-gray-300 text-blue-600 focus:ring-blue-500`}
         />
-        <span>Hide unavailable all day</span>
+        <span>Hide all-day unavailable</span>
       </label>
 
       <label className={`inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-[#262b33] ${isKioskMode ? 'px-2.5 py-1.5 text-xs' : 'px-2.5 py-2 text-sm'}`}>
@@ -2750,6 +3338,243 @@ export const Calendar: React.FC<CalendarProps> = ({
     </div>
   );
 
+  const renderFloatingResourceHeader = () => {
+    if (!floatingHeader.visible || floatingHeader.width <= 0 || floatingHeader.contentWidth <= 0) return null;
+
+    const contentOffset = floatingHeader.gridLeft - floatingHeader.left - floatingHeader.scrollLeft;
+    const transitionProgress = floatingHeader.progress;
+    const shellStyle: React.CSSProperties = {
+      left: floatingHeader.left,
+      top: floatingHeader.top,
+      width: floatingHeader.width,
+      height: floatingHeader.height,
+      boxShadow: `0 8px 18px rgba(15, 23, 42, ${0.04 + transitionProgress * 0.12})`,
+      transition: 'height 90ms ease-out, box-shadow 160ms ease-out',
+      willChange: 'height',
+    };
+    const contentStyle: React.CSSProperties = {
+      width: floatingHeader.contentWidth,
+      transform: `translate3d(${contentOffset}px, 0, 0)`,
+    };
+
+    if (viewMode === 'day') {
+      const resources = getAllResources();
+      const minWidth = 64 + resources.length * 120;
+      return (
+        <div
+          data-calendar-floating-resource-header="day"
+          data-calendar-floating-resource-header-progress={transitionProgress.toFixed(3)}
+          className="pointer-events-none fixed z-[35] hidden overflow-hidden border-x border-b border-gray-300 bg-white md:block dark:border-[#363b45] dark:bg-[#171a21]"
+          style={shellStyle}
+          aria-hidden="true"
+        >
+          <div style={contentStyle}>
+            <div
+              className="grid"
+              style={{
+                gridTemplateColumns: `64px repeat(${resources.length}, minmax(120px, 1fr))`,
+                minWidth,
+                height: floatingHeader.height,
+                transition: 'height 90ms ease-out',
+              }}
+            >
+              <div
+                className="relative flex min-w-0 items-center justify-center overflow-hidden border-r border-gray-200 bg-gray-50 text-center dark:border-[#363b45] dark:bg-[#20242c]"
+                style={{ padding: `${8 - transitionProgress * 4}px` }}
+              >
+                <span
+                  className="absolute left-1/2 top-1/2 whitespace-nowrap text-xs font-medium text-gray-500 dark:text-gray-400"
+                  style={{
+                    opacity: Math.max(0, 1 - transitionProgress * 2),
+                    transform: 'translate(-50%, -50%) rotate(-90deg)',
+                  }}
+                >
+                  Local time
+                </span>
+                <span
+                  className="absolute left-1/2 top-1/2 whitespace-nowrap text-[11px] font-medium text-gray-500 dark:text-gray-400"
+                  style={{
+                    opacity: Math.max(0, (transitionProgress - 0.25) / 0.75),
+                    transform: 'translate(-50%, -50%) rotate(-90deg)',
+                  }}
+                >
+                  Local
+                </span>
+              </div>
+              {resources.map(resource => (
+                <div
+                  key={`floating-${resource.id}`}
+                  className="flex min-w-0 flex-col justify-center border-r border-gray-200 bg-gray-50 text-center dark:border-[#363b45] dark:bg-[#171a21]"
+                  style={{ padding: `${8 - transitionProgress * 4}px` }}
+                >
+                  <div
+                    className="flex min-w-0 items-center justify-center gap-1"
+                    style={{ marginBottom: `${4 - transitionProgress * 2}px` }}
+                  >
+                    <span
+                      className="shrink-0 text-gray-600 dark:text-gray-300"
+                      style={{ transform: `scale(${1 - transitionProgress * 0.12})` }}
+                    >
+                      {resource.icon}
+                    </span>
+                    <span className="truncate text-xs font-semibold text-gray-900 dark:text-white">
+                      {resource.name}
+                    </span>
+                    {resource.status && resource.status !== 'serviceable' && (
+                      <span
+                        className="h-2 w-2 shrink-0 rounded-full bg-red-500"
+                        style={{ opacity: transitionProgress }}
+                      />
+                    )}
+                  </div>
+                  <div className={`text-xs font-medium ${isToday(currentDate) ? 'text-blue-600 dark:text-blue-300' : 'text-gray-500 dark:text-gray-400'}`}>
+                    {format(currentDate, 'EEE d')}
+                  </div>
+                  {resource.status && resource.status !== 'serviceable' && (
+                    <div
+                      className="overflow-hidden text-xs capitalize text-red-600 dark:text-red-400"
+                      style={{
+                        height: `${16 * (1 - transitionProgress)}px`,
+                        marginTop: `${4 * (1 - transitionProgress)}px`,
+                        opacity: 1 - transitionProgress,
+                      }}
+                    >
+                      {resource.status}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (viewMode === 'week') {
+      const weekDays = getWeekDays();
+      const selectedAircraft = selectedAircraftId
+        ? displayAircraft.find(item => item.id === selectedAircraftId)
+        : undefined;
+      const selectedInstructor = selectedInstructorId
+        ? displayInstructors.find(item => item.id === selectedInstructorId)
+        : undefined;
+      const columnsPerDay = Number(Boolean(selectedAircraft)) + Number(Boolean(selectedInstructor));
+      const totalColumns = weekDays.length * columnsPerDay;
+      const minWidth = 42 + totalColumns * 54;
+      if (totalColumns === 0) return null;
+      const dayBandHeight = 32 - transitionProgress * 14;
+      const resourceBandHeight = floatingHeader.height - dayBandHeight;
+
+      return (
+        <div
+          data-calendar-floating-resource-header="week"
+          data-calendar-floating-resource-header-progress={transitionProgress.toFixed(3)}
+          className="pointer-events-none fixed z-[35] hidden overflow-hidden border-x border-b border-gray-300 bg-white md:block dark:border-[#363b45] dark:bg-[#171a21]"
+          style={shellStyle}
+          aria-hidden="true"
+        >
+          <div style={contentStyle}>
+            <div
+              className="grid"
+              style={{
+                gridTemplateColumns: `42px repeat(${totalColumns}, minmax(54px, 1fr))`,
+                gridTemplateRows: `${dayBandHeight}px ${resourceBandHeight}px`,
+                minWidth,
+                height: floatingHeader.height,
+                transition: 'height 90ms ease-out, grid-template-rows 90ms ease-out',
+              }}
+            >
+              <div
+                className="relative flex items-center justify-center overflow-hidden border-r border-gray-200 bg-gray-50 text-gray-500 dark:border-[#363b45] dark:bg-[#20242c] dark:text-gray-400"
+                style={{ gridColumn: 1, gridRow: '1 / span 2' }}
+              >
+                <span
+                  className="absolute left-1/2 top-1/2 whitespace-nowrap text-xs font-medium"
+                  style={{ opacity: Math.max(0, 1 - transitionProgress * 2), transform: 'translate(-50%, -50%) rotate(-90deg)' }}
+                >
+                  Local time
+                </span>
+                <span
+                  className="absolute left-1/2 top-1/2 whitespace-nowrap text-[10px] font-medium"
+                  style={{ opacity: Math.max(0, (transitionProgress - 0.25) / 0.75), transform: 'translate(-50%, -50%) rotate(-90deg)' }}
+                >
+                  Local
+                </span>
+              </div>
+              {weekDays.flatMap((day, dayIndex) => {
+                const firstColumn = dayIndex * columnsPerDay + 2;
+                const dayColumns: React.ReactNode[] = [
+                  <div
+                    key={`${day.toISOString()}-floating-day`}
+                    className={`flex min-w-0 items-center justify-center border-r border-gray-200 bg-gray-100 px-1 font-semibold dark:border-[#363b45] dark:bg-[#20242c] ${isToday(day) ? 'text-blue-700 dark:text-blue-300' : 'text-gray-700 dark:text-gray-200'}`}
+                    style={{
+                      gridColumn: `${firstColumn} / span ${columnsPerDay}`,
+                      gridRow: 1,
+                      fontSize: `${11 - transitionProgress}px`,
+                    }}
+                  >
+                    {format(day, transitionProgress > 0.65 ? 'EEE d' : 'EEE d MMM')}
+                  </div>,
+                ];
+                let resourceColumnOffset = 0;
+
+                if (selectedAircraft) {
+                  dayColumns.push(
+                    <div
+                      key={`${day.toISOString()}-floating-aircraft`}
+                      className="flex min-w-0 flex-col items-center justify-center border-r border-gray-200 bg-gray-50 px-1 text-center dark:border-[#363b45] dark:bg-[#171a21]"
+                      style={{ gridColumn: firstColumn + resourceColumnOffset, gridRow: 2 }}
+                    >
+                      <span className="flex w-full min-w-0 items-center justify-center gap-1">
+                        <Plane className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate text-[11px] font-semibold text-gray-900 dark:text-white">{selectedAircraft.registration}</span>
+                        {selectedAircraft.status && selectedAircraft.status !== 'serviceable' && (
+                          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" />
+                        )}
+                      </span>
+                      <span
+                        className={`overflow-hidden text-[10px] font-medium ${isToday(day) ? 'text-blue-600 dark:text-blue-300' : 'text-gray-500 dark:text-gray-400'}`}
+                        style={{ height: `${15 * (1 - transitionProgress)}px`, opacity: 1 - transitionProgress }}
+                      >
+                        {format(day, 'EEE d')}
+                      </span>
+                    </div>
+                  );
+                  resourceColumnOffset += 1;
+                }
+
+                if (selectedInstructor) {
+                  dayColumns.push(
+                    <div
+                      key={`${day.toISOString()}-floating-instructor`}
+                      className="flex min-w-0 flex-col items-center justify-center border-r border-gray-200 bg-gray-50 px-1 text-center dark:border-[#363b45] dark:bg-[#171a21]"
+                      style={{ gridColumn: firstColumn + resourceColumnOffset, gridRow: 2 }}
+                    >
+                      <span className="flex w-full min-w-0 items-center justify-center gap-1">
+                        <User className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate text-[11px] font-semibold text-gray-900 dark:text-white">{selectedInstructor.name || selectedInstructor.email}</span>
+                      </span>
+                      <span
+                        className={`overflow-hidden text-[10px] font-medium ${isToday(day) ? 'text-blue-600 dark:text-blue-300' : 'text-gray-500 dark:text-gray-400'}`}
+                        style={{ height: `${15 * (1 - transitionProgress)}px`, opacity: 1 - transitionProgress }}
+                      >
+                        {format(day, 'EEE d')}
+                      </span>
+                    </div>
+                  );
+                }
+
+                return dayColumns;
+              })}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
   const renderDayView = () => {
     const timeSlots = getTimeSlots();
     const resources = getAllResources();
@@ -2757,9 +3582,9 @@ export const Calendar: React.FC<CalendarProps> = ({
     return (
       <div className={isKioskMode ? 'h-full p-2' : 'p-3 sm:p-6'}>
         {!isKioskMode && renderMobileAgenda([currentDate])}
-        <div className={`resource-calendar-grid relative overflow-x-auto rounded-lg border border-gray-200 bg-white dark:border-[#2c2f36] dark:bg-[#171a21] ${isKioskMode ? 'h-full' : 'hidden md:block'}`}>
+        <div ref={resourceCalendarGridRef} className={`resource-calendar-grid relative overflow-x-auto rounded-lg border border-gray-200 bg-white dark:border-[#2c2f36] dark:bg-[#171a21] ${isKioskMode ? 'h-full' : 'hidden md:block'}`}>
           {/* Fixed header */}
-          <div className="sticky top-0 z-20 bg-white border-b border-gray-200">
+          <div ref={resourceCalendarHeaderRef} className="sticky top-0 z-20 bg-white border-b border-gray-200">
             <div
               className="grid"
               style={{
@@ -2859,6 +3684,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                       slot,
                       currentDate
                     );
+                    const outsideDaylight = isTimeSlotOutsideDaylight(slot, currentDate);
 
                     const dragRangeMeta = getTimeSlotDragRangeMeta(
                       slot,
@@ -2890,7 +3716,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                         data-resource-type={resource.type}
                         data-date={currentDate.toISOString()}
                         data-day-index=""
-                        className={`calendar-slot-cell border-r border-gray-200 relative${borderClasses} ${cursorClass} ${backgroundClass}`}
+                        className={`calendar-slot-cell border-r border-gray-200 relative${borderClasses} ${cursorClass} ${backgroundClass} ${outsideDaylight ? 'calendar-slot-non-daylight' : ''}`}
                         style={{
                           height: slotHeight,
                           gridColumn: resourceIndex + 2,
@@ -2976,22 +3802,12 @@ export const Calendar: React.FC<CalendarProps> = ({
                   return (
                     <div
                       key={`unavailable-${resource.id}-${period.id || period.reason}-${period.startTime.getTime()}-${period.endTime.getTime()}`}
-                      className="pointer-events-none relative z-[1] overflow-hidden border-r border-gray-200"
+                      {...getUnavailabilityBlockProps(period)}
                       style={{
                         gridColumn: resourceIndex + 2,
                         gridRow: `${position.gridRowStart} / ${position.gridRowEnd}`,
                         marginTop: position.marginTop,
-                        background: period.source === 'schedule'
-                          ? 'rgba(156, 163, 175, 0.35)'
-                          : period.pattern === 'diagonal'
-                          ? `repeating-linear-gradient(
-                              45deg,
-                              rgba(156, 163, 175, 0.3),
-                              rgba(156, 163, 175, 0.3) 4px,
-                              transparent 4px,
-                              transparent 8px
-                            )`
-                          : 'rgba(156, 163, 175, 0.5)',
+                        background: getCalendarUnavailabilityBackground(period.source),
                         ...getUnavailabilityBlockStyle(position),
                       }}
                     >
@@ -3016,7 +3832,9 @@ export const Calendar: React.FC<CalendarProps> = ({
                   <div
                     key={`${booking.id}-${resource.id}`}
                     data-booking-element
-                    className={`${getBookingColorClasses(booking)} ${getBookingAttentionClasses(booking)} calendar-booking-card relative text-xs ${getBookingCardPadding(bookingCardDensity)} rounded-md shadow-sm overflow-hidden cursor-move transition-colors z-10 border-2 ${
+                    data-booking-id={booking.id}
+                    aria-current={booking.id === notificationFocusBookingId ? 'true' : undefined}
+                    className={`${getBookingColorClasses(booking)} ${getBookingAttentionClasses(booking)} ${getNotificationFocusClasses(booking)} calendar-booking-card relative text-xs ${getBookingCardPadding(bookingCardDensity)} rounded-md shadow-sm overflow-hidden cursor-move transition-colors z-10 border-2 ${
                       isBeingDragged
                         ? 'opacity-30 pointer-events-none'
                         : ''
@@ -3178,9 +3996,9 @@ export const Calendar: React.FC<CalendarProps> = ({
     return (
       <div className={isKioskMode ? 'h-full p-2' : 'p-3 sm:p-6'}>
         {!isKioskMode && renderMobileAgenda(weekDays)}
-        <div className={`resource-calendar-grid relative overflow-x-auto rounded-lg border border-gray-200 bg-white dark:border-[#2c2f36] dark:bg-[#171a21] ${isKioskMode ? 'h-full' : 'hidden md:block'}`}>
+        <div ref={resourceCalendarGridRef} className={`resource-calendar-grid relative overflow-x-auto rounded-lg border border-gray-200 bg-white dark:border-[#2c2f36] dark:bg-[#171a21] ${isKioskMode ? 'h-full' : 'hidden md:block'}`}>
           {/* Fixed header */}
-          <div className="sticky top-0 z-20 border-b border-gray-200 bg-white">
+          <div ref={resourceCalendarHeaderRef} className="sticky top-0 z-20 border-b border-gray-200 bg-white">
             <div
               className="grid"
               style={{
@@ -3351,6 +4169,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                         slot,
                         day
                       );
+                      const outsideDaylight = isTimeSlotOutsideDaylight(slot, day);
 
                       const dragRangeMeta = getTimeSlotDragRangeMeta(
                         slot,
@@ -3381,7 +4200,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                           data-resource-type="aircraft"
                           data-date={day.toISOString()}
                           data-day-index={dayIndex}
-                          className={`calendar-slot-cell border-r border-gray-200 relative${borderClasses} ${cursorClass} ${backgroundClass}`}
+                          className={`calendar-slot-cell border-r border-gray-200 relative${borderClasses} ${cursorClass} ${backgroundClass} ${outsideDaylight ? 'calendar-slot-non-daylight' : ''}`}
                           style={{
                             height: slotHeight,
                             gridColumn: columnIndex + 2,
@@ -3447,6 +4266,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                         slot,
                         day
                       );
+                      const outsideDaylight = isTimeSlotOutsideDaylight(slot, day);
 
                       const dragRangeMeta = getTimeSlotDragRangeMeta(
                         slot,
@@ -3477,7 +4297,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                           data-resource-type="instructor"
                           data-date={day.toISOString()}
                           data-day-index={dayIndex}
-                          className={`calendar-slot-cell border-r border-gray-200 relative${borderClasses} ${cursorClass} ${backgroundClass}`}
+                          className={`calendar-slot-cell border-r border-gray-200 relative${borderClasses} ${cursorClass} ${backgroundClass} ${outsideDaylight ? 'calendar-slot-non-daylight' : ''}`}
                           style={{
                             height: slotHeight,
                             gridColumn: columnIndex + 2,
@@ -3574,22 +4394,12 @@ export const Calendar: React.FC<CalendarProps> = ({
                     overlays.push(
                       <div
                         key={`week-unavailable-aircraft-${dayIndex}-${period.id || period.reason}-${period.startTime.getTime()}-${period.endTime.getTime()}`}
-                        className="pointer-events-none relative z-[1] overflow-hidden border-r border-gray-200"
+                        {...getUnavailabilityBlockProps(period)}
                         style={{
                           gridColumn: columnIndex + 2,
                           gridRow: `${position.gridRowStart} / ${position.gridRowEnd}`,
                           marginTop: position.marginTop,
-                          background: period.source === 'schedule'
-                            ? 'rgba(156, 163, 175, 0.35)'
-                            : period.pattern === 'diagonal'
-                            ? `repeating-linear-gradient(
-                                45deg,
-                                rgba(156, 163, 175, 0.3),
-                                rgba(156, 163, 175, 0.3) 4px,
-                                transparent 4px,
-                                transparent 8px
-                              )`
-                            : 'rgba(156, 163, 175, 0.5)',
+                          background: getCalendarUnavailabilityBackground(period.source),
                           ...getUnavailabilityBlockStyle(position),
                         }}
                       >
@@ -3613,22 +4423,12 @@ export const Calendar: React.FC<CalendarProps> = ({
                     overlays.push(
                       <div
                         key={`week-unavailable-instructor-${dayIndex}-${period.id || period.reason}-${period.startTime.getTime()}-${period.endTime.getTime()}`}
-                        className="pointer-events-none relative z-[1] overflow-hidden border-r border-gray-200"
+                        {...getUnavailabilityBlockProps(period)}
                         style={{
                           gridColumn: columnIndex + 2,
                           gridRow: `${position.gridRowStart} / ${position.gridRowEnd}`,
                           marginTop: position.marginTop,
-                          background: period.source === 'schedule'
-                            ? 'rgba(156, 163, 175, 0.35)'
-                            : period.pattern === 'diagonal'
-                            ? `repeating-linear-gradient(
-                                45deg,
-                                rgba(156, 163, 175, 0.3),
-                                rgba(156, 163, 175, 0.3) 4px,
-                                transparent 4px,
-                                transparent 8px
-                              )`
-                            : 'rgba(156, 163, 175, 0.5)',
+                          background: getCalendarUnavailabilityBackground(period.source),
                           ...getUnavailabilityBlockStyle(position),
                         }}
                       >
@@ -3664,7 +4464,9 @@ export const Calendar: React.FC<CalendarProps> = ({
                     <div
                       key={`${booking.id}-${dayIndex}-aircraft`}
                       data-booking-element
-                      className={`${getBookingColorClasses(booking)} ${getBookingAttentionClasses(booking)} calendar-booking-card relative text-xs ${getBookingCardPadding(bookingCardDensity)} rounded-md shadow-sm overflow-hidden cursor-move transition-colors z-10 border-2 ${
+                      data-booking-id={booking.id}
+                      aria-current={booking.id === notificationFocusBookingId ? 'true' : undefined}
+                      className={`${getBookingColorClasses(booking)} ${getBookingAttentionClasses(booking)} ${getNotificationFocusClasses(booking)} calendar-booking-card relative text-xs ${getBookingCardPadding(bookingCardDensity)} rounded-md shadow-sm overflow-hidden cursor-move transition-colors z-10 border-2 ${
                         isBeingDragged ? 'opacity-30 pointer-events-none' : ''
                       } ${isBeingResized ? 'pointer-events-none' : ''} group`}
                       style={{
@@ -3754,7 +4556,9 @@ export const Calendar: React.FC<CalendarProps> = ({
                     <div
                       key={`${booking.id}-${dayIndex}-instructor`}
                       data-booking-element
-                      className={`${getBookingColorClasses(booking)} ${getBookingAttentionClasses(booking)} calendar-booking-card relative text-xs ${getBookingCardPadding(bookingCardDensity)} rounded-md shadow-sm overflow-hidden cursor-move transition-colors z-10 border-2 ${
+                      data-booking-id={booking.id}
+                      aria-current={booking.id === notificationFocusBookingId ? 'true' : undefined}
+                      className={`${getBookingColorClasses(booking)} ${getBookingAttentionClasses(booking)} ${getNotificationFocusClasses(booking)} calendar-booking-card relative text-xs ${getBookingCardPadding(bookingCardDensity)} rounded-md shadow-sm overflow-hidden cursor-move transition-colors z-10 border-2 ${
                         isBeingDragged ? 'opacity-30 pointer-events-none' : ''
                       } ${isBeingResized ? 'pointer-events-none' : ''} group`}
                       style={{
@@ -3907,64 +4711,238 @@ export const Calendar: React.FC<CalendarProps> = ({
   };
 
   const renderListView = () => (
-    <div className="border-t border-gray-200 bg-gray-50">
-      <div className="flex flex-col gap-3 border-b border-gray-200 bg-white px-4 py-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h3 className="text-sm font-semibold text-gray-900">Booking List</h3>
-          <p className="text-xs text-gray-500">
-            {filteredListBookings.length} booking{filteredListBookings.length === 1 ? '' : 's'} shown
-          </p>
-        </div>
-        <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 sm:min-w-72">
-          Pilot / Student
-          <select
-            value={listPilotFilter}
-            onChange={(event) => setListPilotFilter(event.target.value)}
-            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
-          >
-            <option value="">All pilots/students</option>
-            {user && !pilotOptions.some((pilot) => pilot.id === user.id) && (
-              <option value={user.id}>{user.name || user.email || 'Logged in user'}</option>
-            )}
-            {pilotOptions.map((pilot) => (
-              <option key={pilot.id} value={pilot.id}>
-                {pilot.id === user?.id ? `${pilot.name} (me)` : pilot.name}
-              </option>
+    <div className="border-t border-gray-200 bg-gray-50 dark:border-[#2c2f36] dark:bg-[#11141a]">
+      <div className="border-b border-gray-200 bg-white px-3 py-4 dark:border-[#2c2f36] dark:bg-[#171a21] sm:px-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h3 className="text-base font-bold text-gray-950 dark:text-gray-100">Bookings by date range</h3>
+            <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
+              {filteredListBookings.length} booking{filteredListBookings.length === 1 ? '' : 's'} match the selected range and filters.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2" aria-label="Date range shortcuts">
+            {[
+              { label: 'Today', days: 1 },
+              { label: 'Next 7 days', days: 7 },
+              { label: 'Next 30 days', days: 30 },
+            ].map((preset) => (
+              <button
+                key={preset.label}
+                type="button"
+                onClick={() => {
+                  const start = new Date();
+                  setCalendarListRange(start, addDays(start, preset.days - 1));
+                }}
+                className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-bold text-gray-700 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 dark:border-[#363b45] dark:bg-[#11141a] dark:text-gray-200 dark:hover:border-blue-500 dark:hover:bg-blue-950/40"
+              >
+                {preset.label}
+              </button>
             ))}
-          </select>
-        </label>
+            <button
+              type="button"
+              onClick={() => {
+                const today = new Date();
+                setCalendarListRange(startOfMonth(today), endOfMonth(today));
+              }}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-bold text-gray-700 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 dark:border-[#363b45] dark:bg-[#11141a] dark:text-gray-200 dark:hover:border-blue-500 dark:hover:bg-blue-950/40"
+            >
+              This month
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7">
+          <label className="flex flex-col gap-1 text-xs font-bold text-gray-600 dark:text-gray-300">
+            From
+            <input
+              type="date"
+              value={listStartDate}
+              max={listEndDate || undefined}
+              onChange={(event) => updateListStartDate(event.target.value)}
+              className="min-h-10 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 dark:border-[#363b45] dark:bg-[#11141a] dark:text-gray-100 dark:focus:ring-blue-900"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-bold text-gray-600 dark:text-gray-300">
+            To
+            <input
+              type="date"
+              value={listEndDate}
+              min={listStartDate || undefined}
+              onChange={(event) => updateListEndDate(event.target.value)}
+              className="min-h-10 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 dark:border-[#363b45] dark:bg-[#11141a] dark:text-gray-100 dark:focus:ring-blue-900"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-bold text-gray-600 dark:text-gray-300 sm:col-span-2 lg:col-span-2 2xl:col-span-2">
+            Search
+            <span className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <input
+                type="search"
+                value={listSearchQuery}
+                onChange={(event) => setListSearchQuery(event.target.value)}
+                placeholder="Name, aircraft, location, notes or booking ID"
+                className="min-h-10 w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm font-medium text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 dark:border-[#363b45] dark:bg-[#11141a] dark:text-gray-100 dark:focus:ring-blue-900"
+              />
+            </span>
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-bold text-gray-600 dark:text-gray-300">
+            Pilot / Student
+            <SearchableSelect
+              value={listPilotFilter}
+              onChange={(event) => setListPilotFilter(event.target.value)}
+              className="min-h-10 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 dark:border-[#363b45] dark:bg-[#11141a] dark:text-gray-100 dark:focus:ring-blue-900"
+            >
+              <option value="">All pilots/students</option>
+              {user && !pilotOptions.some((pilot) => pilot.id === user.id) && (
+                <option value={user.id}>{user.name || user.email || 'Logged in user'}</option>
+              )}
+              {pilotOptions.map((pilot) => (
+                <option key={pilot.id} value={pilot.id}>
+                  {pilot.id === user?.id ? `${pilot.name} (me)` : pilot.name}
+                </option>
+              ))}
+            </SearchableSelect>
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-bold text-gray-600 dark:text-gray-300">
+            Instructor
+            <SearchableSelect
+              value={listInstructorFilter}
+              onChange={(event) => setListInstructorFilter(event.target.value)}
+              className="min-h-10 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 dark:border-[#363b45] dark:bg-[#11141a] dark:text-gray-100 dark:focus:ring-blue-900"
+            >
+              <option value="">All instructors</option>
+              {displayInstructors.map((instructor) => (
+                <option key={instructor.id} value={instructor.id}>{instructor.name}</option>
+              ))}
+            </SearchableSelect>
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-bold text-gray-600 dark:text-gray-300">
+            Aircraft / Resource
+            <SearchableSelect
+              value={listResourceFilter}
+              onChange={(event) => setListResourceFilter(event.target.value)}
+              className="min-h-10 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 dark:border-[#363b45] dark:bg-[#11141a] dark:text-gray-100 dark:focus:ring-blue-900"
+            >
+              <option value="">All resources</option>
+              <option value="ground">Ground sessions</option>
+              {aircraftForLookup
+                .filter((item) => !item.isArchived)
+                .sort((left, right) => left.registration.localeCompare(right.registration))
+                .map((item) => (
+                  <option key={item.id} value={item.id}>{item.registration}</option>
+                ))}
+            </SearchableSelect>
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-bold text-gray-600 dark:text-gray-300">
+            Booking type
+            <SearchableSelect
+              value={listBookingTypeFilter}
+              onChange={(event) => setListBookingTypeFilter(event.target.value as CalendarListBookingType)}
+              className="min-h-10 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 dark:border-[#363b45] dark:bg-[#11141a] dark:text-gray-100 dark:focus:ring-blue-900"
+            >
+              <option value="all">All booking types</option>
+              <option value="flight">Flights</option>
+              <option value="ground">Ground sessions</option>
+              <option value="guest">Guest / casual</option>
+            </SearchableSelect>
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-bold text-gray-600 dark:text-gray-300">
+            Status
+            <SearchableSelect
+              value={listStatusFilter}
+              onChange={(event) => setListStatusFilter(event.target.value as CalendarListStatus)}
+              className="min-h-10 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 dark:border-[#363b45] dark:bg-[#11141a] dark:text-gray-100 dark:focus:ring-blue-900"
+            >
+              <option value="all">All statuses</option>
+              <option value="confirmed">Confirmed</option>
+              <option value="pending_approval">Pending approval</option>
+              <option value="pending_supervision">Needs supervision</option>
+              <option value="waitlist">Waitlist</option>
+              <option value="logged">Logged</option>
+              <option value="not_logged">Not logged</option>
+              <option value="completed">Completed</option>
+              <option value="no-show">No-show</option>
+              <option value="cancelled">Cancelled</option>
+            </SearchableSelect>
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-bold text-gray-600 dark:text-gray-300">
+            Order
+            <SearchableSelect
+              value={listSort}
+              onChange={(event) => setListSort(event.target.value as CalendarListSort)}
+              className="min-h-10 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 dark:border-[#363b45] dark:bg-[#11141a] dark:text-gray-100 dark:focus:ring-blue-900"
+            >
+              <option value="ascending">Earliest first</option>
+              <option value="descending">Latest first</option>
+            </SearchableSelect>
+          </label>
+          <div className="flex items-end">
+            <button
+              type="button"
+              onClick={clearCalendarListFilters}
+              className="min-h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-bold text-gray-700 transition-colors hover:bg-gray-100 dark:border-[#363b45] dark:bg-[#11141a] dark:text-gray-200 dark:hover:bg-[#262b33]"
+            >
+              Clear filters
+            </button>
+          </div>
+        </div>
+
+        {!listDateRangeValid && (
+          <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+            Choose a valid From and To date before viewing bookings.
+          </p>
+        )}
       </div>
 
-      <div className="divide-y divide-gray-200 bg-white">
+      <div className="divide-y divide-gray-200 bg-white dark:divide-[#2c2f36] dark:bg-[#171a21]">
         {filteredListBookings.map((booking) => {
           const isPast = isPastBooking(booking);
-          const isLogged = booking.flight_logged || Boolean(booking.flightLog);
+          const isLogged = isBookingFlightLogged(booking);
+          const isCancelled = isCancelledBooking(booking);
           const instructorName = getInstructorName(booking);
           const notes = canSeePrivateBookingDetails(booking) ? truncateNotes(booking.notes, 96) : '';
+          const statusLabel = booking.hasConflict
+            ? 'Waitlist'
+            : isCancelled
+              ? 'Cancelled'
+              : isLogged
+                ? 'Logged'
+                : isPast
+                  ? 'Unlogged'
+                  : booking.status.replaceAll('_', ' ');
 
           return (
             <div
               key={booking.id}
-              className="grid grid-cols-1 gap-2 px-4 py-3 text-sm hover:bg-gray-50 md:grid-cols-[8.5rem_1fr_auto] md:items-center"
+              className="grid grid-cols-1 gap-3 px-4 py-3 text-sm transition-colors hover:bg-gray-50 dark:hover:bg-[#11141a] md:grid-cols-[9rem_minmax(0,1fr)_auto] md:items-center sm:px-5"
             >
               <div>
-                <div className="font-semibold text-gray-900">{format(new Date(booking.startTime), 'dd MMM yyyy')}</div>
-                <div className="text-xs text-gray-500">{formatBookingTimeRange(booking)}</div>
+                <div className="font-bold text-gray-950 dark:text-gray-100">{format(new Date(booking.startTime), 'EEE, dd MMM yyyy')}</div>
+                <div className="text-xs font-medium text-gray-500 dark:text-gray-400">{formatBookingTimeRange(booking)}</div>
               </div>
 
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  {renderHirerName(booking, 'font-semibold text-gray-900')}
-                  <span className="text-gray-400">|</span>
-                  <span className="text-gray-700">{getAircraftName(booking)}</span>
+                  {renderHirerName(booking, 'font-bold text-gray-950 dark:text-gray-100')}
+                  {booking.isGuestBooking && (
+                    <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-bold text-violet-700 dark:bg-violet-950 dark:text-violet-200">Guest</span>
+                  )}
+                  <span className="text-gray-300 dark:text-gray-600">|</span>
+                  <span className="font-medium text-gray-700 dark:text-gray-200">{getAircraftName(booking)}</span>
                   {instructorName && (
                     <>
-                      <span className="text-gray-400">|</span>
-                      <span className="text-gray-600">{instructorName}</span>
+                      <span className="text-gray-300 dark:text-gray-600">|</span>
+                      <span className="text-gray-600 dark:text-gray-300">{instructorName}</span>
+                    </>
+                  )}
+                  {booking.location && (
+                    <>
+                      <span className="text-gray-300 dark:text-gray-600">|</span>
+                      <span className="text-gray-500 dark:text-gray-400">{booking.location}</span>
                     </>
                   )}
                 </div>
-                {notes && <div className="mt-0.5 truncate text-xs text-gray-500">{notes}</div>}
+                {notes && <div className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{notes}</div>}
               </div>
 
               <div className="flex flex-wrap items-center gap-2 md:justify-end">
@@ -3973,29 +4951,32 @@ export const Calendar: React.FC<CalendarProps> = ({
                     ? 'bg-red-100 text-red-700'
                     : booking.status === 'pending_approval'
                       ? 'bg-amber-100 text-amber-700'
-                      : booking.status === 'cancelled'
-                        ? 'bg-gray-100 text-gray-600'
+                      : booking.status === 'pending_supervision'
+                        ? 'bg-orange-100 text-orange-700'
+                      : isCancelled
+                        ? 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'
                         : isLogged
-                          ? 'bg-green-100 text-green-700'
+                          ? 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-200'
                           : isPast
-                            ? 'bg-red-100 text-red-700'
-                            : 'bg-blue-100 text-blue-700'
+                            ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-200'
+                            : 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-200'
                 }`}>
-                  {booking.hasConflict
-                    ? 'Waitlist'
-                    : isLogged
-                      ? 'Logged'
-                      : isPast
-                        ? 'Unlogged'
-                        : booking.status.replace('_', ' ')}
+                  {statusLabel}
                 </span>
+                <button
+                  type="button"
+                  onClick={() => showListBookingOnCalendar(booking)}
+                  className="rounded-md border border-blue-200 bg-white px-2.5 py-1 text-xs font-bold text-blue-700 hover:bg-blue-50 dark:border-blue-800 dark:bg-[#11141a] dark:text-blue-200 dark:hover:bg-blue-950/40"
+                >
+                  View day
+                </button>
                 {canUseBookingActions(booking) && (
                   <button
                     type="button"
                     onClick={(event) => {
                       openBookingActionMenu(booking, { x: event.clientX, y: event.clientY });
                     }}
-                    className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100"
+                    className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-bold text-gray-700 hover:bg-gray-100 dark:border-[#363b45] dark:text-gray-200 dark:hover:bg-[#262b33]"
                   >
                     Actions
                   </button>
@@ -4007,9 +4988,11 @@ export const Calendar: React.FC<CalendarProps> = ({
 
         {filteredListBookings.length === 0 && (
           <div className="px-4 py-10 text-center">
-            <Plane className="mx-auto h-8 w-8 text-gray-300" />
-            <h3 className="mt-2 text-sm font-semibold text-gray-900">No bookings found</h3>
-            <p className="mt-1 text-xs text-gray-500">Change the pilot/student filter to show more bookings.</p>
+            <Plane className="mx-auto h-8 w-8 text-gray-300 dark:text-gray-600" />
+            <h3 className="mt-2 text-sm font-bold text-gray-900 dark:text-gray-100">No bookings found</h3>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {listDateRangeValid ? 'Try a wider date range or clear one of the filters.' : 'Choose a valid date range.'}
+            </p>
           </div>
         )}
       </div>
@@ -4018,7 +5001,13 @@ export const Calendar: React.FC<CalendarProps> = ({
 
   const getDateRangeText = () => {
     if (viewMode === 'list') {
-      return 'List view';
+      const start = parseCalendarDateParam(listStartDate);
+      const end = parseCalendarDateParam(listEndDate);
+      if (!start || !end) return 'Choose booking date range';
+      if (isSameDay(start, end)) return format(start, 'EEEE, MMMM d, yyyy');
+      return start.getFullYear() === end.getFullYear()
+        ? `${format(start, 'MMM d')} – ${format(end, 'MMM d, yyyy')}`
+        : `${format(start, 'MMM d, yyyy')} – ${format(end, 'MMM d, yyyy')}`;
     }
     if (viewMode === 'day') {
       return format(currentDate, 'EEEE, MMMM d, yyyy');
@@ -4060,7 +5049,9 @@ export const Calendar: React.FC<CalendarProps> = ({
             <p className="text-base font-bold text-gray-950 dark:text-gray-100">
               {format(datePickerMonth, 'MMMM yyyy')}
             </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Choose a day to jump to</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {viewMode === 'list' ? 'Choose the range start date' : 'Choose a day to jump to'}
+            </p>
           </div>
           <button
             type="button"
@@ -4088,9 +5079,17 @@ export const Calendar: React.FC<CalendarProps> = ({
                 key={day.toISOString()}
                 type="button"
                 onClick={() => {
-                  setCurrentDate(day);
+                  if (viewMode === 'list') {
+                    const currentStart = parseCalendarDateParam(listStartDate);
+                    const currentEnd = parseCalendarDateParam(listEndDate);
+                    const rangeLength = currentStart && currentEnd
+                      ? Math.max(1, differenceInCalendarDays(currentEnd, currentStart) + 1)
+                      : 30;
+                    setCalendarListRange(day, addDays(day, rangeLength - 1));
+                  } else {
+                    setCurrentDate(day);
+                  }
                   setShowDatePicker(false);
-                  if (viewMode === 'list') setViewMode('day');
                 }}
                 className={`flex h-10 items-center justify-center rounded-xl text-sm font-semibold transition-colors ${
                   isSelected
@@ -4211,7 +5210,8 @@ export const Calendar: React.FC<CalendarProps> = ({
         </div>
       </div>
 
-      <details className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#11141a] sm:hidden">
+      {viewMode !== 'list' && <>
+      <details className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#11141a] lg:hidden">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-bold text-gray-800 dark:text-gray-100 [&::-webkit-details-marker]:hidden">
           <span>Filters & options</span>
           <ChevronDown className="h-4 w-4 text-gray-500" />
@@ -4219,6 +5219,8 @@ export const Calendar: React.FC<CalendarProps> = ({
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {viewMode === 'day' && renderFilterControls()}
           {viewMode === 'week' && <div className="w-full min-w-0">{renderResourceSelectors()}</div>}
+
+          {renderDaylightControls()}
 
           <label className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-[#262b33]">
             <input
@@ -4243,31 +5245,38 @@ export const Calendar: React.FC<CalendarProps> = ({
         </div>
       </details>
 
-      <div className="hidden flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#11141a] sm:flex">
-        {viewMode === 'day' && renderFilterControls()}
-        {viewMode === 'week' && <div className="w-full min-w-0 md:min-w-[28rem] md:flex-1">{renderResourceSelectors()}</div>}
+      <div className="hidden items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#11141a] lg:flex">
+        <div className="min-w-0 flex-1">
+          {viewMode === 'day' && renderFilterControls()}
+          {viewMode === 'week' && <div className="w-full min-w-0">{renderResourceSelectors()}</div>}
+        </div>
 
-        <label className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-[#262b33]">
-          <input
-            type="checkbox"
-            checked={highlightUnlogged}
-            onChange={(e) => setHighlightUnlogged(e.target.checked)}
-            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-          />
-          <span>Highlight Unlogged</span>
-        </label>
+        <div className="ml-auto flex shrink-0 items-center gap-2 border-l border-gray-200 pl-2 dark:border-[#363b45]">
+          {renderDaylightControls()}
 
-        {onRefresh && (
-          <button
-            onClick={() => void onRefresh()}
-            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-[#262b33]"
-            title="Refresh calendar"
-          >
-            <RefreshCw className="h-4 w-4" />
-            <span>Refresh</span>
-          </button>
-        )}
+          <label className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-[#262b33]">
+            <input
+              type="checkbox"
+              checked={highlightUnlogged}
+              onChange={(e) => setHighlightUnlogged(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span>Highlight Unlogged</span>
+          </label>
+
+          {onRefresh && (
+            <button
+              onClick={() => void onRefresh()}
+              className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-[#262b33]"
+              title="Refresh calendar"
+            >
+              <RefreshCw className="h-4 w-4" />
+              <span>Refresh</span>
+            </button>
+          )}
+        </div>
       </div>
+      </>}
     </div>
   );
 
@@ -4330,9 +5339,11 @@ export const Calendar: React.FC<CalendarProps> = ({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#11141a]">
+      {viewMode !== 'list' && <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#11141a]">
         {viewMode === 'day' && renderFilterControls()}
         {viewMode === 'week' && <div className="min-w-[28rem] flex-1">{renderResourceSelectors()}</div>}
+
+        {renderDaylightControls()}
 
         <label className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-[#262b33]">
           <input
@@ -4354,6 +5365,38 @@ export const Calendar: React.FC<CalendarProps> = ({
             <span>Refresh</span>
           </button>
         )}
+      </div>}
+    </div>
+  );
+
+  const renderCalendarColourLegend = () => (
+    <div
+      className={`shrink-0 border-t border-gray-200 bg-gray-50 dark:border-[#2c2f36] dark:bg-[#11141a] ${isKioskMode ? 'px-4 py-2.5' : 'px-3 py-2.5 sm:px-6'}`}
+      role="note"
+      aria-label="Calendar colour legend"
+    >
+      <div className="flex flex-nowrap items-center gap-x-4 overflow-x-auto pb-1 text-[11px] font-semibold text-gray-600 dark:text-gray-300 sm:flex-wrap sm:gap-y-2 sm:overflow-visible sm:pb-0 sm:text-xs">
+        <span className="font-extrabold uppercase tracking-wide text-gray-500 dark:text-gray-400">Booking colours</span>
+        {CALENDAR_BOOKING_LEGEND.map((item) => (
+          <span key={item.label} className="inline-flex items-center gap-1.5 whitespace-nowrap">
+            <span className={`h-3.5 w-3.5 shrink-0 rounded border-2 ${item.classes}`} aria-hidden="true" />
+            {item.label}
+          </span>
+        ))}
+        <span className="hidden h-4 w-px bg-gray-300 dark:bg-gray-600 sm:block" aria-hidden="true" />
+        <span className="font-extrabold uppercase tracking-wide text-gray-500 dark:text-gray-400">Calendar shading</span>
+        <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+          <span className="calendar-downtime-legend-swatch h-3.5 w-3.5 shrink-0 rounded border border-orange-500" aria-hidden="true" />
+          Temporary off
+        </span>
+        <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+          <span className="calendar-unavailable-legend-swatch h-3.5 w-3.5 shrink-0 rounded border border-gray-500" aria-hidden="true" />
+          Rostered unavailable
+        </span>
+        <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+          <span className="calendar-daylight-legend-swatch h-3.5 w-3.5 shrink-0 rounded border border-slate-500" aria-hidden="true" />
+          Non-daylight (when enabled)
+        </span>
       </div>
     </div>
   );
@@ -4363,6 +5406,8 @@ export const Calendar: React.FC<CalendarProps> = ({
       <div className={isKioskMode ? 'shrink-0 border-b border-gray-200 bg-white p-4 dark:border-[#2c2f36] dark:bg-[#0f1117]' : 'border-b border-gray-200 bg-white p-3 dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-4'}>
         {isKioskMode ? renderKioskControls() : renderStandardControls()}
       </div>
+
+      {renderFloatingResourceHeader()}
 
       <div className={isKioskMode ? 'min-h-0 flex-1 overflow-auto' : undefined}>
         {viewMode === 'day' && renderDayView()}
@@ -4382,9 +5427,12 @@ export const Calendar: React.FC<CalendarProps> = ({
           weekStartsOn={calendarSettings?.week_starts_on === 'sunday' ? 0 : 1}
           showWeekends={calendarSettings?.show_weekends ?? true}
           availableHours={availableCalendarHours}
+          getBookingColorClasses={getBookingColorClasses}
         />
         )}
       </div>
+
+      {renderCalendarColourLegend()}
 
       {(actionMenuBooking || bookingMenuLoading) && (
         <div
@@ -4401,7 +5449,7 @@ export const Calendar: React.FC<CalendarProps> = ({
 
       {bookingMenuLoading && !actionMenuBooking && (
         <div
-          className="fixed z-50 min-w-[210px] rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-700 shadow-xl dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100"
+          className="booking-menu-loading fixed z-50 min-w-[210px] rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-700 shadow-xl dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100"
           style={{
             left: Math.min(Math.max(bookingMenuLoading.x, 8), Math.max(8, window.innerWidth - 230)),
             top: Math.min(Math.max(bookingMenuLoading.y, 8), Math.max(8, window.innerHeight - 72)),
@@ -4426,6 +5474,23 @@ export const Calendar: React.FC<CalendarProps> = ({
           position={actionMenuPosition}
           canEdit={canUseBookingActions(actionMenuBooking)}
           canLogFlight={canUseBookingActions(actionMenuBooking)}
+          onAcceptSupervision={canAcceptManualSupervision(actionMenuBooking)
+            ? async () => {
+                try {
+                  const result = await acceptManualSupervision(actionMenuBooking);
+                  toast.success(`${result.supervisingInstructorName} is now confirmed as the supervisor`);
+                  bookingMenuOpenTokenRef.current += 1;
+                  setActionMenuBooking(null);
+                  setBookingMenuLoading(null);
+                  await Promise.resolve(onRefresh?.());
+                } catch (error) {
+                  toast.error(error instanceof Error
+                    ? error.message
+                    : 'The supervision commitment could not be saved.');
+                }
+              }
+            : undefined}
+          acceptingSupervision={acceptingBookingId === actionMenuBooking.id}
           onEdit={() => {
             if (isBookingFlightLogged(actionMenuBooking)) {
               toast.error('Delete the flight log before editing this booking');
@@ -4454,9 +5519,7 @@ export const Calendar: React.FC<CalendarProps> = ({
               setShowGroundSessionLogModal(true);
               return;
             }
-            setFlightLogBooking(actionMenuBooking);
-            setFlightLogMode('create');
-            setShowFlightLogModal(true);
+            void openCreateFlightLog(actionMenuBooking);
           }}
           onEditFlightLog={() => {
             if (actionMenuBooking.bookingKind === 'ground') {
@@ -4512,13 +5575,7 @@ export const Calendar: React.FC<CalendarProps> = ({
             ? () => {
                 const bookingToConvert = actionMenuBooking;
                 setActionMenuBooking(null);
-                void (async () => {
-                  const result = await convertGuestBookingToMember(bookingToConvert.id);
-                  await Promise.resolve(onRefresh?.());
-                  if (result.memberId) {
-                    navigate(`/students/${result.memberId}`);
-                  }
-                })();
+                setGuestPromotionBooking(bookingToConvert);
               }
             : undefined}
           onApprove={
@@ -4536,6 +5593,19 @@ export const Calendar: React.FC<CalendarProps> = ({
         />
       )}
 
+      {guestPromotionBooking && (
+        <GuestPromotionModal
+          booking={guestPromotionBooking}
+          users={users}
+          onClose={() => setGuestPromotionBooking(null)}
+          onComplete={async (memberId) => {
+            setGuestPromotionBooking(null);
+            await Promise.resolve(onRefresh?.());
+            navigate(`/students/${memberId}`);
+          }}
+        />
+      )}
+
       {showFlightLogModal && flightLogBooking && (
         <FlightLogModal
           booking={{
@@ -4546,6 +5616,7 @@ export const Calendar: React.FC<CalendarProps> = ({
           mode={flightLogMode}
           flightLogId={getBookingFlightLogId(flightLogBooking)}
           onApproveBooking={onApproveBooking}
+          onSaved={() => Promise.resolve(onRefresh?.())}
           onClose={() => {
             setShowFlightLogModal(false);
             setFlightLogBooking(null);
@@ -4597,6 +5668,194 @@ export const Calendar: React.FC<CalendarProps> = ({
         onClose={() => setShowNextAvailableSlot(false)}
         onSelect={handleNextAvailableSlotSelected}
       />
+
+      {downtimeEditor && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+          onMouseDown={() => {
+            if (downtimeEditorBusy) return;
+            setDowntimeEditor(null);
+            setConfirmingDowntimeDelete(false);
+          }}
+        >
+          <div
+            className="w-full max-w-md overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-[#363b45] dark:bg-[#171a21]"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="downtime-editor-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="border-b border-gray-200 px-5 py-4 dark:border-[#363b45]">
+              <h3 id="downtime-editor-title" className="text-base font-bold text-gray-950 dark:text-gray-100">
+                {confirmingDowntimeDelete ? 'Delete temporary off period?' : 'Edit temporary off period'}
+              </h3>
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                {displayInstructors.find((item) => item.id === downtimeEditor.userId)?.name || 'Instructor downtime'}
+              </p>
+            </div>
+
+            {confirmingDowntimeDelete ? (
+              <div className="space-y-4 p-5">
+                <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200">
+                  <p className="font-bold">This removes the downtime entirely.</p>
+                  <p className="mt-1">
+                    {downtimeEditor.startDate === downtimeEditor.endDate
+                      ? downtimeEditor.startDate
+                      : `${downtimeEditor.startDate} to ${downtimeEditor.endDate}`}
+                    {downtimeEditor.startTime && downtimeEditor.endTime
+                      ? `, ${downtimeEditor.startTime}–${downtimeEditor.endTime}`
+                      : ', all day'}
+                    {' · '}{downtimeEditor.reason || 'Temporary off period'}
+                  </p>
+                </div>
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingDowntimeDelete(false)}
+                    disabled={Boolean(downtimeEditorBusy)}
+                    className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-[#4b5563] dark:bg-[#11141a] dark:text-gray-100"
+                  >
+                    Keep downtime
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteInstructorDowntime()}
+                    disabled={Boolean(downtimeEditorBusy)}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-60"
+                  >
+                    {downtimeEditorBusy === 'delete' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    Delete permanently
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleUpdateInstructorDowntime();
+                }}
+              >
+                <div className="space-y-4 p-5">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                      Start date
+                      <input
+                        type="date"
+                        value={downtimeEditor.startDate}
+                        max={downtimeEditor.endDate || undefined}
+                        onChange={(event) => setDowntimeEditor((current) => current ? { ...current, startDate: event.target.value } : current)}
+                        className="mt-1.5 w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-500 dark:border-[#4b5563] dark:bg-[#11141a] dark:text-gray-100"
+                        required
+                      />
+                    </label>
+                    <label className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                      End date
+                      <input
+                        type="date"
+                        value={downtimeEditor.endDate}
+                        min={downtimeEditor.startDate || undefined}
+                        onChange={(event) => setDowntimeEditor((current) => current ? { ...current, endDate: event.target.value } : current)}
+                        className="mt-1.5 w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-500 dark:border-[#4b5563] dark:bg-[#11141a] dark:text-gray-100"
+                        required
+                      />
+                    </label>
+                  </div>
+
+                  <label className="flex min-h-11 items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-700 dark:border-[#363b45] dark:bg-[#11141a] dark:text-gray-200">
+                    <input
+                      type="checkbox"
+                      checked={!downtimeEditor.startTime && !downtimeEditor.endTime}
+                      onChange={(event) => setDowntimeEditor((current) => current ? {
+                        ...current,
+                        startTime: event.target.checked ? undefined : `${calendarStartHour.toString().padStart(2, '0')}:00`,
+                        endTime: event.target.checked
+                          ? undefined
+                          : calendarEndHour >= 24
+                            ? '23:59'
+                            : `${calendarEndHour.toString().padStart(2, '0')}:00`,
+                      } : current)}
+                      className="h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                    />
+                    All-day downtime
+                  </label>
+
+                  {Boolean(downtimeEditor.startTime || downtimeEditor.endTime) && (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                        Start time
+                        <input
+                          type="time"
+                          value={downtimeEditor.startTime || ''}
+                          onChange={(event) => setDowntimeEditor((current) => current ? { ...current, startTime: event.target.value } : current)}
+                          className="mt-1.5 w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-500 dark:border-[#4b5563] dark:bg-[#11141a] dark:text-gray-100"
+                          required
+                        />
+                      </label>
+                      <label className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                        End time
+                        <input
+                          type="time"
+                          value={downtimeEditor.endTime || ''}
+                          min={downtimeEditor.startTime || undefined}
+                          onChange={(event) => setDowntimeEditor((current) => current ? { ...current, endTime: event.target.value } : current)}
+                          className="mt-1.5 w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-500 dark:border-[#4b5563] dark:bg-[#11141a] dark:text-gray-100"
+                          required
+                        />
+                      </label>
+                    </div>
+                  )}
+
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200">
+                    Reason
+                    <input
+                      type="text"
+                      value={downtimeEditor.reason || ''}
+                      onChange={(event) => setDowntimeEditor((current) => current ? { ...current, reason: event.target.value } : current)}
+                      className="mt-1.5 w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-500 dark:border-[#4b5563] dark:bg-[#11141a] dark:text-gray-100"
+                      placeholder="Temporary off period"
+                      maxLength={200}
+                      required
+                    />
+                  </label>
+                </div>
+
+                <div className="flex flex-col gap-2 border-t border-gray-200 bg-gray-50 px-5 py-4 dark:border-[#363b45] dark:bg-[#11141a] sm:flex-row sm:items-center">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingDowntimeDelete(true)}
+                    disabled={Boolean(downtimeEditorBusy)}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-800 dark:bg-[#171a21] dark:text-red-300"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete
+                  </button>
+                  <div className="flex flex-1 flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDowntimeEditor(null);
+                        setConfirmingDowntimeDelete(false);
+                      }}
+                      disabled={Boolean(downtimeEditorBusy)}
+                      className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-[#4b5563] dark:bg-[#171a21] dark:text-gray-100"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={Boolean(downtimeEditorBusy)}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-orange-700 disabled:opacity-60"
+                    >
+                      {downtimeEditorBusy === 'save' && <Loader2 className="h-4 w-4 animate-spin" />}
+                      Save changes
+                    </button>
+                  </div>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
 
       {downtimeChoice && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

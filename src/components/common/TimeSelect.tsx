@@ -1,3 +1,4 @@
+import { SearchableSelect } from './SearchableSelect';
 import React from 'react';
 
 interface TimeSelectProps {
@@ -31,7 +32,7 @@ export const TimeSelect: React.FC<TimeSelectProps> = ({
   const timeOptions = generateTimeOptions();
 
   return (
-    <select
+    <SearchableSelect
       value={normalizedValue}
       onChange={(e) => onChange(e.target.value)}
       disabled={disabled}
@@ -43,6 +44,6 @@ export const TimeSelect: React.FC<TimeSelectProps> = ({
           {time}
         </option>
       ))}
-    </select>
+    </SearchableSelect>
   );
 };

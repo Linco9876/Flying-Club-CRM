@@ -7,10 +7,14 @@
   "scope": "/duty-clock/app/",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
+  "launch_handler": { "client_mode": "navigate-existing" },
+  "lang": "en-AU",
+  "dir": "ltr",
   "orientation": "portrait-primary",
   "background_color": "#0D151C",
   "theme_color": "#0F2942",
   "categories": ["productivity", "business"],
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/duty-clock/app/pwa-icon-192.png",

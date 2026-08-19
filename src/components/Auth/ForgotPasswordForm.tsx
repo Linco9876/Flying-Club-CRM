@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Plane, ArrowLeft } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { getSupabaseFunctionErrorMessage } from '../../lib/supabaseFunctionErrors';
+import { getAuthErrorMessage } from '../../utils/authErrorMessage';
 
 interface ForgotPasswordFormProps {
   onBackToLogin: () => void;
@@ -28,17 +30,35 @@ export const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({ onBackTo
       const basePath = authRedirectOrigin ? '/' : import.meta.env.BASE_URL;
       const redirectUrl = `${redirectOrigin.replace(/\/$/, '')}${basePath}reset-password`;
 
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: redirectUrl
+      const { data, error } = await supabase.functions.invoke<{
+        accepted?: boolean;
+        message?: string;
+      }>('invite-user', {
+        body: {
+          action: 'request_password_reset',
+          email: email.trim().toLowerCase(),
+          redirectTo: redirectUrl,
+        },
       });
 
-      if (error) throw error;
+      if (error) {
+        throw new Error(await getSupabaseFunctionErrorMessage(
+          error,
+          'The password reset service could not be reached. Please check your connection and try again.',
+        ));
+      }
+      if (!data?.accepted) {
+        throw new Error('The password reset request could not be submitted. Please try again.');
+      }
 
       setEmailSent(true);
-      toast.success('Password reset email sent! Check your inbox.');
-    } catch (error: any) {
+      toast.success('Password reset request received. Check your inbox shortly.');
+    } catch (error: unknown) {
       console.error('Password reset error:', error);
-      toast.error(error.message || 'Failed to send reset email');
+      toast.error(getAuthErrorMessage(
+        error,
+        'The reset email could not be requested. Please wait a moment and try again.',
+      ));
     } finally {
       setIsLoading(false);
     }
@@ -87,11 +107,11 @@ export const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({ onBackTo
               <div>
                 <h3 className="text-lg font-medium text-gray-900 mb-2">Check Your Email</h3>
                 <p className="text-sm text-gray-600 mb-6">
-                  We've sent a password reset link to <span className="font-medium">{email}</span>.
-                  Click the link in the email to reset your password.
+                  If <span className="font-medium">{email}</span> matches a portal account, a secure password reset link will arrive shortly.
+                  Open that link to choose a new password.
                 </p>
                 <p className="text-xs text-gray-500 mb-4">
-                  Didn't receive the email? Check your spam folder or try again.
+                  Check your spam folder if it does not appear. To protect member accounts, this page gives the same response for every email address.
                 </p>
               </div>
               <button
@@ -117,6 +137,7 @@ export const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({ onBackTo
                   id="email"
                   name="email"
                   type="email"
+                  autoComplete="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}

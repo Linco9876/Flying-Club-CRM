@@ -7,6 +7,7 @@ import { InviteUserResult } from '../../hooks/useInvitations';
 interface InviteUserModalProps {
   isOpen: boolean;
   onClose: () => void;
+  allowedRoles?: UserRole[];
   onInvite: (data: {
     email: string;
     name: string;
@@ -20,13 +21,18 @@ interface InviteUserModalProps {
 export const InviteUserModal: React.FC<InviteUserModalProps> = ({
   isOpen,
   onClose,
+  allowedRoles = ['student', 'pilot', 'instructor', 'admin'],
   onInvite
 }) => {
+  const defaultRole = allowedRoles.includes('student') ? 'student' : allowedRoles[0] || 'student';
+  const isInstructorLimited = allowedRoles.length === 2
+    && allowedRoles.includes('student')
+    && allowedRoles.includes('pilot');
   const [formData, setFormData] = useState({
     email: '',
     name: '',
     phone: '',
-    roles: ['student'] as UserRole[]
+    roles: [defaultRole] as UserRole[]
   });
   const [sendInvitation, setSendInvitation] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -45,6 +51,10 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
 
     if (hasStudentRoleConflict) {
       toast.error('Student cannot be combined with any other role');
+      return;
+    }
+    if (formData.roles.some(role => !allowedRoles.includes(role))) {
+      toast.error('You do not have permission to add a user with that role');
       return;
     }
 
@@ -73,7 +83,7 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
       email: '',
       name: '',
       phone: '',
-      roles: ['student']
+      roles: [defaultRole]
     });
     setSendInvitation(true);
     setInviteResult(null);
@@ -83,6 +93,11 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
   };
 
   const toggleRole = (role: UserRole) => {
+    if (!allowedRoles.includes(role)) return;
+    if (isInstructorLimited) {
+      setFormData(prev => ({ ...prev, roles: [role] }));
+      return;
+    }
     setFormData(prev => {
       let newRoles = prev.roles.includes(role)
         ? prev.roles.filter(r => r !== role)
@@ -329,13 +344,14 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-3">
-                  Roles (select one or more)
+                  {isInstructorLimited ? 'Role' : 'Roles (select one or more)'}
                 </label>
                 <div className="space-y-2">
-                  {(['student', 'pilot', 'instructor', 'admin'] as UserRole[]).map((role) => (
+                  {allowedRoles.map((role) => (
                     <label key={role} className="flex items-center space-x-3 cursor-pointer">
                       <input
-                        type="checkbox"
+                        type={isInstructorLimited ? 'radio' : 'checkbox'}
+                        name={isInstructorLimited ? 'new-user-role' : undefined}
                         checked={formData.roles.includes(role)}
                         onChange={() => toggleRole(role)}
                         className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
@@ -345,7 +361,9 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
                   ))}
                 </div>
                 <p className="text-xs text-gray-500 mt-2">
-                  Student is a standalone role. Staff and pilot roles can be combined; the highest-ranked selected role controls the login portal.
+                  {isInstructorLimited
+                    ? 'Instructors can add Student or Pilot users only. Administrators control staff and administrator access.'
+                    : 'Student is a standalone role. Staff and pilot roles can be combined; the highest-ranked selected role controls the login portal.'}
                 </p>
                 {hasStudentRoleConflict && (
                   <p className="text-xs text-red-600 mt-1">

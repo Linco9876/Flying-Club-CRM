@@ -5,7 +5,7 @@ import type { TrainingRecord } from '../types';
 import {
   buildCompactLessonRecordSummary,
   formatLessonRecordHours,
-  shouldCompactAcknowledgedLesson,
+  shouldUseCompactLessonRecord,
 } from './lessonRecordPresentation.ts';
 
 const record = {
@@ -17,10 +17,46 @@ const record = {
   studentAck: true,
 } as TrainingRecord;
 
-test('acknowledged lessons are compact until the user explicitly opens the details', () => {
-  assert.equal(shouldCompactAcknowledgedLesson(record, false), true);
-  assert.equal(shouldCompactAcknowledgedLesson(record, true), false);
-  assert.equal(shouldCompactAcknowledgedLesson({ studentAck: false }, false), false);
+test('students cannot expand acknowledged lesson records', () => {
+  assert.equal(shouldUseCompactLessonRecord(record, {
+    detailsExpanded: true,
+    requiresAcknowledgement: true,
+    viewerCanExpand: false,
+  }), true);
+});
+
+test('students cannot expand records that did not require acknowledgement', () => {
+  assert.equal(shouldUseCompactLessonRecord({ studentAck: false }, {
+    detailsExpanded: true,
+    requiresAcknowledgement: false,
+    viewerCanExpand: false,
+  }), true);
+});
+
+test('students can read full details while acknowledgement is pending', () => {
+  assert.equal(shouldUseCompactLessonRecord({ studentAck: false }, {
+    detailsExpanded: false,
+    requiresAcknowledgement: true,
+    viewerCanExpand: false,
+  }), false);
+});
+
+test('staff retain the existing expand and minimise behaviour', () => {
+  assert.equal(shouldUseCompactLessonRecord(record, {
+    detailsExpanded: false,
+    requiresAcknowledgement: true,
+    viewerCanExpand: true,
+  }), true);
+  assert.equal(shouldUseCompactLessonRecord(record, {
+    detailsExpanded: true,
+    requiresAcknowledgement: true,
+    viewerCanExpand: true,
+  }), false);
+  assert.equal(shouldUseCompactLessonRecord({ studentAck: false }, {
+    detailsExpanded: false,
+    requiresAcknowledgement: false,
+    viewerCanExpand: true,
+  }), false);
 });
 
 test('compact summaries contain only the requested core lesson facts', () => {
@@ -68,7 +104,7 @@ test('both student lesson-record views use the compact acknowledged summary', ()
   );
 
   for (const source of [currentProfile, legacyProfile]) {
-    assert.match(source, /shouldCompactAcknowledgedLesson/);
+    assert.match(source, /shouldUseCompactLessonRecord/);
     assert.match(source, /<AcknowledgedLessonSummary/);
   }
 });

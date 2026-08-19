@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { renderTrainingRecordAcknowledgementEmail } from "../_shared/trainingRecordAcknowledgementEmail.ts";
+import { brandPortalEmailHtml } from "../_shared/emailBranding.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": Deno.env.get("SITE_URL") || "https://portal.bendigoflyingclub.com.au",
@@ -205,7 +206,7 @@ Deno.serve(async (req: Request) => {
         },
         to: [{ email: student.email, name: student.name || student.email }],
         subject: message.subject,
-        htmlContent: message.html,
+        htmlContent: await brandPortalEmailHtml(message.html),
         textContent: message.text,
       }),
     });

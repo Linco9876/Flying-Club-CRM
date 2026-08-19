@@ -1,5 +1,6 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Loader2, X } from 'lucide-react';
+import { AlertTriangle, Loader2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { useGroundSessionDescriptions } from '../../hooks/useGroundSessionDescriptions';
@@ -15,6 +16,7 @@ import {
 } from '../../utils/groundSessionBilling';
 import { useFinancialProviders } from '../../context/financialProviderState';
 import { shouldCaptureFinancialDetails } from '../../utils/financialProviderPresentation';
+import { isPaymentMethodAvailable, isPaymentTypeAvailable } from '../../utils/paymentMethodAvailability';
 
 interface GroundSessionLogModalProps {
   booking: Booking;
@@ -42,11 +44,24 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
   mode = 'create',
   groundSessionLogId,
 }) => {
-  const { flightTypes, paymentMethods } = useBillingSettings();
-  const { options: descriptionOptions, loading: descriptionLoading } = useGroundSessionDescriptions();
+  const {
+    flightTypes,
+    paymentMethods,
+    loading: billingSettingsLoading,
+    error: billingSettingsError,
+  } = useBillingSettings();
+  const {
+    options: descriptionOptions,
+    loading: descriptionLoading,
+    error: descriptionError,
+  } = useGroundSessionDescriptions();
   const { logs, loading: logsLoading, createGroundSessionLog, updateGroundSessionLog } = useGroundSessionLogs(booking.id);
   const { users } = useUsers();
-  const { capabilities: financialProviders, loading: financialProvidersLoading } = useFinancialProviders();
+  const {
+    capabilities: financialProviders,
+    loading: financialProvidersLoading,
+    error: financialProvidersError,
+  } = useFinancialProviders();
   const financialCaptureEnabled = shouldCaptureFinancialDetails(financialProviders);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState(() => {
@@ -64,8 +79,12 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
   });
 
   const activeDescriptions = descriptionOptions.filter(option => option.active);
-  const activeFlightTypes = flightTypes.filter(type => type.active);
-  const activePaymentMethods = paymentMethods.filter(method => method.active);
+  const activeFlightTypes = flightTypes.filter(type =>
+    type.active && isPaymentTypeAvailable(type, paymentMethods, financialProviders)
+  );
+  const activePaymentMethods = paymentMethods.filter(method =>
+    isPaymentMethodAvailable(method, financialProviders)
+  );
   const selectedFlightType = activeFlightTypes.find(type => type.id === formData.flight_type_id);
   const forcedPaymentMethod = selectedFlightType?.forcedPaymentMethodId
     ? activePaymentMethods.find(method => method.id === selectedFlightType.forcedPaymentMethodId)
@@ -132,6 +151,15 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
     event.preventDefault();
     if (isSubmitting) return;
 
+    if (financialProvidersError) {
+      toast.error('Financial service status could not be confirmed. Try again before saving the ground session.');
+      return;
+    }
+    if (billingSettingsError || descriptionError) {
+      toast.error('Ground session billing settings could not be loaded. Try again before saving.');
+      return;
+    }
+
     if (!booking.studentId) {
       toast.error('Ground session bookings need a member linked to them');
       return;
@@ -142,6 +170,13 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
     }
     if (financialCaptureEnabled && !formData.payment_type) {
       toast.error('Payment method is required');
+      return;
+    }
+    if (
+      financialCaptureEnabled
+      && !activePaymentMethods.some(method => method.name === formData.payment_type)
+    ) {
+      toast.error('The selected Payment Method is not currently available');
       return;
     }
     if (!formData.description_option_id) {
@@ -198,7 +233,7 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
     onClose();
   };
 
-  const isLoading = logsLoading || descriptionLoading || financialProvidersLoading;
+  const isLoading = logsLoading || descriptionLoading || financialProvidersLoading || billingSettingsLoading;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -234,7 +269,15 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
 
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto">
           <div className="space-y-5 p-5">
-            {!financialProvidersLoading && !financialCaptureEnabled && (
+            {(financialProvidersError || billingSettingsError || descriptionError) && (
+              <div className="flex gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                {financialProvidersError
+                  ? 'Financial service status could not be confirmed. This ground session cannot be saved until the status is available.'
+                  : 'Ground session billing settings could not be loaded. This record cannot be saved until they are available.'}
+              </div>
+            )}
+            {!financialProvidersLoading && !financialProvidersError && !financialCaptureEnabled && (
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
                 Payment details are off while Stripe and Xero are disconnected. This ground session will be saved without financial information.
               </div>
@@ -279,7 +322,7 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <label className="space-y-1">
                 <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Payment Type</span>
-                <select
+                <SearchableSelect
                   value={formData.flight_type_id}
                   onChange={(event) => setFormData(current => ({ ...current, flight_type_id: event.target.value }))}
                   className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
@@ -290,12 +333,12 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
                       {type.name}
                     </option>
                   ))}
-                </select>
+                </SearchableSelect>
               </label>
 
               <label className="space-y-1">
                 <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Payment Method</span>
-                <select
+                <SearchableSelect
                   value={formData.payment_type}
                   onChange={(event) => setFormData(current => ({ ...current, payment_type: event.target.value }))}
                   disabled={isPaymentMethodLocked}
@@ -307,7 +350,7 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
                       {method.name}
                     </option>
                   ))}
-                </select>
+                </SearchableSelect>
                 {isPrepaidPaymentType && (
                   <span className="block text-xs text-gray-500">
                     Prepaid sessions are charged to the Pilot Account.
@@ -320,7 +363,7 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <label className="space-y-1">
                 <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Description</span>
-                <select
+                <SearchableSelect
                   value={formData.description_option_id}
                   onChange={(event) => {
                     const option = activeDescriptions.find(item => item.id === event.target.value);
@@ -351,7 +394,7 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
                       {option.name}
                     </option>
                   ))}
-                </select>
+                </SearchableSelect>
               </label>
 
               {financialCaptureEnabled && (
@@ -393,7 +436,7 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={isSubmitting || isLoading}
+              disabled={isSubmitting || isLoading || Boolean(financialProvidersError) || Boolean(billingSettingsError) || Boolean(descriptionError)}
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {mode === 'edit' ? 'Save Ground Session' : 'Log Ground Session'}

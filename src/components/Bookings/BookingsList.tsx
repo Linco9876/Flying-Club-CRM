@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Booking } from '../../types';
@@ -11,6 +12,7 @@ import { useAircraft } from '../../hooks/useAircraft';
 import { useStudents } from '../../hooks/useStudents';
 import { useUsers } from '../../hooks/useUsers';
 import { usePortalUxSettings } from '../../hooks/useSettings';
+import { useManualBookingSupervision } from '../../hooks/useManualBookingSupervision';
 
 interface BookingsListProps {
   bookings: Booking[];
@@ -34,6 +36,11 @@ export const BookingsList: React.FC<BookingsListProps> = ({
   const { students } = useStudents();
   const { users, getInstructors } = useUsers();
   const { settings: portalSettings } = usePortalUxSettings();
+  const {
+    acceptBooking: acceptManualSupervision,
+    acceptingBookingId,
+    canAcceptBooking: canAcceptManualSupervision,
+  } = useManualBookingSupervision();
   const [showFlightLogForm, setShowFlightLogForm] = React.useState(false);
   const [showEditForm, setShowEditForm] = React.useState(false);
   const [selectedBooking, setSelectedBooking] = React.useState<Booking | null>(null);
@@ -231,6 +238,9 @@ export const BookingsList: React.FC<BookingsListProps> = ({
         guestName: bookingData.guestName || undefined,
         guestEmail: bookingData.guestEmail || undefined,
         guestPhone: bookingData.guestPhone || undefined,
+        casualContactId: bookingData.casualContactId || undefined,
+        bookingPurpose: bookingData.bookingPurpose || undefined,
+        trialFlightVoucherId: bookingData.trialFlightVoucherId || undefined,
       });
       toast.success('Booking updated successfully!');
     }
@@ -367,7 +377,7 @@ export const BookingsList: React.FC<BookingsListProps> = ({
             </label>
             <label className="block">
               <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Status</span>
-              <select
+              <SearchableSelect
                 value={filters.status}
                 onChange={event => setFilter('status', event.target.value)}
                 className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
@@ -379,11 +389,11 @@ export const BookingsList: React.FC<BookingsListProps> = ({
                 <option value="completed">Completed</option>
                 <option value="cancelled">Cancelled</option>
                 <option value="no-show">No-show</option>
-              </select>
+              </SearchableSelect>
             </label>
             <label className="block">
               <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Aircraft</span>
-              <select
+              <SearchableSelect
                 value={filters.aircraftId}
                 onChange={event => setFilter('aircraftId', event.target.value)}
                 className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
@@ -394,12 +404,12 @@ export const BookingsList: React.FC<BookingsListProps> = ({
                     {item.registration} - {item.make} {item.model}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
             </label>
             {isStaffUser && (
               <label className="block">
                 <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Pilot or student</span>
-                <select
+                <SearchableSelect
                   value={filters.pilotId}
                   onChange={event => setFilter('pilotId', event.target.value)}
                   className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
@@ -408,12 +418,12 @@ export const BookingsList: React.FC<BookingsListProps> = ({
                   {pilotOptions.map(student => (
                     <option key={student.id} value={student.id}>{student.name}</option>
                   ))}
-                </select>
+                </SearchableSelect>
               </label>
             )}
             <label className="block">
               <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Instructor</span>
-              <select
+              <SearchableSelect
                 value={filters.instructorId}
                 onChange={event => setFilter('instructorId', event.target.value)}
                 className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
@@ -423,11 +433,11 @@ export const BookingsList: React.FC<BookingsListProps> = ({
                 {instructors.map(instructor => (
                   <option key={instructor.id} value={instructor.id}>{instructor.name}</option>
                 ))}
-              </select>
+              </SearchableSelect>
             </label>
             <label className="block">
               <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Payment Type</span>
-              <select
+              <SearchableSelect
                 value={filters.flightMode}
                 onChange={event => setFilter('flightMode', event.target.value)}
                 className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
@@ -436,11 +446,11 @@ export const BookingsList: React.FC<BookingsListProps> = ({
                 <option value="dual">Dual</option>
                 <option value="solo">Solo</option>
                 <option value="waitlist">Waitlisted/conflict</option>
-              </select>
+              </SearchableSelect>
             </label>
             <label className="block">
               <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Flight log</span>
-              <select
+              <SearchableSelect
                 value={filters.logState}
                 onChange={event => setFilter('logState', event.target.value)}
                 className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
@@ -448,7 +458,7 @@ export const BookingsList: React.FC<BookingsListProps> = ({
                 <option value="">Any log state</option>
                 <option value="logged">Logged</option>
                 <option value="unlogged">Unlogged</option>
-              </select>
+              </SearchableSelect>
             </label>
           </div>
           {activeFilterCount > 0 && (
@@ -510,6 +520,19 @@ export const BookingsList: React.FC<BookingsListProps> = ({
                     onViewTrainingRecord={() => onOpenTrainingRecord && onOpenTrainingRecord(booking)}
                     onApprove={onApproveBooking ? () => onApproveBooking(booking.id) : undefined}
                     onReject={onRejectBooking ? () => onRejectBooking(booking.id) : undefined}
+                    onAcceptSupervision={canAcceptManualSupervision(booking)
+                      ? async () => {
+                          try {
+                            const result = await acceptManualSupervision(booking);
+                            toast.success(`${result.supervisingInstructorName} is now confirmed as the supervisor`);
+                          } catch (error) {
+                            toast.error(error instanceof Error
+                              ? error.message
+                              : 'The supervision commitment could not be saved.');
+                          }
+                        }
+                      : undefined}
+                    acceptingSupervision={acceptingBookingId === booking.id}
                     hasTrainingRecord={!!booking.flightLog}
                     canDelete={canCancelOwnBookings}
                     canApprove={user?.role === 'admin' || user?.role === 'instructor'}

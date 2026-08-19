@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useState } from 'react';
 import { Calendar, Download, FileText, Plus, Upload, User, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -117,10 +118,10 @@ export const ChecklistsDocsTab: React.FC = () => {
       </div>
 
       <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
-        <select value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)} className="w-full md:w-72 px-3 py-2 border border-gray-300 rounded-md">
+        <SearchableSelect value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)} className="w-full md:w-72 px-3 py-2 border border-gray-300 rounded-md">
           <option value="">All categories</option>
           {categories.map(category => <option key={category}>{category}</option>)}
-        </select>
+        </SearchableSelect>
         <p className="mt-4 text-sm text-gray-600">Showing {filteredDocuments.length} documents</p>
       </div>
 
@@ -144,7 +145,7 @@ export const ChecklistsDocsTab: React.FC = () => {
           <div className="bg-white rounded-lg shadow-xl max-w-lg w-full">
             <div className="flex justify-between items-center p-6 border-b"><h2 className="text-xl font-semibold">Upload Document</h2><button onClick={() => setShowUploadForm(false)}><X className="h-5 w-5" /></button></div>
             <form onSubmit={handleUpload} className="p-6 space-y-4">
-              <select name="category" required className="w-full px-3 py-2 border rounded-md"><option value="">Select category</option>{categories.map(category => <option key={category}>{category}</option>)}</select>
+              <SearchableSelect name="category" required className="w-full px-3 py-2 border rounded-md"><option value="">Select category</option>{categories.map(category => <option key={category}>{category}</option>)}</SearchableSelect>
               <label className="flex flex-col items-center justify-center h-32 border-2 border-dashed rounded-lg cursor-pointer bg-gray-50"><Upload className="h-8 w-8 text-gray-500 mb-2" /><span className="text-sm text-gray-600">Choose a PDF, DOC or DOCX file</span><input name="file" type="file" required accept=".pdf,.doc,.docx" className="hidden" /></label>
               <div className="flex justify-end space-x-3 pt-4 border-t"><button type="button" onClick={() => setShowUploadForm(false)} className="px-4 py-2 bg-gray-100 rounded-lg">Cancel</button><button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg">Upload Document</button></div>
             </form>

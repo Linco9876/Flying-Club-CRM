@@ -1,7 +1,10 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useState } from 'react';
 import { Award, BookOpen, Check, CheckCircle, GraduationCap, Loader2, Lock, MessageSquare, Pencil, Plus, X } from 'lucide-react';
 import { TrainingSyllabusSettingsData, useTrainingSettings } from '../../hooks/useTrainingSettings';
 import { uniqueEndorsementTypes } from '../../utils/pilotStatus';
+import { SettingsLoadError } from './SettingsLoadError';
+import { getTrainingSettingsValidationError } from '../../utils/trainingSettingsRules';
 
 interface TrainingSyllabusSettingsProps {
   canEdit: boolean;
@@ -45,7 +48,7 @@ function SettingToggle({
 }
 
 export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> = ({ canEdit, onFormChange }) => {
-  const { settings, loading, updateSettings, renameEndorsementReferences, renameLicenceReferences } = useTrainingSettings();
+  const { settings, loading, error, updateSettings, renameEndorsementReferences, renameLicenceReferences, refetch } = useTrainingSettings();
   const [formData, setFormData] = useState<TrainingSyllabusSettingsData>(settings);
   const [endorsementInput, setEndorsementInput] = useState('');
   const [editingEndorsement, setEditingEndorsement] = useState<string | null>(null);
@@ -68,6 +71,8 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
 
   useEffect(() => {
     (window as any).__trainingSettingsSave = async () => {
+      const validationError = getTrainingSettingsValidationError(formData);
+      if (validationError) throw new Error(validationError);
       await renameEndorsementReferences(
         Object.entries(endorsementRenames).map(([from, to]) => ({ from, to }))
       );
@@ -177,6 +182,7 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
       </div>
     );
   }
+  if (error) return <SettingsLoadError section="Training" error={error} onRetry={refetch} />;
 
   return (
     <div className="p-6 space-y-8">
@@ -237,7 +243,7 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Default grading system for new criteria</label>
-            <select
+            <SearchableSelect
               disabled={!canEdit}
               value={formData.defaultGradingSystem}
               onChange={event => setField('defaultGradingSystem', event.target.value as any)}
@@ -246,11 +252,11 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
               <option value="NC/S/C/-">NC / S / C / -</option>
               <option value="Pass or Fail">Pass or Fail</option>
               <option value="Out of 100">Out of 100</option>
-            </select>
+            </SearchableSelect>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Next lesson rule</label>
-            <select
+            <SearchableSelect
               disabled={!canEdit}
               value={formData.nextLessonRule}
               onChange={event => setField('nextLessonRule', event.target.value as any)}
@@ -259,11 +265,11 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
               <option value="advance_on_pass">Advance only when lesson pass mark is met</option>
               <option value="always_advance">Always show the following lesson</option>
               <option value="manual">Leave next lesson blank for instructor choice</option>
-            </select>
+            </SearchableSelect>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Course completion rule</label>
-            <select
+            <SearchableSelect
               disabled={!canEdit}
               value={formData.courseCompletionRule}
               onChange={event => setField('courseCompletionRule', event.target.value as any)}
@@ -272,7 +278,7 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
               <option value="all_required_criteria">All required criteria at final pass mark</option>
               <option value="all_lessons_attempted">All lessons attempted</option>
               <option value="criteria_or_lessons">Criteria complete or all lessons attempted</option>
-            </select>
+            </SearchableSelect>
           </div>
           <SettingToggle
             id="prefillHighestGrades"

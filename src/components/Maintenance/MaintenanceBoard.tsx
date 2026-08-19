@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useState, useEffect } from 'react';
 import {
   AlertTriangle,
@@ -359,7 +360,7 @@ const StatusUpdateModal: React.FC<StatusUpdateModalProps> = ({ defect, onClose, 
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Status
             </label>
-            <select
+            <SearchableSelect
               value={status}
               onChange={(event) => setStatus(event.target.value as StatusOption)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -371,7 +372,7 @@ const StatusUpdateModal: React.FC<StatusUpdateModalProps> = ({ defect, onClose, 
                   {statusLabel(option)}
                 </option>
               ))}
-            </select>
+            </SearchableSelect>
             {!canMarkFixed && defect.status !== 'fixed' && (
               <p className="text-xs text-gray-500 mt-1">An administrator must approve return to service.</p>
             )}
@@ -443,7 +444,7 @@ interface PhotoLightboxProps {
 }
 
 const PhotoLightbox: React.FC<PhotoLightboxProps> = ({ photo, onClose }) => (
-  <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[60] p-4">
+  <div className="portal-media-overlay fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[60] p-4">
     <div role="dialog" aria-modal="true" aria-label="Defect attachment preview" className="relative bg-white rounded-lg shadow-2xl max-w-4xl w-full p-4">
       <button
         onClick={onClose}
@@ -525,14 +526,14 @@ const OneTimeMilestoneModal: React.FC<OneTimeMilestoneModalProps> = ({ aircraft,
         <div className="p-6 space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Aircraft</label>
-            <select
+            <SearchableSelect
               value={formData.aircraftId}
               onChange={(event) => setFormData(prev => ({ ...prev, aircraftId: event.target.value }))}
               required
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               {aircraft.map(item => <option key={item.id} value={item.id}>{item.registration}</option>)}
-            </select>
+            </SearchableSelect>
           </div>
 
           <div>
@@ -550,14 +551,14 @@ const OneTimeMilestoneModal: React.FC<OneTimeMilestoneModalProps> = ({ aircraft,
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Due By</label>
-              <select
+              <SearchableSelect
                 value={formData.dueCondition}
                 onChange={(event) => setFormData(prev => ({ ...prev, dueCondition: event.target.value as 'hours' | 'date', dueValue: '' }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="hours">Tach hours</option>
                 <option value="date">Calendar date</option>
-              </select>
+              </SearchableSelect>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">

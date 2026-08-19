@@ -90,6 +90,7 @@ export const useSafetySettings = (options: UseSafetySettingsOptions = {}) => {
   const [settings, setSettings] = useState<SafetyComplianceSettings>(DEFAULT_SAFETY_SETTINGS);
   const [categories, setCategories] = useState<SafetyReportCategory[]>([]);
   const [loading, setLoading] = useState(enabled);
+  const [error, setError] = useState<string | null>(null);
   usePageLoadState(
     enabled && participateInPageLoad && loading,
     'Loading safety',
@@ -114,8 +115,10 @@ export const useSafetySettings = (options: UseSafetySettingsOptions = {}) => {
         defaultAssignee: category.default_assignee || '',
         displayOrder: category.display_order || 0
       })));
-    } catch (error) {
-      console.error('Error fetching safety settings:', error);
+      setError(null);
+    } catch (caught) {
+      console.error('Error fetching safety settings:', caught);
+      setError(caught instanceof Error ? caught.message : 'Safety settings could not be loaded');
       toast.error('Failed to load safety settings');
     } finally {
       setLoading(false);
@@ -136,6 +139,7 @@ export const useSafetySettings = (options: UseSafetySettingsOptions = {}) => {
   }, [enabled]);
 
   const updateSettings = async (updates: Partial<SafetyComplianceSettings>) => {
+    if (error) throw new Error('Safety settings must load successfully before they can be changed.');
     const nextSettings = { ...settings, ...updates };
     const payload = {
       recency_days: nextSettings.recencyDays,
@@ -221,5 +225,30 @@ export const useSafetySettings = (options: UseSafetySettingsOptions = {}) => {
     toast.success('Category deleted');
   };
 
-  return { settings, categories, loading, updateSettings, addCategory, updateCategory, deleteCategory, refetch: fetchData };
+  const replaceCategories = async (nextCategories: SafetyReportCategory[]) => {
+    if (error) throw new Error('Safety settings must load successfully before categories can be changed.');
+    const payload = nextCategories.map((category, index) => ({
+      id: category.id,
+      name: category.name.trim(),
+      default_assignee: category.defaultAssignee.trim(),
+      display_order: index,
+    }));
+
+    const { error: upsertError } = await supabase
+      .from('safety_report_categories')
+      .upsert(payload);
+    if (upsertError) throw upsertError;
+
+    const keepIds = payload.map(category => category.id);
+    let deleteQuery = supabase.from('safety_report_categories').delete();
+    deleteQuery = keepIds.length > 0
+      ? deleteQuery.not('id', 'in', `(${keepIds.join(',')})`)
+      : deleteQuery.neq('id', '00000000-0000-0000-0000-000000000000');
+    const { error: deleteError } = await deleteQuery;
+    if (deleteError) throw deleteError;
+
+    await fetchData();
+  };
+
+  return { settings, categories, loading, error, updateSettings, addCategory, updateCategory, deleteCategory, replaceCategories, refetch: fetchData };
 };

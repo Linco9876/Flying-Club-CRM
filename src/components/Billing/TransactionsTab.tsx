@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useState, useMemo } from 'react';
 import { Download, Search, AlertCircle, TrendingUp, TrendingDown, Clock, XCircle, ShieldCheck, ShieldAlert, ShieldX, CreditCard, Loader2, FileText, ExternalLink } from 'lucide-react';
 import { useBillingAccounts } from '../../hooks/useBillingAccounts';
@@ -1059,7 +1060,7 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
           </label>
           <label className="block">
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Type</span>
-            <select
+            <SearchableSelect
               value={typeFilter}
               onChange={e => { setTypeFilter(e.target.value as any); setCurrentPage(1); }}
               className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1068,7 +1069,7 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
               <option value="credit">Top-ups only</option>
               <option value="debit">Charges only</option>
               <option value="unpaid">Outstanding flights</option>
-            </select>
+            </SearchableSelect>
           </label>
         </div>
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

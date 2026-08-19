@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bell,
@@ -36,6 +37,8 @@ import {
 } from '../../utils/profilePicture';
 import { CalendarSubscriptionSettings } from './CalendarSubscriptionSettings';
 import { MfaSettings } from '../Auth/MfaSecurity';
+import { SettingsLoadError } from './SettingsLoadError';
+import { usePwaPushNotifications } from '../../hooks/usePwaPushNotifications';
 
 interface PersonalPreferencesSettingsProps {
   canEdit: boolean;
@@ -58,6 +61,8 @@ interface ProfileFormData {
   raausId: string;
   raausExpiry: string;
   casaId: string;
+  lastRaausBfrDate: string;
+  lastCasaAfrDate: string;
   medicalType: string;
   medicalExpiry: string;
   mobile: string;
@@ -119,6 +124,8 @@ const blankProfile: ProfileFormData = {
   raausId: '',
   raausExpiry: '',
   casaId: '',
+  lastRaausBfrDate: '',
+  lastCasaAfrDate: '',
   medicalType: '',
   medicalExpiry: '',
   mobile: '',
@@ -170,19 +177,31 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
   showInternalTabs = true,
 }) => {
   const { user, refreshUser } = useAuth();
+  const phoneNotifications = usePwaPushNotifications('portal');
   const location = useLocation();
   const requestedSettings = useMemo(
     () => parseSettingsDeepLink(location.search, location.hash),
     [location.hash, location.search],
   );
-  const { aircraft } = useAircraft();
-  const { settings: trainingSettings } = useTrainingSettings();
-  const { preferences, loading, error, updatePreferences } = useUserPreferences(user?.id || '');
+  const {
+    aircraft,
+    loading: aircraftLoading,
+    error: aircraftError,
+    refetch: refetchAircraft,
+  } = useAircraft();
+  const {
+    settings: trainingSettings,
+    loading: trainingLoading,
+    error: trainingError,
+    refetch: refetchTraining,
+  } = useTrainingSettings();
+  const { preferences, loading, error, updatePreferences, refetch: refetchPreferences } = useUserPreferences(user?.id || '');
   const [activeTab, setActiveTab] = useState<AccountTab>('info');
   const selectedTab = activeAccountTab || activeTab;
   const [profileForm, setProfileForm] = useState<ProfileFormData>(blankProfile);
   const [savedProfile, setSavedProfile] = useState<ProfileFormData>(blankProfile);
   const [profileLoading, setProfileLoading] = useState(true);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState('');
@@ -280,6 +299,8 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
         raausId: studentData?.raaus_id || '',
         raausExpiry: studentData?.licence_expiry || '',
         casaId: studentData?.casa_id || '',
+        lastRaausBfrDate: studentData?.last_raaus_bfr_date || studentData?.last_flight_review || '',
+        lastCasaAfrDate: studentData?.last_casa_afr_date || '',
         medicalType: studentData?.medical_type || '',
         medicalExpiry: studentData?.medical_expiry || '',
         mobile: userData?.mobile_phone || userData?.phone || user.phone || '',
@@ -320,8 +341,10 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
         rejectionReason: licence.rejection_reason || null,
       })));
       setPendingLicences([]);
+      setProfileError(null);
     } catch (err: any) {
       console.error('Failed to load account settings:', err);
+      setProfileError(err?.message || 'Account settings could not be loaded');
       toast.error(err.message || 'Failed to load account settings');
     } finally {
       setProfileLoading(false);
@@ -611,7 +634,6 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
     const focusTarget = focus ? focusTargets[focus] : null;
     if (!focusTarget) return;
 
-    handledInfoDeepLinkRef.current = deepLinkKey;
     setHighlightedInfoSection(focus);
     const requestedEndorsement = (params.get('endorsement') || '').trim();
     const requestedLicence = (params.get('licence') || '').trim();
@@ -635,12 +657,55 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       onFormChange();
     }
 
-    window.setTimeout(() => {
-      focusTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      focusTarget.focus({ preventScroll: true });
-    }, 120);
+    const revealFocusTarget = (focusElement = false) => {
+      const currentFocusTarget = document.getElementById(focusTarget.id);
+      if (!currentFocusTarget) return;
+      if (focusElement) currentFocusTarget.focus();
+      const bounds = currentFocusTarget.getBoundingClientRect();
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+      if (bounds.bottom <= 0 || bounds.top >= viewportHeight) {
+        currentFocusTarget.scrollIntoView({ block: 'start' });
+        const correctedBounds = currentFocusTarget.getBoundingClientRect();
+        if (correctedBounds.bottom <= 0 || correctedBounds.top >= viewportHeight) {
+          window.scrollTo({
+            top: Math.max(0, window.scrollY + correctedBounds.top - 96),
+          });
+        }
+      }
+    };
+    let focusApplied = false;
+    let stabiliseTimer = 0;
+    let stopTimer = 0;
+    const stopStabilising = () => {
+      if (stabiliseTimer) window.clearInterval(stabiliseTimer);
+      if (stopTimer) window.clearTimeout(stopTimer);
+      handledInfoDeepLinkRef.current = deepLinkKey;
+      window.removeEventListener('pointerdown', stopStabilising);
+      window.removeEventListener('touchstart', stopStabilising);
+      window.removeEventListener('wheel', stopStabilising);
+      window.removeEventListener('keydown', stopStabilising);
+    };
+    const stabiliseFocusTarget = () => {
+      revealFocusTarget(!focusApplied);
+      focusApplied = true;
+    };
+    stabiliseFocusTarget();
+    stabiliseTimer = window.setInterval(stabiliseFocusTarget, 100);
+    stopTimer = window.setTimeout(stopStabilising, 3_000);
+    window.addEventListener('pointerdown', stopStabilising, { once: true });
+    window.addEventListener('touchstart', stopStabilising, { once: true });
+    window.addEventListener('wheel', stopStabilising, { once: true });
+    window.addEventListener('keydown', stopStabilising, { once: true });
     const highlightTimer = window.setTimeout(() => setHighlightedInfoSection(null), 4_000);
-    return () => window.clearTimeout(highlightTimer);
+    return () => {
+      if (stabiliseTimer) window.clearInterval(stabiliseTimer);
+      if (stopTimer) window.clearTimeout(stopTimer);
+      window.removeEventListener('pointerdown', stopStabilising);
+      window.removeEventListener('touchstart', stopStabilising);
+      window.removeEventListener('wheel', stopStabilising);
+      window.removeEventListener('keydown', stopStabilising);
+      window.clearTimeout(highlightTimer);
+    };
   }, [
     canEdit,
     hasFlyingRole,
@@ -659,7 +724,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       highlightedInfoSection === focus
         ? 'ring-2 ring-blue-500 ring-offset-4'
         : ''
-    }`;
+    } ${requestedSettings.focus === focus ? 'order-first' : ''}`;
 
   const updatePendingEndorsement = (
     localId: string,
@@ -862,6 +927,8 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
           raaus_id: profileForm.raausId.trim() || null,
           licence_expiry: profileForm.raausExpiry || null,
           casa_id: profileForm.casaId.trim() || null,
+          last_raaus_bfr_date: profileForm.lastRaausBfrDate || null,
+          last_casa_afr_date: profileForm.lastCasaAfrDate || null,
           medical_type: profileForm.medicalType.trim() || null,
           medical_expiry: profileForm.medicalExpiry || null,
           date_of_birth: profileForm.birthdate || null,
@@ -1022,14 +1089,14 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
   const Select = ({ field, label, children }: { field: PreferenceField; label: string; children: React.ReactNode }) => (
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
-      <select
+      <SearchableSelect
         value={String(preferenceForm[field])}
         onChange={event => updatePreference(field, event.target.value)}
         disabled={!canEdit}
         className={inputClass}
       >
         {children}
-      </select>
+      </SearchableSelect>
     </div>
   );
 
@@ -1048,6 +1115,9 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
       <input
         type={type}
+        max={type === 'date' && (field === 'lastRaausBfrDate' || field === 'lastCasaAfrDate')
+          ? new Date().toISOString().slice(0, 10)
+          : undefined}
         value={profileForm[field]}
         onChange={event => updateProfile(field, event.target.value)}
         disabled={!canEdit}
@@ -1131,32 +1201,40 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
     );
   };
 
-  const timezones = [
-    'Australia/Melbourne',
-    'Australia/Sydney',
-    'Australia/Brisbane',
-    'Australia/Adelaide',
-    'Australia/Perth',
-    'Australia/Darwin',
-    'Australia/Hobart',
-  ];
-
   const tabLabel = tabs.find(tab => tab.id === selectedTab)?.label || 'Account & Preferences';
   const introText = {
     info: 'Update your profile photo, personal details, contact numbers, emergency contact, preferred aircraft, licences and endorsements.',
     security: 'Manage your password and account sign-in security.',
-    calendar: 'Choose your personal date, time and calendar defaults.',
+    calendar: 'Manage your calendar subscription and review the club-wide date, time and calendar defaults.',
     notifications: 'Tune notifications for your own account.',
     appearance: 'Adjust display preferences for your own account.',
-    dashboard: 'Choose which personal dashboard panels appear where supported.',
+    dashboard: 'Choose which panels appear on your personal portal dashboard.',
   }[selectedTab];
 
   if (!user) {
     return <div className="p-6"><p className="text-gray-500">Sign in to manage your account settings.</p></div>;
   }
 
-  if (loading || profileLoading) {
+  if (loading || profileLoading || aircraftLoading || trainingLoading) {
     return <div className="p-6 flex items-center justify-center"><div className="text-gray-500">Loading account settings...</div></div>;
+  }
+
+  const loadError = error || profileError || aircraftError || trainingError;
+  if (loadError) {
+    return (
+      <SettingsLoadError
+        section="Account"
+        error={loadError}
+        onRetry={async () => {
+          await Promise.all([
+            fetchProfile(),
+            refetchPreferences(),
+            refetchAircraft(),
+            refetchTraining(),
+          ]);
+        }}
+      />
+    );
   }
 
   return (
@@ -1189,7 +1267,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       )}
 
       {selectedTab === 'info' && (
-        <div className="space-y-6">
+        <div className="flex flex-col gap-6">
           <section ref={personalDetailsSectionRef} id="account-personal-details" tabIndex={-1} className={infoSectionClass('personal-details')}>
             <h3 className="text-lg font-medium text-gray-900">Personal Details</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1198,7 +1276,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
               {renderProfileField({ label: 'Birthdate', field: 'birthdate', type: 'date' })}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Preferred Aircraft</label>
-                <select
+                <SearchableSelect
                   value={profileForm.preferredAircraftId}
                   onChange={event => updateProfile('preferredAircraftId', event.target.value)}
                   disabled={!canEdit}
@@ -1208,7 +1286,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
                   {aircraft.filter(a => !a.isArchived).map(a => (
                     <option key={a.id} value={a.id}>{a.registration} - {a.make} {a.model}</option>
                   ))}
-                </select>
+                </SearchableSelect>
               </div>
             </div>
             <p className="text-xs text-gray-500">The new email will need to be verified and will replace your login email once verified.</p>
@@ -1234,6 +1312,14 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
                 {renderProfileField({ label: 'RAAus Number', field: 'raausId' })}
                 {renderProfileField({ label: 'RAAus Expiry', field: 'raausExpiry', type: 'date' })}
                 {renderProfileField({ label: 'CASA ARN Number', field: 'casaId' })}
+                <div>
+                  {renderProfileField({ label: 'Last RAAus BFR date', field: 'lastRaausBfrDate', type: 'date' })}
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">A completed RAAus flight review renews RAAus BFR currency only.</p>
+                </div>
+                <div>
+                  {renderProfileField({ label: 'Last CASA AFR date', field: 'lastCasaAfrDate', type: 'date' })}
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">A CASA aeroplane flight review renews both CASA AFR and RAAus BFR currency.</p>
+                </div>
                 {renderProfileField({ label: 'Medical Expiry', field: 'medicalExpiry', type: 'date' })}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Medical Type</label>
@@ -1401,10 +1487,10 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
                       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
                         <label className="block">
                           <span className="mb-2 block text-sm font-medium text-gray-700">Licence</span>
-                          <select value={licence.type} onChange={event => updatePendingLicence(licence.localId, 'type', event.target.value)} disabled={!canEdit} className={inputClass}>
+                          <SearchableSelect value={licence.type} onChange={event => updatePendingLicence(licence.localId, 'type', event.target.value)} disabled={!canEdit} className={inputClass}>
                             <option value="">Select licence</option>
                             {trainingSettings.licenceTypes.map(type => <option key={type} value={type}>{type}</option>)}
-                          </select>
+                          </SearchableSelect>
                         </label>
                         <label className="block">
                           <span className="mb-2 block text-sm font-medium text-gray-700">Licence number</span>
@@ -1510,7 +1596,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
                       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                         <div>
                           <label className="mb-2 block text-sm font-medium text-gray-700">Endorsement</label>
-                          <select
+                          <SearchableSelect
                             value={endorsement.type}
                             onChange={event => updatePendingEndorsement(endorsement.localId, 'type', event.target.value)}
                             disabled={!canEdit}
@@ -1520,7 +1606,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
                             {trainingSettings.endorsementTypes.map(type => (
                               <option key={type} value={type}>{type}</option>
                             ))}
-                          </select>
+                          </SearchableSelect>
                         </div>
                         <div>
                           <label className="mb-2 block text-sm font-medium text-gray-700">Date obtained</label>
@@ -1624,23 +1710,11 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
             <Globe className="h-5 w-5 mr-2 text-blue-600" />
             Date, Time & Calendar
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Select field="timezone" label="Timezone">{timezones.map(timezone => <option key={timezone} value={timezone}>{timezone}</option>)}</Select>
-            <Select field="date_format" label="Date Format">
-              <option value="dd/MM/yyyy">DD/MM/YYYY</option>
-              <option value="MM/dd/yyyy">MM/DD/YYYY</option>
-              <option value="yyyy-MM-dd">YYYY-MM-DD</option>
-              <option value="d MMM yyyy">1 Jan 2026</option>
-            </Select>
-            <Select field="time_format" label="Time Format">
-              <option value="24h">24 Hour (14:30)</option>
-              <option value="12h">12 Hour (2:30 PM)</option>
-            </Select>
-            <Select field="default_calendar_view" label="Default Calendar View">
-              <option value="day">Day View</option>
-              <option value="week">Week View</option>
-              <option value="month">Month View</option>
-            </Select>
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+            <p className="text-sm font-medium text-gray-800">Club-wide display rules apply</p>
+            <p className="mt-1 text-xs text-gray-500">
+              Date format, time format, timezone and the default calendar view are managed centrally so bookings are shown consistently to everyone.
+            </p>
           </div>
           {user?.id && (
             <CalendarSubscriptionSettings userId={user.id} canEdit={canEdit} hasStaffRole={Boolean(hasStaffRole)} />
@@ -1651,12 +1725,97 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       {selectedTab === 'notifications' && (
         <section className="space-y-4">
           <h3 className="text-lg font-medium text-gray-900">Notification Preferences</h3>
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+            Booking, approval, training and account notifications appear in the CRM when enabled by the club. Critical workflow messages cannot be hidden per person.
+          </div>
+          <div className={`rounded-xl border p-4 ${phoneNotifications.state === 'enabled' ? 'border-emerald-200 bg-emerald-50' : 'border-gray-200 bg-white'}`}>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3">
+                <div className={`rounded-lg p-2 ${phoneNotifications.state === 'enabled' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-50 text-blue-700'}`}>
+                  <Bell className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">Phone and PWA notifications</p>
+                  <p className="mt-1 text-xs leading-5 text-gray-600">
+                    {phoneNotifications.state === 'enabled'
+                      ? 'Enabled on this device. New CRM notifications can appear on its Lock Screen or notification tray.'
+                      : phoneNotifications.state === 'blocked'
+                        ? 'Blocked by this device. Open the phone’s notification settings for the BFC Portal to allow them.'
+                        : phoneNotifications.state === 'unsupported'
+                          ? 'This browser does not support installed-app push notifications.'
+                          : 'Enable this once on each phone or computer where you want CRM notifications.'}
+                  </p>
+                  {!phoneNotifications.installed && phoneNotifications.state !== 'unsupported' && (
+                    <p className="mt-1 text-xs text-amber-700">On iPhone or iPad, first add the BFC Portal to the Home Screen, then open the installed app and enable notifications here.</p>
+                  )}
+                  {phoneNotifications.error && <p className="mt-1 text-xs text-red-600">{phoneNotifications.error}</p>}
+                </div>
+              </div>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                {phoneNotifications.state === 'enabled' ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={phoneNotifications.working}
+                      onClick={async () => {
+                        try {
+                          await phoneNotifications.sendTest();
+                          toast.success('Test notification queued');
+                        } catch (testError) {
+                          toast.error(testError instanceof Error ? testError.message : 'Test notification failed');
+                        }
+                      }}
+                      className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                    >
+                      Send test
+                    </button>
+                    <button
+                      type="button"
+                      disabled={phoneNotifications.working}
+                      onClick={async () => {
+                        try {
+                          await phoneNotifications.disable();
+                          toast.success('Phone notifications disabled on this device');
+                        } catch (disableError) {
+                          toast.error(disableError instanceof Error ? disableError.message : 'Could not disable notifications');
+                        }
+                      }}
+                      className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Disable
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={phoneNotifications.working || ['blocked', 'unsupported', 'checking'].includes(phoneNotifications.state)}
+                    onClick={async () => {
+                      try {
+                        await phoneNotifications.enable();
+                        toast.success('Phone notifications enabled');
+                      } catch (enableError) {
+                        toast.error(enableError instanceof Error ? enableError.message : 'Could not enable notifications');
+                      }
+                    }}
+                    className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {phoneNotifications.working && <Loader2 className="h-4 w-4 animate-spin" />}
+                    Enable on this device
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            <Toggle field="email_notifications" label="Email notifications" description="Receive allowed CRM notifications by email when delivery is connected." />
-            <Toggle field="sms_notifications" label="SMS notifications" description="Receive urgent notifications by SMS when SMS delivery is connected." />
-            <Toggle field="booking_reminders" label="Booking reminders" description="Receive booking reminders where configured." />
-            <Toggle field="currency_alerts" label="Currency alerts" description="Receive alerts for medical, licence, RAAus membership and BFR expiry dates." />
-            {hasStaffRole && <Toggle field="maintenance_alerts" label="Maintenance alerts" description="Receive aircraft maintenance and defect-related alerts." />}
+            {hasStaffRole && <Toggle field="maintenance_alerts" label="Maintenance alerts" description="Receive aircraft maintenance and defect-related in-app alerts." />}
+            <div className="rounded-md border border-gray-200 bg-gray-50 p-3" aria-disabled="true">
+              <p className="text-sm font-medium text-gray-700">Email and SMS notifications</p>
+              <p className="mt-0.5 text-xs text-gray-500">General email and SMS delivery providers are not installed, so there is nothing to opt into yet.</p>
+            </div>
+            <div className="rounded-md border border-gray-200 bg-gray-50 p-3" aria-disabled="true">
+              <p className="text-sm font-medium text-gray-700">Timed booking and currency reminders</p>
+              <p className="mt-0.5 text-xs text-gray-500">Scheduled reminder jobs are not installed. Booking and safety status remain visible in their normal CRM screens.</p>
+            </div>
           </div>
         </section>
       )}
@@ -1672,8 +1831,9 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
               <option value="day-night">Day/Night</option>
               <option value="auto">Auto (System)</option>
             </Select>
-            <div className="flex items-end">
-              <Toggle field="compact_view" label="Compact view" description="Use denser lists and tables where supported." />
+            <div className="rounded-md border border-gray-200 bg-gray-50 p-3" aria-disabled="true">
+              <p className="text-sm font-medium text-gray-700">Compact view</p>
+              <p className="mt-0.5 text-xs text-gray-500">A compact layout is not available in the current responsive interface.</p>
             </div>
           </div>
           <div className="space-y-3">

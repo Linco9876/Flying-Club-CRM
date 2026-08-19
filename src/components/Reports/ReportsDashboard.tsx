@@ -16,7 +16,7 @@ export const ReportsDashboard: React.FC = () => {
     { id: 'pilot', label: 'Pilot Statistics', description: 'Bookings, hours and activity', icon: <Users className="h-4 w-4" /> },
     { id: 'instructor', label: 'Instructor Statistics', description: 'Instructing hours and students', icon: <User className="h-4 w-4" /> },
     { id: 'aircraft', label: 'Aircraft Statistics', description: 'Fleet utilisation and landings', icon: <Plane className="h-4 w-4" /> },
-    { id: 'fatigue', label: 'Fatigue Export', description: 'Instructor fatigue management evidence', icon: <ShieldCheck className="h-4 w-4" /> }
+    { id: 'fatigue', label: 'Duty Time Report', description: 'Visual duty trends, fatigue checks and export evidence', icon: <ShieldCheck className="h-4 w-4" /> }
   ];
 
   const activeTabMeta = tabs.find(tab => tab.id === activeTab) ?? tabs[0];
@@ -46,7 +46,7 @@ export const ReportsDashboard: React.FC = () => {
                 <Download className="h-3.5 w-3.5" />
                 Export
               </div>
-              <p className="mt-1 text-sm font-semibold text-gray-900">CSV on each tab</p>
+              <p className="mt-1 text-sm font-semibold text-gray-900">PDF and CSV options</p>
             </div>
           </div>
         </div>

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Clock3, Shield, Award, BookOpen } from 'lucide-react';
+import { AlertTriangle, Clock3, Shield, Award, BookOpen, RefreshCw } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTrainingRecords } from '../../hooks/useTrainingRecords';
 import { useTrainingModules } from '../../context/TrainingModulesContext';
@@ -22,11 +22,13 @@ interface TimelineEvent {
 
 export const AccountTimelineSettings: React.FC<AccountTimelineSettingsProps> = () => {
   const { user } = useAuth();
-  const { trainingRecords, loading: recordsLoading } = useTrainingRecords(user?.id);
-  const { modules } = useTrainingModules();
-  const { reports: safetyReports, loading: safetyLoading } = useSafetyReports({ participateInPageLoad: false });
+  const { trainingRecords, loading: recordsLoading, error: recordsError, refetch: refetchRecords } = useTrainingRecords(user?.id);
+  const { modules, loading: modulesLoading, error: modulesError, refetch: refetchModules } = useTrainingModules();
+  const { reports: safetyReports, loading: safetyLoading, error: safetyError, refetch: refetchSafety } = useSafetyReports({ participateInPageLoad: false });
   const [examResults, setExamResults] = useState<StudentExamResult[]>([]);
   const [loadingExams, setLoadingExams] = useState(false);
+  const [examError, setExamError] = useState<string | null>(null);
+  const [examReloadKey, setExamReloadKey] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -43,6 +45,7 @@ export const AccountTimelineSettings: React.FC<AccountTimelineSettingsProps> = (
       if (error) {
         console.error('Failed to load student timeline exams:', error);
         setExamResults([]);
+        setExamError(error.message);
       } else {
         setExamResults((data || []).map((result: any) => ({
           id: result.id,
@@ -57,6 +60,7 @@ export const AccountTimelineSettings: React.FC<AccountTimelineSettingsProps> = (
           notes: result.notes || '',
           createdAt: result.created_at ? new Date(result.created_at) : new Date(),
         })));
+        setExamError(null);
       }
       setLoadingExams(false);
     };
@@ -65,7 +69,7 @@ export const AccountTimelineSettings: React.FC<AccountTimelineSettingsProps> = (
     return () => {
       mounted = false;
     };
-  }, [user?.id]);
+  }, [examReloadKey, user?.id]);
 
   const events = useMemo(() => {
     if (!user?.id) return [] as TimelineEvent[];
@@ -113,7 +117,13 @@ export const AccountTimelineSettings: React.FC<AccountTimelineSettingsProps> = (
     });
   }, [examResults, modules, safetyReports, trainingRecords, user?.id]);
 
-  const loading = recordsLoading || loadingExams || safetyLoading;
+  const loading = recordsLoading || modulesLoading || loadingExams || safetyLoading;
+  const sourceErrors = [
+    recordsError && `Training records: ${recordsError}`,
+    modulesError && `Training courses: ${modulesError}`,
+    examError && `Exam results: ${examError}`,
+    safetyError && `Safety reports: ${safetyError}`,
+  ].filter((message): message is string => Boolean(message));
 
   const iconFor = (kind: TimelineEvent['kind']) => {
     if (kind === 'Exam') return <Award className="h-4 w-4 text-amber-600" />;
@@ -127,6 +137,30 @@ export const AccountTimelineSettings: React.FC<AccountTimelineSettingsProps> = (
         <h2 className="text-lg font-semibold text-gray-900">Timeline</h2>
         <p className="mt-1 text-sm text-gray-600">Recent training, exam and safety activity for your account.</p>
       </div>
+
+      {sourceErrors.length > 0 && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-950" role="alert">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold">Some timeline activity is unavailable</p>
+              <ul className="mt-1 list-disc space-y-1 pl-5 text-sm">
+                {sourceErrors.map(message => <li key={message}>{message}</li>)}
+              </ul>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setExamReloadKey(value => value + 1);
+                void Promise.all([refetchRecords(), refetchModules(), refetchSafety()]);
+              }}
+              className="inline-flex shrink-0 items-center gap-1 rounded-md border border-amber-400 bg-white px-3 py-2 text-sm font-semibold"
+            >
+              <RefreshCw className="h-4 w-4" /> Retry
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
         {loading ? (

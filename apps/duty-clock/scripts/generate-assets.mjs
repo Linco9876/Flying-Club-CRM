@@ -3,8 +3,10 @@ import { fileURLToPath } from 'node:url';
 
 const assets = new URL('../assets/', import.meta.url);
 const publicAssets = new URL('../public/', import.meta.url);
+const portalPublicAssets = new URL('../../../public/', import.meta.url);
 const assetPath = (name) => fileURLToPath(new URL(name, assets));
 const publicPath = (name) => fileURLToPath(new URL(name, publicAssets));
+const portalPublicPath = (name) => fileURLToPath(new URL(name, portalPublicAssets));
 
 await Promise.all([
   sharp(assetPath('icon-source.svg')).resize(1024, 1024).flatten({ background: '#0F4C81' }).removeAlpha().png().toFile(assetPath('icon.png')),
@@ -13,4 +15,9 @@ await Promise.all([
   sharp(assetPath('icon-source.svg')).resize(192, 192).flatten({ background: '#0F4C81' }).removeAlpha().png().toFile(publicPath('pwa-icon-192.png')),
   sharp(assetPath('icon-source.svg')).resize(512, 512).flatten({ background: '#0F4C81' }).removeAlpha().png().toFile(publicPath('pwa-icon-512.png')),
   sharp(assetPath('adaptive-icon-source.svg')).resize(512, 512).flatten({ background: '#0F4C81' }).removeAlpha().png().toFile(publicPath('pwa-icon-maskable-512.png')),
+  // Android renders the Web Push `badge` as a monochrome status-bar mask.
+  // A transparent aircraft silhouette avoids the white square produced when
+  // the full-colour launcher icon is used in this small system-owned slot.
+  sharp(assetPath('monochrome-icon-source.svg')).resize(96, 96).png().toFile(publicPath('notification-badge.png')),
+  sharp(assetPath('monochrome-icon-source.svg')).resize(96, 96).png().toFile(portalPublicPath('notification-badge.png')),
 ]);

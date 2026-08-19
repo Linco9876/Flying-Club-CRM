@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { StripeTestModeBanner } from './StripeTestModeBanner';
 import { useBillingAccounts } from '../../hooks/useBillingAccounts';
@@ -16,6 +17,7 @@ import { formatBillingDescription } from '../../utils/billingDescription';
 import toast from 'react-hot-toast';
 import { useFinancialProviders } from '../../context/financialProviderState';
 import { FinancialFeaturesDisabled, FinancialProviderStatus } from './FinancialProviderStatus';
+import { isTopUpPaymentMethodAvailable } from '../../utils/paymentMethodAvailability';
 
 const TransactionsTab = lazy(() => import('./TransactionsTab').then(module => ({ default: module.TransactionsTab })));
 const PilotAccountsTab = lazy(() => import('./PilotAccountsTab').then(module => ({ default: module.PilotAccountsTab })));
@@ -90,6 +92,8 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
   const {
     capabilities: financialProviders,
     loading: financialProvidersLoading,
+    error: financialProvidersError,
+    refresh: refreshFinancialProviders,
   } = useFinancialProviders();
   const { settings: portalSettings } = usePortalUxSettings();
   const userRoles = user?.roles && user.roles.length > 0 ? user.roles : (user?.role ? [user.role] : []);
@@ -354,6 +358,25 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
     );
   }
 
+  if (financialProvidersError) {
+    return (
+      <div className="space-y-4 p-3 sm:p-6">
+        <FinancialProviderStatus showRefresh />
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
+          Billing is paused because the CRM could not safely confirm which financial services are connected.
+          Refresh the status before viewing balances or taking a payment.
+          <button
+            type="button"
+            onClick={() => void refreshFinancialProviders()}
+            className="ml-2 font-semibold underline underline-offset-2"
+          >
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!financialProviders.financeEnabled) {
     return <FinancialFeaturesDisabled />;
   }
@@ -364,13 +387,9 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
     }
 
     const transactions = billing.transactions.filter(item => item.userId === user?.id);
-    const accountTopUpPaymentMethods = paymentMethods.filter(method => {
-      if (!method.active || method.allowAccountTopup === false) return false;
-      const isStripeMethod =
-        method.systemKey === 'stripe_card' ||
-        method.name.toLowerCase().includes('stripe');
-      return !isStripeMethod || financialProviders.stripe.paymentsAvailable;
-    });
+    const accountTopUpPaymentMethods = paymentMethods.filter(method =>
+      isTopUpPaymentMethodAvailable(method, financialProviders)
+    );
     const selectedTopUpMethod = accountTopUpPaymentMethods.find(method => method.id === topUpPaymentMethodId);
     const isStripeTopUpSelected =
       selectedTopUpMethod?.systemKey === 'stripe_card' ||
@@ -765,7 +784,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
             </label>
             <label className="block">
               <span className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Payment method</span>
-              <select
+              <SearchableSelect
                 value={topUpPaymentMethodId}
                 onChange={event => setTopUpPaymentMethodId(event.target.value)}
                 className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-[#363b45] dark:bg-[#11141a] dark:text-gray-100"
@@ -775,7 +794,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
                 {accountTopUpPaymentMethods.map(method => (
                   <option key={method.id} value={method.id}>{method.name}</option>
                 ))}
-              </select>
+              </SearchableSelect>
             </label>
             {selectedTopUpMethod && !isStripeTopUpSelected && (
               <>

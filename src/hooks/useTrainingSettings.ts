@@ -98,6 +98,7 @@ const toRow = (settings: TrainingSyllabusSettingsData) => ({
 export function useTrainingSettings() {
   const [settings, setSettings] = useState<TrainingSyllabusSettingsData>(DEFAULT_TRAINING_SETTINGS);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchSettings = async () => {
     try {
@@ -108,8 +109,10 @@ export function useTrainingSettings() {
         .maybeSingle();
       if (error) throw error;
       setSettings(data ? mapRow(data) : DEFAULT_TRAINING_SETTINGS);
-    } catch (error) {
-      console.error('Error loading training settings:', error);
+      setError(null);
+    } catch (caught) {
+      console.error('Error loading training settings:', caught);
+      setError(caught instanceof Error ? caught.message : 'Training settings could not be loaded');
       toast.error('Failed to load training settings');
     } finally {
       setLoading(false);
@@ -124,6 +127,7 @@ export function useTrainingSettings() {
   }, []);
 
   const updateSettings = async (updates: Partial<TrainingSyllabusSettingsData>) => {
+    if (error) throw new Error('Training settings must load successfully before they can be changed.');
     const next = { ...settings, ...updates };
     const { data: userData } = await supabase.auth.getUser();
     const payload = {
@@ -185,5 +189,5 @@ export function useTrainingSettings() {
     }
   };
 
-  return { settings, loading, updateSettings, renameEndorsementReferences, renameLicenceReferences, refetch: fetchSettings };
+  return { settings, loading, error, updateSettings, renameEndorsementReferences, renameLicenceReferences, refetch: fetchSettings };
 }

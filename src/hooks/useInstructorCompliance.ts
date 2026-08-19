@@ -57,6 +57,8 @@ export interface InstructorComplianceRecord {
   briefingLesson: string;
   emergencyControlPlanConfirmed: boolean;
   medicalSighted: boolean;
+  logbookEntriesConfirmed: boolean;
+  authoritySubmissionConfirmed: boolean;
   checklist: InstructorComplianceChecklistResult[];
   strengths: string;
   deficiencies: string;
@@ -87,6 +89,8 @@ export interface SaveInstructorComplianceRecord {
   briefingLesson: string;
   emergencyControlPlanConfirmed: boolean;
   medicalSighted: boolean;
+  logbookEntriesConfirmed: boolean;
+  authoritySubmissionConfirmed: boolean;
   checklist: InstructorComplianceChecklistResult[];
   strengths: string;
   deficiencies: string;
@@ -173,6 +177,9 @@ const mapRecord = (value: unknown): InstructorComplianceRecord => {
     emergencyControlPlanConfirmed:
       row.emergency_control_plan_confirmed === true,
     medicalSighted: row.medical_sighted === true,
+    logbookEntriesConfirmed: row.logbook_entries_confirmed === true,
+    authoritySubmissionConfirmed:
+      row.authority_submission_confirmed === true,
     checklist: Array.isArray(row.checklist) ? row.checklist : [],
     strengths: row.strengths || "",
     deficiencies: row.deficiencies || "",
@@ -277,6 +284,8 @@ export function useInstructorCompliance(
         briefing_lesson: input.briefingLesson,
         emergency_control_plan_confirmed: input.emergencyControlPlanConfirmed,
         medical_sighted: input.medicalSighted,
+        logbook_entries_confirmed: input.logbookEntriesConfirmed,
+        authority_submission_confirmed: input.authoritySubmissionConfirmed,
         checklist: input.checklist,
         strengths: input.strengths,
         deficiencies: input.deficiencies,
@@ -315,6 +324,13 @@ export function useInstructorCompliance(
     },
     [],
   );
+
+  const deleteRenewalForm = useCallback(async (path: string) => {
+    const { error: deleteError } = await supabase.storage
+      .from("instructor-compliance-forms")
+      .remove([path]);
+    if (deleteError) throw deleteError;
+  }, []);
 
   const createFormUrl = useCallback(async (path: string) => {
     const { data, error: urlError } = await supabase.storage
@@ -364,6 +380,7 @@ export function useInstructorCompliance(
     saveRecord,
     saveTemplate,
     uploadRenewalForm,
+    deleteRenewalForm,
     createFormUrl,
   };
 }

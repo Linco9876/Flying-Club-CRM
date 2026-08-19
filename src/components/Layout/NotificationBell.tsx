@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Bell, X, AlertCircle, Info, Calendar, ClipboardList, Check, XCircle, Clock3 } from 'lucide-react';
+import { Bell, X, AlertCircle, Info, Calendar, ClipboardList, Check, XCircle, Clock3, Trash2 } from 'lucide-react';
 import { useNotifications } from '../../hooks/useNotifications';
 import { useBookings } from '../../hooks/useBookings';
 import { useAuth } from '../../context/AuthContext';
@@ -8,14 +8,39 @@ import { useNavigate } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
 import { getNotificationDestination } from '../../utils/notificationDestination';
+import { getNotificationBadgeLabel } from '../../utils/notificationBadge';
+import { isOutstandingRecordNotification, openOutstandingRecordPopup } from '../../utils/outstandingRecordPopup';
 
 export const NotificationBell: React.FC = () => {
-  const { notifications, unreadCount, markAsRead, markAllAsRead, deleteNotification } = useNotifications();
+  const {
+    notifications,
+    unreadCount,
+    markAsRead,
+    markAllAsRead,
+    clearAllNotifications,
+    deleteNotification,
+  } = useNotifications();
   const { approveBooking, rejectBooking } = useBookings(false);
   const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [clearingAll, setClearingAll] = useState(false);
   const navigate = useNavigate();
+  const badgeLabel = getNotificationBadgeLabel(unreadCount);
+
+  React.useEffect(() => {
+    if (!isOpen) return undefined;
+    const originalOverflow = document.body.style.overflow;
+    if (window.matchMedia('(max-width: 639px)').matches) document.body.style.overflow = 'hidden';
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [isOpen]);
 
   const getIcon = (type: string) => {
     switch (type) {
@@ -25,6 +50,8 @@ export const NotificationBell: React.FC = () => {
         return <Calendar className="h-5 w-5 text-blue-500" />;
       case 'training_record':
         return <ClipboardList className="h-5 w-5 text-amber-500" />;
+      case 'outstanding_record':
+        return <AlertCircle className="h-5 w-5 text-amber-600" />;
       case 'booking_approval':
         return <Calendar className="h-5 w-5 text-amber-500" />;
       case 'licence_verification':
@@ -32,6 +59,8 @@ export const NotificationBell: React.FC = () => {
       case 'duty_auto_started':
         return <Clock3 className="h-5 w-5 text-blue-500" />;
       case 'duty_auto_closed':
+        return <Clock3 className="h-5 w-5 text-amber-500" />;
+      case 'duty_break_reminder':
         return <Clock3 className="h-5 w-5 text-amber-500" />;
       default:
         return <Info className="h-5 w-5 text-gray-500" />;
@@ -51,6 +80,12 @@ export const NotificationBell: React.FC = () => {
 
     void markAsRead(notification.id);
     setIsOpen(false);
+    if (isOutstandingRecordNotification(notification)) {
+      openOutstandingRecordPopup({
+        flightLogId: notification.metadata?.outstanding_flight_log_id,
+      });
+      return;
+    }
     if (destination) navigate(destination);
   };
 
@@ -84,17 +119,29 @@ export const NotificationBell: React.FC = () => {
     }
   };
 
+  const handleClearAll = async () => {
+    if (clearingAll || notifications.length === 0) return;
+    setClearingAll(true);
+    try {
+      const cleared = await clearAllNotifications();
+      if (cleared) toast.success('All notifications cleared');
+      else toast.error('Notifications could not be cleared. Please try again.');
+    } finally {
+      setClearingAll(false);
+    }
+  };
+
   return (
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="relative rounded-full p-2.5 text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
-        aria-label="Notifications"
+        className="relative flex h-11 w-11 items-center justify-center rounded-full text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
+        aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
       >
         <Bell className="h-5 w-5" />
-        {unreadCount > 0 && (
-          <span className="absolute right-0 top-0 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-xs font-semibold text-white ring-2 ring-white">
-            {unreadCount > 9 ? '9+' : unreadCount}
+        {badgeLabel && (
+          <span aria-hidden="true" className="absolute right-0 top-0 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-xs font-semibold text-white ring-2 ring-white">
+            {badgeLabel}
           </span>
         )}
       </button>
@@ -105,21 +152,33 @@ export const NotificationBell: React.FC = () => {
             className="fixed inset-0 z-[90]"
             onClick={() => setIsOpen(false)}
           />
-          <div className="fixed left-3 right-3 top-24 z-[100] flex max-h-[calc(100vh-7rem)] flex-col rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-[#363b45] dark:bg-[#171a21] sm:left-auto sm:right-6 sm:top-20 sm:w-96 sm:max-h-[32rem] lg:right-8">
-            <div className="flex items-center justify-between border-b border-gray-200 p-4 dark:border-[#2c2f36]">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Notifications</h3>
-              <div className="flex items-center space-x-2">
+          <div className="notification-mobile-panel fixed inset-x-0 bottom-0 z-[100] flex h-[min(82dvh,44rem)] flex-col rounded-t-3xl border border-gray-200 bg-white shadow-2xl dark:border-[#363b45] dark:bg-[#171a21] sm:bottom-auto sm:left-auto sm:right-6 sm:top-20 sm:h-auto sm:max-h-[32rem] sm:w-96 sm:rounded-xl lg:right-8" role="dialog" aria-modal="true" aria-label="Notifications">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-4 py-3 dark:border-[#2c2f36]">
+              <h3 className="min-w-0 flex-1 text-lg font-semibold text-gray-900 dark:text-gray-100">Notifications</h3>
+              <div className="flex w-full items-center justify-end gap-1 min-[380px]:w-auto">
                 {unreadCount > 0 && (
                   <button
-                    onClick={markAllAsRead}
-                    className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-200"
+                    onClick={() => void markAllAsRead()}
+                    className="inline-flex min-h-10 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-blue-600 hover:bg-blue-50 hover:text-blue-700 dark:text-blue-300 dark:hover:bg-blue-950/30 dark:hover:text-blue-200"
                   >
-                    Mark all read
+                    <Check className="h-4 w-4" />
+                    <span>Read all</span>
+                  </button>
+                )}
+                {notifications.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => void handleClearAll()}
+                    disabled={clearingAll}
+                    className="inline-flex min-h-10 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-red-600 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:text-red-300 dark:hover:bg-red-950/30 dark:hover:text-red-200"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    {clearingAll ? 'Clearing…' : 'Clear all'}
                   </button>
                 )}
                 <button
                   onClick={() => setIsOpen(false)}
-                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                  className="flex h-10 w-10 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-[#262b33] dark:hover:text-gray-200"
                   aria-label="Close notifications"
                 >
                   <X className="h-5 w-5" />
@@ -181,7 +240,7 @@ export const NotificationBell: React.FC = () => {
                                   event.stopPropagation();
                                   void deleteNotification(notification.id);
                                 }}
-                                className="ml-2 text-gray-400 hover:text-gray-600 flex-shrink-0 dark:hover:text-gray-200"
+                                className="-mr-2 ml-1 flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-[#262b33] dark:hover:text-gray-200"
                                 aria-label="Delete notification"
                               >
                                 <X className="h-4 w-4" />
@@ -189,14 +248,14 @@ export const NotificationBell: React.FC = () => {
                             </div>
 
                             {notification.type === 'booking_approval' && !notification.isRead && (
-                              <div className="flex gap-2 mt-3">
+                              <div className="mt-3 flex flex-wrap gap-2">
                                 <button
                                   onClick={(event) => {
                                     event.stopPropagation();
                                     void handleApprove(notification);
                                   }}
                                   disabled={processingId === notification.id}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
+                                  className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50"
                                 >
                                   <Check className="h-3.5 w-3.5" />
                                   Approve
@@ -207,7 +266,7 @@ export const NotificationBell: React.FC = () => {
                                     void handleReject(notification);
                                   }}
                                   disabled={processingId === notification.id}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-white border border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors dark:bg-[#11141a] dark:hover:bg-red-950/30"
+                                  className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-lg border border-red-300 bg-white px-3 py-2 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50 dark:bg-[#11141a] dark:hover:bg-red-950/30"
                                 >
                                   <XCircle className="h-3.5 w-3.5" />
                                   Deny

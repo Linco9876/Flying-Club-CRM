@@ -8,6 +8,8 @@ import { useLatestEffect } from '../hooks/useLatestEffect';
 type TrainingModulesContextValue = {
   modules: TrainingModule[];
   loading: boolean;
+  error: string | null;
+  refetch: () => Promise<void>;
   addModule: (module: TrainingModule) => Promise<TrainingModule>;
   createBlankModule: () => Promise<TrainingModule>;
   duplicateModule: (moduleId: string, overrides?: Partial<TrainingModule>) => Promise<TrainingModule | null>;
@@ -190,6 +192,7 @@ export const TrainingModulesProvider: React.FC<{ children: React.ReactNode }> = 
   const { user, isLoading: authLoading } = useAuth();
   const [modules, setModules] = useState<TrainingModule[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchModules = useCallback(async () => {
     try {
@@ -219,8 +222,11 @@ export const TrainingModulesProvider: React.FC<{ children: React.ReactNode }> = 
         dbCourseToModule(c as Record<string, unknown>, lessonsByCourse[c.id as string] ?? [])
       );
       setModules(mapped);
+      setError(null);
     } catch (err) {
       console.error('Error fetching training courses:', err);
+      setModules([]);
+      setError(err instanceof Error ? err.message : 'Training courses could not be loaded');
       toast.error('Failed to load training courses');
     } finally {
       setLoading(false);
@@ -232,6 +238,7 @@ export const TrainingModulesProvider: React.FC<{ children: React.ReactNode }> = 
     if (!user) {
       setModules([]);
       setLoading(false);
+      setError(null);
       return;
     }
     fetchModules();
@@ -478,8 +485,8 @@ export const TrainingModulesProvider: React.FC<{ children: React.ReactNode }> = 
   }, []);
 
   const value = useMemo(
-    () => ({ modules, loading, addModule, createBlankModule, duplicateModule, updateModule, reorderLessons, deleteModule }),
-    [modules, loading, addModule, createBlankModule, duplicateModule, updateModule, reorderLessons, deleteModule]
+    () => ({ modules, loading, error, refetch: fetchModules, addModule, createBlankModule, duplicateModule, updateModule, reorderLessons, deleteModule }),
+    [modules, loading, error, fetchModules, addModule, createBlankModule, duplicateModule, updateModule, reorderLessons, deleteModule]
   );
 
   return <TrainingModulesContext.Provider value={value}>{children}</TrainingModulesContext.Provider>;

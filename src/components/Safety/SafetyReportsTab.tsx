@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useState } from 'react';
 import { AlertTriangle, Download, Eye, Plane, Plus, Search, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -7,6 +8,13 @@ import { SafetyReport, SafetyReportStatus, useSafetyReports } from '../../hooks/
 import { useSafetySettings } from '../../hooks/useSafetySettings';
 import { hasAnyRole } from '../../utils/rbac';
 import toast from 'react-hot-toast';
+import { filterActiveSafetyMembers } from '../../utils/safetyMemberVisibility';
+import { useOrganisationSettings } from '../../hooks/useSettings';
+import {
+  DEFAULT_SAFETY_REPORT_TIME_ZONE,
+  formatSafetyOccurrenceDate,
+  formatSafetyOccurrenceDateTime,
+} from '../../utils/safetyReportDateTime';
 
 const labels = {
   incident: 'Incident',
@@ -41,6 +49,7 @@ export const SafetyReportsTab: React.FC = () => {
   const { students } = useStudents();
   const { aircraft } = useAircraft();
   const { categories } = useSafetySettings();
+  const { settings: organisationSettings } = useOrganisationSettings();
   const { reports, loading, createReport, updateStatus } = useSafetyReports();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -49,6 +58,8 @@ export const SafetyReportsTab: React.FC = () => {
   const [showReportForm, setShowReportForm] = useState(false);
   const [selectedReport, setSelectedReport] = useState<SafetyReport | null>(null);
   const isStaff = hasAnyRole(user, ['admin', 'instructor']);
+  const activeStudents = filterActiveSafetyMembers(students);
+  const safetyTimeZone = organisationSettings?.timezone || DEFAULT_SAFETY_REPORT_TIME_ZONE;
 
   const filteredReports = reports.filter(report => {
     const search = searchTerm.toLowerCase();
@@ -87,7 +98,7 @@ export const SafetyReportsTab: React.FC = () => {
     const rows = filteredReports.map(report => [
       `SR-${report.id.slice(0, 8).toUpperCase()}`,
       report.createdAt.toLocaleDateString(),
-      report.occurrenceAt?.toLocaleString() ?? '',
+      report.occurrenceAt ? formatSafetyOccurrenceDateTime(report.occurrenceAt, safetyTimeZone) : '',
       labels[report.reportType],
       report.severity,
       report.aircraftRegistration ?? '',
@@ -123,6 +134,7 @@ export const SafetyReportsTab: React.FC = () => {
         description: String(form.get('description') || ''),
         location: String(form.get('location') || ''),
         occurrenceAt: String(form.get('occurrenceAt') || '') || undefined,
+        occurrenceTimeZone: safetyTimeZone,
         aircraftId: String(form.get('aircraftId') || '') || undefined,
         phaseOfFlight: String(form.get('phaseOfFlight') || '') || undefined,
         witnesses: String(form.get('witnesses') || '') || undefined,
@@ -136,7 +148,7 @@ export const SafetyReportsTab: React.FC = () => {
       setShowReportForm(false);
     } catch (error) {
       console.error('Error creating safety report:', error);
-      toast.error('Failed to submit safety report');
+      toast.error(error instanceof Error ? error.message : 'Failed to submit safety report');
     }
   };
 
@@ -194,33 +206,33 @@ export const SafetyReportsTab: React.FC = () => {
           </label>
           <label className="block">
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Status</span>
-            <select value={statusFilter} onChange={event => setStatusFilter(event.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <SearchableSelect value={statusFilter} onChange={event => setStatusFilter(event.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option value="">All statuses</option>
               <option value="open">Open</option>
               <option value="under_review">Under Review</option>
               <option value="closed">Closed</option>
-            </select>
+            </SearchableSelect>
           </label>
           <label className="block">
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Type</span>
-            <select value={typeFilter} onChange={event => setTypeFilter(event.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <SearchableSelect value={typeFilter} onChange={event => setTypeFilter(event.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option value="">All types</option>
               <option value="incident">Incident</option>
               <option value="hazard">Hazard</option>
               <option value="risk_assessment">Risk Assessment</option>
               <option value="near_miss">Near Miss</option>
               <option value="accident">Accident</option>
-            </select>
+            </SearchableSelect>
           </label>
           <label className="block">
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Severity</span>
-            <select value={severityFilter} onChange={event => setSeverityFilter(event.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <SearchableSelect value={severityFilter} onChange={event => setSeverityFilter(event.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option value="">All severity</option>
               <option value="low">Low</option>
               <option value="medium">Medium</option>
               <option value="high">High</option>
               <option value="critical">Critical</option>
-            </select>
+            </SearchableSelect>
           </label>
           <button onClick={exportCsv} className="flex items-center justify-center space-x-2 rounded-lg bg-green-600 px-3 py-2.5 text-sm font-medium text-white hover:bg-green-700">
             <Download className="h-4 w-4" />
@@ -241,7 +253,7 @@ export const SafetyReportsTab: React.FC = () => {
                   <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">SR-{report.id.slice(0, 8).toUpperCase()}</p>
                   <h3 className="mt-1 line-clamp-2 text-base font-semibold text-gray-900">{report.title}</h3>
                   <p className="mt-1 text-xs text-gray-500">
-                    {(report.occurrenceAt ?? report.createdAt).toLocaleDateString()} - {report.reporterName}
+                    {formatSafetyOccurrenceDate(report.occurrenceAt ?? report.createdAt, safetyTimeZone)} - {report.reporterName}
                   </p>
                 </div>
                 <button onClick={() => setSelectedReport(report)} className="shrink-0 rounded-lg bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700">
@@ -274,7 +286,7 @@ export const SafetyReportsTab: React.FC = () => {
               {filteredReports.map(report => (
                 <tr key={report.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 text-sm font-medium">SR-{report.id.slice(0, 8).toUpperCase()}</td>
-                  <td className="px-6 py-4 text-sm">{(report.occurrenceAt ?? report.createdAt).toLocaleString()}</td>
+                  <td className="px-6 py-4 text-sm">{formatSafetyOccurrenceDateTime(report.occurrenceAt ?? report.createdAt, safetyTimeZone)}</td>
                   <td className="px-6 py-4 text-sm">{labels[report.reportType]}</td>
                   <td className="px-6 py-4 text-sm">{report.aircraftRegistration ?? '-'}</td>
                   <td className="px-6 py-4 text-sm">{report.title}</td>
@@ -305,30 +317,30 @@ export const SafetyReportsTab: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <label className="block">
                   <span className="mb-1 block text-sm font-medium text-gray-700">Report type</span>
-                  <select name="reportType" required className="w-full px-3 py-2 border rounded-md">
+                  <SearchableSelect name="reportType" required className="w-full px-3 py-2 border rounded-md">
                     <option value="">Select type</option>
                     <option value="hazard">Hazard</option>
                     <option value="incident">Incident</option>
                     <option value="near_miss">Near Miss</option>
                     <option value="accident">Accident</option>
                     <option value="risk_assessment">Risk Assessment</option>
-                  </select>
+                  </SearchableSelect>
                 </label>
                 <label className="block">
                   <span className="mb-1 block text-sm font-medium text-gray-700">Severity</span>
-                  <select name="severity" required className="w-full px-3 py-2 border rounded-md">
+                  <SearchableSelect name="severity" required className="w-full px-3 py-2 border rounded-md">
                     <option value="low">Low severity</option>
                     <option value="medium">Medium severity</option>
                     <option value="high">High severity</option>
                     <option value="critical">Critical severity</option>
-                  </select>
+                  </SearchableSelect>
                 </label>
                 <label className="block">
                   <span className="mb-1 block text-sm font-medium text-gray-700">Category</span>
-                  <select name="categoryId" className="w-full px-3 py-2 border rounded-md">
+                  <SearchableSelect name="categoryId" className="w-full px-3 py-2 border rounded-md">
                     <option value="">No category</option>
                     {categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}
-                  </select>
+                  </SearchableSelect>
                 </label>
               </div>
 
@@ -336,22 +348,23 @@ export const SafetyReportsTab: React.FC = () => {
                 <label className="block">
                   <span className="mb-1 block text-sm font-medium text-gray-700">Occurrence date/time</span>
                   <input name="occurrenceAt" type="datetime-local" className="w-full px-3 py-2 border rounded-md" />
+                  <span className="mt-1 block text-xs text-gray-500">Club local time ({safetyTimeZone})</span>
                 </label>
                 <label className="block">
                   <span className="mb-1 block text-sm font-medium text-gray-700">Aircraft involved</span>
-                  <select name="aircraftId" className="w-full px-3 py-2 border rounded-md">
+                  <SearchableSelect name="aircraftId" className="w-full px-3 py-2 border rounded-md">
                     <option value="">No aircraft / ground only</option>
                     {aircraft.map(item => (
                       <option key={item.id} value={item.id}>{item.registration} {item.make} {item.model}</option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                 </label>
                 <label className="block">
                   <span className="mb-1 block text-sm font-medium text-gray-700">Phase / area</span>
-                  <select name="phaseOfFlight" className="w-full px-3 py-2 border rounded-md">
+                  <SearchableSelect name="phaseOfFlight" className="w-full px-3 py-2 border rounded-md">
                     <option value="">Select phase</option>
                     {phaseOptions.map(phase => <option key={phase} value={phase}>{phase}</option>)}
-                  </select>
+                  </SearchableSelect>
                 </label>
               </div>
               <input name="title" required className="w-full px-3 py-2 border rounded-md" placeholder="Brief occurrence title" />
@@ -364,9 +377,9 @@ export const SafetyReportsTab: React.FC = () => {
               <textarea name="witnesses" rows={2} className="w-full px-3 py-2 border rounded-md" placeholder="Witnesses or people who can provide more information" />
               <div>
                 <label className="block text-sm font-medium mb-2">People involved</label>
-                <select name="involvedUserIds" multiple className="w-full px-3 py-2 border rounded-md h-28">
-                  {students.map(student => <option key={student.id} value={student.id}>{student.name}</option>)}
-                </select>
+                <SearchableSelect name="involvedUserIds" multiple className="w-full min-h-11 px-3 py-2 border rounded-md">
+                  {activeStudents.map(student => <option key={student.id} value={student.id}>{student.name}</option>)}
+                </SearchableSelect>
                 <p className="mt-1 text-xs text-gray-500">Hold Ctrl/Cmd to select multiple people. Students only see reports they submitted or are involved in.</p>
               </div>
               <div className="grid grid-cols-1 gap-3 rounded-lg border border-gray-200 bg-gray-50 p-4 sm:grid-cols-3">
@@ -404,7 +417,7 @@ export const SafetyReportsTab: React.FC = () => {
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-lg bg-gray-50 p-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Occurrence</p>
-                <p className="mt-1 text-sm font-medium text-gray-900">{(selectedReport.occurrenceAt ?? selectedReport.createdAt).toLocaleString()}</p>
+                <p className="mt-1 text-sm font-medium text-gray-900">{formatSafetyOccurrenceDateTime(selectedReport.occurrenceAt ?? selectedReport.createdAt, safetyTimeZone)}</p>
               </div>
               <div className="rounded-lg bg-gray-50 p-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Aircraft</p>
@@ -439,7 +452,7 @@ export const SafetyReportsTab: React.FC = () => {
                 </div>
               </div>
             )}
-            {isStaff && <select value={selectedReport.status} onChange={async event => { const status = event.target.value as SafetyReportStatus; await updateStatus(selectedReport.id, status); setSelectedReport({ ...selectedReport, status, closedAt: status === 'closed' ? new Date() : undefined }); }} className="px-3 py-2 border rounded-md"><option value="open">Open</option><option value="under_review">Under Review</option><option value="closed">Closed</option></select>}
+            {isStaff && <SearchableSelect value={selectedReport.status} onChange={async event => { const status = event.target.value as SafetyReportStatus; await updateStatus(selectedReport.id, status); setSelectedReport({ ...selectedReport, status, closedAt: status === 'closed' ? new Date() : undefined }); }} className="px-3 py-2 border rounded-md"><option value="open">Open</option><option value="under_review">Under Review</option><option value="closed">Closed</option></SearchableSelect>}
           </div>
         </div>
       )}

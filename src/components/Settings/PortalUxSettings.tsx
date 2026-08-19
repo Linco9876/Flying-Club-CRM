@@ -1,7 +1,9 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useState } from 'react';
 import { Globe, Loader, Monitor, Palette } from 'lucide-react';
 import { usePortalUxSettings } from '../../hooks/useSettings';
 import { KioskAccessSettings } from './KioskAccessSettings';
+import { SettingsLoadError } from './SettingsLoadError';
 
 interface PortalUxSettingsProps {
   canEdit: boolean;
@@ -9,7 +11,7 @@ interface PortalUxSettingsProps {
 }
 
 export const PortalUxSettings: React.FC<PortalUxSettingsProps> = ({ canEdit, onFormChange }) => {
-  const { settings, loading, updateSettings } = usePortalUxSettings();
+  const { settings, loading, error, updateSettings, refetch } = usePortalUxSettings();
   const [formData, setFormData] = useState(settings);
 
   useEffect(() => {
@@ -53,6 +55,7 @@ export const PortalUxSettings: React.FC<PortalUxSettingsProps> = ({ canEdit, onF
       </div>
     );
   }
+  if (error) return <SettingsLoadError section="Portal & UX" error={error} onRetry={refetch} />;
 
   const selectClass = 'w-full rounded-md border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50';
 
@@ -74,44 +77,44 @@ export const PortalUxSettings: React.FC<PortalUxSettingsProps> = ({ canEdit, onF
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <label className="text-sm font-medium text-gray-700">
           Kiosk theme
-            <select value={formData.kiosk_theme} onChange={e => handleInputChange('kiosk_theme', e.target.value)} disabled={!canEdit} className={`mt-2 ${selectClass}`}>
+            <SearchableSelect value={formData.kiosk_theme} onChange={e => handleInputChange('kiosk_theme', e.target.value)} disabled={!canEdit} className={`mt-2 ${selectClass}`}>
               <option value="light">Light</option>
               <option value="dark">Dark</option>
               <option value="day-night">Day/Night</option>
               <option value="auto">Auto (System)</option>
-            </select>
+            </SearchableSelect>
             <span className="mt-1 block text-xs font-normal text-gray-500">
               Applies only to the kiosk calendar. Individual users choose their own portal theme in Appearance.
             </span>
           </label>
           <label className="text-sm font-medium text-gray-700">
             Date Format
-            <select value={formData.date_format} onChange={e => handleInputChange('date_format', e.target.value)} disabled={!canEdit} className={`mt-2 ${selectClass}`}>
+            <SearchableSelect value={formData.date_format} onChange={e => handleInputChange('date_format', e.target.value)} disabled={!canEdit} className={`mt-2 ${selectClass}`}>
               <option value="dd/MM/yyyy">DD/MM/YYYY</option>
               <option value="MM/dd/yyyy">MM/DD/YYYY</option>
               <option value="yyyy-MM-dd">YYYY-MM-DD</option>
-            </select>
+            </SearchableSelect>
           </label>
           <label className="text-sm font-medium text-gray-700">
             Time Format
-            <select value={formData.time_format} onChange={e => handleInputChange('time_format', e.target.value)} disabled={!canEdit} className={`mt-2 ${selectClass}`}>
+            <SearchableSelect value={formData.time_format} onChange={e => handleInputChange('time_format', e.target.value)} disabled={!canEdit} className={`mt-2 ${selectClass}`}>
               <option value="24h">24 Hour (14:30)</option>
               <option value="12h">12 Hour (2:30 PM)</option>
-            </select>
+            </SearchableSelect>
           </label>
           <label className="text-sm font-medium text-gray-700">
             Flight Time Decimals
-            <select value={formData.flight_time_decimals} onChange={e => handleInputChange('flight_time_decimals', Number(e.target.value))} disabled={!canEdit} className={`mt-2 ${selectClass}`}>
+            <SearchableSelect value={formData.flight_time_decimals} onChange={e => handleInputChange('flight_time_decimals', Number(e.target.value))} disabled={!canEdit} className={`mt-2 ${selectClass}`}>
               <option value={1}>1 decimal (1.5 hrs)</option>
               <option value={2}>2 decimals (1.50 hrs)</option>
-            </select>
+            </SearchableSelect>
           </label>
           <label className="text-sm font-medium text-gray-700">
             Currency Decimals
-            <select value={formData.currency_decimals} onChange={e => handleInputChange('currency_decimals', Number(e.target.value))} disabled={!canEdit} className={`mt-2 ${selectClass}`}>
+            <SearchableSelect value={formData.currency_decimals} onChange={e => handleInputChange('currency_decimals', Number(e.target.value))} disabled={!canEdit} className={`mt-2 ${selectClass}`}>
               <option value={0}>No decimals ($125)</option>
               <option value={2}>2 decimals ($125.00)</option>
-            </select>
+            </SearchableSelect>
           </label>
         </div>
       </section>

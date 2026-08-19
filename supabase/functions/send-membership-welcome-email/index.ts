@@ -5,6 +5,7 @@ import {
   type MembershipWelcomeVariant,
   renderMembershipWelcomeEmail,
 } from "../_shared/membershipWelcomeEmail.ts";
+import { brandPortalEmailHtml } from "../_shared/emailBranding.ts";
 import {
   authenticateAal2AdminOrWorker,
   corsHeadersForRequest,
@@ -47,7 +48,7 @@ const sendBrevo = async (
       },
       to: [{ email: recipient }],
       subject: message.subject,
-      htmlContent: message.html,
+      htmlContent: await brandPortalEmailHtml(message.html),
       textContent: message.text,
     }),
   });

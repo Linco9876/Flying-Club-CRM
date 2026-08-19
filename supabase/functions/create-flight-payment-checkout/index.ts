@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getConnectedStripeAccountId, stripeHeaders, stripeIdempotencyKey } from "../_shared/stripeConnectAccount.ts";
 import { addStripeModeMetadata, getActiveStripeMode, stripeModeColumns, testModeSubject } from "../_shared/stripeMode.ts";
+import { brandPortalEmailHtml } from "../_shared/emailBranding.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -83,7 +84,7 @@ const sendEmail = async ({
       sender: { email: senderEmail, name: senderName },
       to: [{ email: to, name: toName || to }],
       subject,
-      htmlContent: html,
+      htmlContent: await brandPortalEmailHtml(html),
     }),
   });
 

@@ -82,7 +82,7 @@ export const InstructorComplianceProfilePanel: React.FC<InstructorComplianceProf
             </p>
           </div>
           <span className="w-fit rounded-full border border-cyan-300/30 bg-cyan-300/10 px-3 py-1 text-xs font-semibold text-cyan-100">
-            {isCfi && user?.id !== instructor.id ? 'CFI view' : 'Your record'}
+            {isCfi && user?.id !== instructor.id ? 'CFI/DCFI view' : 'Your record'}
           </span>
         </div>
       </header>
@@ -101,7 +101,7 @@ export const InstructorComplianceProfilePanel: React.FC<InstructorComplianceProf
             <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-[#303641] dark:bg-[#11141a]">
               <p className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Latest check</p>
               <p className="mt-1 font-bold text-gray-950 dark:text-gray-100">{latestRecord ? format(new Date(`${latestRecord.checkDate}T00:00:00`), 'd MMM yyyy') : 'No record'}</p>
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{latestRecord ? checkTypeLabel[latestRecord.checkType] : 'A CFI has not completed a check yet.'}</p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{latestRecord ? checkTypeLabel[latestRecord.checkType] : 'A CFI/DCFI reviewer has not completed a check yet.'}</p>
             </div>
             <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-[#303641] dark:bg-[#11141a]">
               <p className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Next S&amp;P due</p>
@@ -128,7 +128,7 @@ export const InstructorComplianceProfilePanel: React.FC<InstructorComplianceProf
             <div className="rounded-lg border border-dashed border-gray-300 px-4 py-8 text-center dark:border-[#3b414c]">
               <CalendarClock className="mx-auto h-7 w-7 text-gray-400" />
               <p className="mt-2 font-semibold text-gray-900 dark:text-gray-100">No instructor compliance record yet</p>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Completed S&amp;P checks and instructor renewals will appear here after the CFI submits them. Initial issue assessments are recorded under Flight Reviews &amp; Tests.</p>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Completed S&amp;P checks and instructor renewals will appear here after the CFI/DCFI reviewer submits them. Initial issue assessments are recorded under Flight Reviews &amp; Tests.</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -171,6 +171,8 @@ export const InstructorComplianceProfilePanel: React.FC<InstructorComplianceProf
                             <p className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Pre-check confirmations</p>
                             <p className="mt-1 text-gray-700 dark:text-gray-200">Medical sighted: {record.medicalSighted ? 'Yes' : 'No'}</p>
                             <p className="text-gray-700 dark:text-gray-200">Emergency control plan: {record.emergencyControlPlanConfirmed ? 'Confirmed' : 'Not confirmed'}</p>
+                            <p className="text-gray-700 dark:text-gray-200">Both logbook entries: {record.logbookEntriesConfirmed ? 'Confirmed' : 'Not recorded'}</p>
+                            {record.checkType === 'renewal' && <p className="text-gray-700 dark:text-gray-200">Submitted to RAAus: {record.authoritySubmissionConfirmed ? 'Confirmed' : 'Not recorded'}</p>}
                           </div>
                         </div>
 
@@ -200,7 +202,7 @@ export const InstructorComplianceProfilePanel: React.FC<InstructorComplianceProf
                             {record.strengths && <div className="rounded-lg bg-white p-3 dark:bg-[#171a21]"><p className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Strengths</p><p className="mt-1 text-sm text-gray-800 dark:text-gray-200">{record.strengths}</p></div>}
                             {record.deficiencies && <div className="rounded-lg bg-white p-3 dark:bg-[#171a21]"><p className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Areas requiring attention</p><p className="mt-1 text-sm text-gray-800 dark:text-gray-200">{record.deficiencies}</p></div>}
                             {record.developmentPlan && <div className="rounded-lg bg-white p-3 dark:bg-[#171a21]"><p className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Development plan</p><p className="mt-1 text-sm text-gray-800 dark:text-gray-200">{record.developmentPlan}</p></div>}
-                            {record.cfiComments && <div className="rounded-lg bg-white p-3 dark:bg-[#171a21]"><p className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">CFI comments</p><p className="mt-1 text-sm text-gray-800 dark:text-gray-200">{record.cfiComments}</p></div>}
+                            {record.cfiComments && <div className="rounded-lg bg-white p-3 dark:bg-[#171a21]"><p className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">CFI/DCFI comments</p><p className="mt-1 text-sm text-gray-800 dark:text-gray-200">{record.cfiComments}</p></div>}
                           </div>
                         )}
 
@@ -229,7 +231,7 @@ export const InstructorComplianceProfilePanel: React.FC<InstructorComplianceProf
           )}
 
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            This protected information is visible only to the instructor named on the record and users holding the CFI authority.
+            This protected information is visible only to the instructor named on the record and users holding the CFI/DCFI review authority.
           </p>
         </div>
       )}

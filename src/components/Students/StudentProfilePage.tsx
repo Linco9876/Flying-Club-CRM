@@ -1,4 +1,5 @@
-﻿import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { SearchableSelect } from '../common/SearchableSelect';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { LessonStudyAsset, Student, StudentExamResult, TrainingRecord, TrainingModule, LessonGradingSystem, User as AppUser } from '../../types';
@@ -29,14 +30,16 @@ import { canAccessUploadedExamSheets, examResultColumnsForViewer } from '../../u
 import { cleanupInstructorComment, type CommentCleanupMode } from '../../utils/commentCleanup';
 import { buildTrainingCommentContext } from '../../utils/commentCleanupContext';
 import { getConsecutivePassReadiness, getTwoOccasionReadiness } from '../../utils/trainingReadiness';
+import { canStaffEditTrainingRecord, shouldAdvanceToNextLesson } from '../../utils/trainingSettingsRules';
 import { formatRichTextContent, richTextToPlainText } from '../../utils/richText';
 import { InstructorComplianceProfilePanel } from '../Profile/InstructorComplianceProfilePanel';
 import { FlightReviewsTab } from './FlightReviewsTab';
 import { AcknowledgedLessonSummary } from './AcknowledgedLessonSummary';
-import { shouldCompactAcknowledgedLesson } from '../../utils/lessonRecordPresentation';
+import { shouldUseCompactLessonRecord } from '../../utils/lessonRecordPresentation';
 import { formatBillingDescription } from '../../utils/billingDescription';
 import { StudentRecordImportModal } from './StudentRecordImportModal';
 import { StudentProfileSkeleton } from './StudentProfileSkeleton';
+import { StudentForm } from './StudentForm';
 import { getStudentProfileLoadPlan } from '../../utils/studentProfileLoading';
 import { shouldUseTrainingSubtab } from '../../utils/studentProfileTabNavigation';
 import { useFinancialProviders } from '../../context/financialProviderState';
@@ -53,14 +56,23 @@ import {
   trainingLessonOptionLabel,
 } from '../../utils/trainingRecordEdit';
 import {
+  availableCredentialOptions,
+  hasCredentialType,
   inferLicenceIssuingAuthority,
   isConfiguredCredentialOption,
   normaliseCredentialOption,
 } from '../../utils/credentialDropdowns';
-import { courseExamEvidenceForExport } from '../../utils/coursePdfOptions';
+import { courseExamEvidenceForExport, courseExamResultsForExport } from '../../utils/coursePdfOptions';
+import { exportCoursePdf } from '../../utils/coursePdfExport';
 import { getCourseAwardDate } from '../../utils/pilotReviewCurrency';
 import { safeImageSource } from '../../utils/imageSource';
 import { managedProfilePicturePath, PROFILE_PICTURE_BUCKET } from '../../utils/profilePicture';
+import { getCourseFlightTestCompletion } from '../../utils/courseFlightTestCompletion';
+import {
+  examAnswerSheetValidationError,
+  examResultDraftValidationError,
+  examResultSaveFailureMessage,
+} from '../../utils/examResultLogging';
 
 interface StudentInfoForm {
   name: string;
@@ -348,6 +360,7 @@ type CourseProgressSummary = {
   course: TrainingModule;
   percentage: number;
   isComplete: boolean;
+  completedByFlightTest: boolean;
   completedLessons: number;
   totalLessons: number;
   criteriaProgress: Array<{
@@ -376,6 +389,9 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   const requestedLicenceId = searchParams.get('action') === 'review-licence'
     ? searchParams.get('licenceId')
     : null;
+  const requestedTrainingRecordId = searchParams.get('recordId');
+  const requestedTrainingCourseId = searchParams.get('courseId');
+  const requestedTrainingLessonId = searchParams.get('lessonId');
   const [activeTab, setActiveTab] = useState(() => {
     if (portalSection === 'documents') return 'documents';
     if (portalSection === 'training') return 'training';
@@ -391,7 +407,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   const [showMatrixView, setShowMatrixView] = useState(false);
   const [expandedRecordMatrixIds, setExpandedRecordMatrixIds] = useState<Set<string>>(new Set());
   const [expandedAcknowledgedRecordIds, setExpandedAcknowledgedRecordIds] = useState<Set<string>>(new Set());
-  const [selectedTrainingCourseId, setSelectedTrainingCourseId] = useState('');
+  const [selectedTrainingCourseId, setSelectedTrainingCourseId] = useState(() => searchParams.get('courseId') || '');
   const [dateFilter, setDateFilter] = useState({ start: '', end: '' });
   const [aircraftFilter, setAircraftFilter] = useState('');
   const [instructorFilter, setInstructorFilter] = useState('');
@@ -460,6 +476,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     students,
     loading: studentsLoading,
     error: studentsError,
+    updateStudent,
     refetch: refetchStudents,
   } = useStudents({
     participateInPageLoad: false,
@@ -483,6 +500,14 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     participateInPageLoad: false,
   });
   const { settings: trainingSettings } = useTrainingSettings();
+  const availableInfoLicenceTypes = useMemo(
+    () => availableCredentialOptions(trainingSettings.licenceTypes, infoForm.licences),
+    [infoForm.licences, trainingSettings.licenceTypes],
+  );
+  const availableInfoEndorsementTypes = useMemo(
+    () => availableCredentialOptions(trainingSettings.endorsementTypes, infoForm.endorsements),
+    [infoForm.endorsements, trainingSettings.endorsementTypes],
+  );
   const billing = useBillingAccounts({
     enabled: loadPlan.invoices,
     scope: 'member',
@@ -518,6 +543,15 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     () => trainingRecords.filter(record => record.studentId === studentId),
     [trainingRecords, studentId]
   );
+  const courseAcknowledgementRequirements = useMemo(
+    () => new Map(trainingCourses.map(course => [course.id, course.requiresStudentAcknowledgement ?? true])),
+    [trainingCourses],
+  );
+  const recordRequiresAcknowledgement = useCallback((record: TrainingRecord) => (
+    record.courseId ? (courseAcknowledgementRequirements.get(record.courseId) ?? true) : true
+  ), [courseAcknowledgementRequirements]);
+  const studentIsViewingOwnFile = user?.id === studentId
+    && !hasAnyRole(user, ['admin', 'cfi', 'instructor', 'senior_instructor']);
   const trainingCourseOptions = useMemo(() => {
     const courseIdsWithRecords = new Set(studentTrainingRecords.map(record => record.courseId).filter(Boolean));
     const activeEnrolmentIds = new Set(
@@ -567,6 +601,30 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
       setSelectedTrainingCourseId(trainingCourseOptions[0].id);
     }
   }, [selectedTrainingCourseId, trainingCourseOptions]);
+
+  useEffect(() => {
+    if (!requestedTrainingCourseId) return;
+    if (trainingCourseOptions.some(course => course.id === requestedTrainingCourseId)) {
+      setSelectedTrainingCourseId(requestedTrainingCourseId);
+    }
+  }, [requestedTrainingCourseId, trainingCourseOptions]);
+
+  useEffect(() => {
+    if (activeTab !== 'training' || trainingSubtab !== 'training') return;
+    const requestedRecord = requestedTrainingRecordId
+      ? studentTrainingRecords.find(record => record.id === requestedTrainingRecordId)
+      : studentTrainingRecords.find(record => record.lessonId === requestedTrainingLessonId);
+    if (!requestedRecord) return;
+    if (requestedRecord.courseId) setSelectedTrainingCourseId(requestedRecord.courseId);
+
+    const timeoutId = window.setTimeout(() => {
+      document.getElementById(`training-record-${requestedRecord.id}`)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    }, 120);
+    return () => window.clearTimeout(timeoutId);
+  }, [activeTab, requestedTrainingLessonId, requestedTrainingRecordId, studentTrainingRecords, trainingSubtab]);
 
   useEffect(() => {
     const tab = searchParams.get('tab');
@@ -625,7 +683,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   const isPilot = Boolean(student?.roles?.includes('pilot') || student?.role === 'pilot');
 
   const fetchStudentExamResults = useCallback(async () => {
-    if (!studentId) return;
+    if (!studentId) return null;
     setLoadingExams(true);
     try {
       const { data, error } = await supabase
@@ -637,7 +695,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
 
       if (error) throw error;
 
-      setStudentExamResults((data || []).map((row: any) => ({
+      const results = (data || []).map((row: any) => ({
         id: row.id,
         studentId: row.student_id,
         courseId: row.course_id || undefined,
@@ -668,10 +726,13 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
         sourceOrganisation: row.source_organisation || undefined,
         sourceReference: row.source_reference || undefined,
         createdAt: row.created_at ? new Date(row.created_at) : new Date(),
-      })));
+      }));
+      setStudentExamResults(results);
+      return results;
     } catch (error) {
       console.error('Failed to load exam results:', error);
       setStudentExamResults([]);
+      return null;
     } finally {
       setLoadingExams(false);
     }
@@ -735,8 +796,10 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   }, [user]);
 
   const createExamStoragePath = (file: File, ownerStudentId: string) => {
-    const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'exam-upload';
-    return `${ownerStudentId}/${Date.now()}-${safeFileName}`;
+    const safeFileName = (file.name.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'exam-upload')
+      .slice(-120);
+    const uploadId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    return `${ownerStudentId}/${uploadId}-${safeFileName}`;
   };
 
   const handleLogExam = async () => {
@@ -744,16 +807,24 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
       toast.error('Select a course and exam');
       return;
     }
-    const score = Number(examForm.score);
-    if (!Number.isFinite(score)) {
-      toast.error('Enter a valid exam score');
+    const validationError = examResultDraftValidationError({
+      score: examForm.score,
+      examDate: examForm.examDate,
+      passMark: selectedExam.passMark,
+      answerSheet: examUploadFile,
+    });
+    if (validationError) {
+      toast.error(validationError);
       return;
     }
+    const score = Number(examForm.score);
 
     setSavingExam(true);
     let storagePath: string | null = null;
+    let saveStage: 'answer-sheet-upload' | 'result-save' = 'result-save';
     try {
       if (examUploadFile) {
+        saveStage = 'answer-sheet-upload';
         storagePath = createExamStoragePath(examUploadFile, student.id);
         const { error: uploadError } = await supabase.storage
           .from(EXAM_UPLOAD_BUCKET)
@@ -765,7 +836,8 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
         if (uploadError) throw uploadError;
       }
 
-      const { error } = await supabase.from('student_exam_results').insert({
+      saveStage = 'result-save';
+      const { data: savedResult, error } = await supabase.from('student_exam_results').insert({
         student_id: student.id,
         course_id: selectedExamCourse.id,
         exam_id: selectedExam.id,
@@ -773,8 +845,8 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
         score,
         pass_mark: selectedExam.passMark,
         result: score >= selectedExam.passMark ? 'pass' : 'fail',
-        exam_date: examForm.examDate || new Date().toISOString().slice(0, 10),
-        notes: '',
+        exam_date: examForm.examDate,
+        notes: examForm.notes.trim(),
         instructor_id: user.id,
         file_name: examUploadFile?.name || null,
         file_type: examUploadFile?.type || null,
@@ -787,9 +859,12 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
         kdr_notes: examForm.kdrNotes.trim(),
         kdr_signed_off_by: examForm.kdrCompleted ? user.id : null,
         kdr_signed_off_at: examForm.kdrCompleted ? new Date().toISOString() : null,
-      });
+      }).select('id').maybeSingle();
 
       if (error) throw error;
+      if (!savedResult) {
+        throw { code: 'NO_ROWS_CHANGED', message: 'The insert returned no saved exam result' };
+      }
 
       setExamForm({
         courseId: selectedExamCourse.id,
@@ -805,10 +880,11 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
       toast.success('Exam result logged');
     } catch (error) {
       if (storagePath) {
-        await supabase.storage.from(EXAM_UPLOAD_BUCKET).remove([storagePath]);
+        const { error: cleanupError } = await supabase.storage.from(EXAM_UPLOAD_BUCKET).remove([storagePath]);
+        if (cleanupError) console.error('Failed to clean up rejected exam upload:', cleanupError);
       }
       console.error('Failed to log exam:', error);
-      toast.error('Failed to log exam result');
+      toast.error(examResultSaveFailureMessage(error, saveStage));
     } finally {
       setSavingExam(false);
     }
@@ -853,17 +929,25 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
 
   const saveExamEdit = async () => {
     if (!student || !editingExamResult || !examEditForm || !canManageExamResult(editingExamResult)) return;
-    const score = Number(examEditForm.score);
-    if (!Number.isFinite(score)) {
-      toast.error('Enter a valid exam score');
+    const validationError = examResultDraftValidationError({
+      score: examEditForm.score,
+      examDate: examEditForm.examDate,
+      passMark: editingExamResult.passMark,
+      answerSheet: examEditFile,
+    });
+    if (validationError) {
+      toast.error(validationError);
       return;
     }
+    const score = Number(examEditForm.score);
 
     setSavingExamEdit(true);
     let newStoragePath: string | null = null;
     const oldStoragePath = editingExamResult.storagePath;
+    let saveStage: 'answer-sheet-upload' | 'result-update' = 'result-update';
     try {
       if (examEditFile) {
+        saveStage = 'answer-sheet-upload';
         newStoragePath = createExamStoragePath(examEditFile, student.id);
         const { error: uploadError } = await supabase.storage
           .from(EXAM_UPLOAD_BUCKET)
@@ -879,12 +963,13 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
       const nextFileType = examEditFile?.type || (examEditForm.removeExistingFile ? null : editingExamResult.fileType || null);
       const nextFileSize = examEditFile?.size || (examEditForm.removeExistingFile ? 0 : editingExamResult.fileSize || 0);
 
-      const { error } = await supabase
+      saveStage = 'result-update';
+      const { data: savedResult, error } = await supabase
         .from('student_exam_results')
         .update({
           score,
           result: score >= editingExamResult.passMark ? 'pass' : 'fail',
-          exam_date: examEditForm.examDate || new Date().toISOString().slice(0, 10),
+          exam_date: examEditForm.examDate,
           notes: examEditForm.notes.trim(),
           kdr_completed: examEditForm.kdrCompleted,
           kdr_completion_method: examEditForm.kdrCompleted ? 'verbal' : 'verbal',
@@ -897,23 +982,37 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
           storage_path: nextStoragePath,
           updated_at: new Date().toISOString(),
         })
-        .eq('id', editingExamResult.id);
+        .eq('id', editingExamResult.id)
+        .select('id')
+        .maybeSingle();
 
       if (error) throw error;
+      if (!savedResult) {
+        throw { code: 'NO_ROWS_CHANGED', message: 'The update returned no saved exam result' };
+      }
 
+      let oldUploadCleanupFailed = false;
       if ((newStoragePath || examEditForm.removeExistingFile) && oldStoragePath) {
-        await supabase.storage.from(EXAM_UPLOAD_BUCKET).remove([oldStoragePath]);
+        const { error: cleanupError } = await supabase.storage.from(EXAM_UPLOAD_BUCKET).remove([oldStoragePath]);
+        if (cleanupError) {
+          oldUploadCleanupFailed = true;
+          console.error('Failed to remove superseded exam upload:', cleanupError);
+        }
       }
 
       await fetchStudentExamResults();
       closeExamEditor();
       toast.success('Exam result updated');
+      if (oldUploadCleanupFailed) {
+        toast.error('The result was updated, but the old answer sheet could not be removed. Ask an administrator to remove it');
+      }
     } catch (error) {
       if (newStoragePath) {
-        await supabase.storage.from(EXAM_UPLOAD_BUCKET).remove([newStoragePath]);
+        const { error: cleanupError } = await supabase.storage.from(EXAM_UPLOAD_BUCKET).remove([newStoragePath]);
+        if (cleanupError) console.error('Failed to clean up rejected replacement exam upload:', cleanupError);
       }
       console.error('Failed to update exam result:', error);
-      toast.error('Failed to update exam result');
+      toast.error(examResultSaveFailureMessage(error, saveStage));
     } finally {
       setSavingExamEdit(false);
     }
@@ -926,21 +1025,35 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
 
     setDeletingExamId(result.id);
     try {
-      const { error } = await supabase
+      const { data: deletedResult, error } = await supabase
         .from('student_exam_results')
         .delete()
-        .eq('id', result.id);
+        .eq('id', result.id)
+        .select('id')
+        .maybeSingle();
       if (error) throw error;
+      if (!deletedResult) {
+        throw { code: 'NO_ROWS_CHANGED', message: 'The delete returned no exam result' };
+      }
 
+      let uploadCleanupFailed = false;
       if (result.storagePath) {
-        await supabase.storage.from(EXAM_UPLOAD_BUCKET).remove([result.storagePath]);
+        const { error: cleanupError } = await supabase.storage.from(EXAM_UPLOAD_BUCKET).remove([result.storagePath]);
+        if (cleanupError) {
+          uploadCleanupFailed = true;
+          console.error('Failed to remove deleted exam upload:', cleanupError);
+        }
       }
 
       await fetchStudentExamResults();
-      toast.success('Exam result deleted');
+      if (uploadCleanupFailed) {
+        toast.error('The result was deleted, but its answer sheet could not be removed. Ask an administrator to remove it');
+      } else {
+        toast.success('Exam result deleted');
+      }
     } catch (error) {
       console.error('Failed to delete exam result:', error);
-      toast.error('Failed to delete exam result');
+      toast.error(examResultSaveFailureMessage(error, 'result-delete'));
     } finally {
       setDeletingExamId(null);
     }
@@ -1063,12 +1176,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     }
 
     const nextType = infoEndorsementDraft.type.trim();
-    const duplicate = infoForm.endorsements.some((endorsement) =>
-      endorsement.type.trim().toLowerCase() === nextType.toLowerCase() &&
-      endorsement.isActive === infoEndorsementDraft.isActive
-    );
-
-    if (duplicate) {
+    if (hasCredentialType(infoForm.endorsements, nextType)) {
       toast.error('That endorsement is already on this member');
       return;
     }
@@ -1114,8 +1222,8 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
       toast.error('Select a licence from the organisation list');
       return;
     }
-    if (infoForm.licences.some(licence => licence.isActive && licence.type.trim().toLowerCase() === type.toLowerCase())) {
-      toast.error('That active licence is already recorded');
+    if (hasCredentialType(infoForm.licences, type)) {
+      toast.error('That licence is already recorded for this member');
       return;
     }
     setInfoForm(prev => ({
@@ -1367,9 +1475,12 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   const canAddRecord = hasAnyRole(user, ['admin', 'instructor', 'senior_instructor']);
   const canEditRecord = (record: TrainingRecord) => {
     if (!user) return false;
-    return hasAnyRole(user, ['admin']) || (
-      hasAnyRole(user, ['instructor', 'senior_instructor']) && record.instructorId === user.id
-    );
+    return canStaffEditTrainingRecord({
+      isAdmin: hasAnyRole(user, ['admin']),
+      isRecordInstructor: hasAnyRole(user, ['instructor', 'senior_instructor']) && record.instructorId === user.id,
+      recordStatus: record.status,
+      allowSubmittedRecordEditing: trainingSettings.allowSubmittedRecordEditing,
+    });
   };
 
   const getRecordCourse = (record: TrainingRecord) => trainingCourses.find(course => course.id === record.courseId);
@@ -1465,8 +1576,9 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
       const passMark = lesson.passMarks?.[criterion.id] ?? '-';
       return isGradeAtLeastTarget(grade, passMark, criterion.gradingSystem);
     });
+    if (trainingSettings.nextLessonRule === 'manual') return '';
 
-    if (passed) {
+    if (shouldAdvanceToNextLesson(trainingSettings.nextLessonRule, passed, false)) {
       const consecutiveReadiness = getConsecutivePassReadiness({
         course,
         records: trainingRecords,
@@ -1925,7 +2037,9 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     });
   }, []);
   const filteredTotalMinutes = filteredRecords.reduce((sum, record) => sum + record.dualTimeMin + record.soloTimeMin, 0);
-  const filteredPendingAck = filteredRecords.filter(record => record.status === 'submitted' && !record.studentAck).length;
+  const filteredPendingAck = filteredRecords.filter(record => (
+    recordRequiresAcknowledgement(record) && record.status === 'submitted' && !record.studentAck
+  )).length;
   const latestFilteredBooking = sortedRecords[0] ? getBookingDateTime(sortedRecords[0]) : null;
   const hasTrainingFilters = Boolean(dateFilter.start || dateFilter.end || aircraftFilter || instructorFilter);
   const clearTrainingFilters = () => {
@@ -2128,7 +2242,10 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     const title = record.isFlightReview
       ? `${record.flightReviewType || 'Flight review'}${record.flightReviewResult === 'pass' ? ' passed' : record.flightReviewResult === 'fail' ? ' not passed' : ''}`
       : lesson?.name || lesson?.sequenceTitle || record.lessonCodes.join(', ') || 'Training record';
-    const statusText = record.status === 'submitted' && !record.studentAck
+    const isAwaitingAcknowledgement = recordRequiresAcknowledgement(record)
+      && record.status === 'submitted'
+      && !record.studentAck;
+    const statusText = isAwaitingAcknowledgement
       ? 'Awaiting student acknowledgement'
       : record.status === 'locked'
         ? 'Locked'
@@ -2148,7 +2265,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
       badge: statusText,
       colorClass: record.isFlightReview
         ? (record.flightReviewResult === 'fail' ? 'bg-red-600' : 'bg-purple-600')
-        : (record.status === 'submitted' && !record.studentAck ? 'bg-amber-500' : 'bg-emerald-600'),
+        : (isAwaitingAcknowledgement ? 'bg-amber-500' : 'bg-emerald-600'),
     });
 
     if (record.instructorSignTimestamp) {
@@ -2740,7 +2857,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
         <LogbookTab
           userId={student.id}
           userName={student.name}
-          isInstructor={false}
+          isInstructor={hasAnyRole(student, ['admin', 'cfi', 'senior_instructor', 'instructor'])}
         />
       )}
 
@@ -2755,7 +2872,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
               <div className="space-y-4">
                 <label className="block">
                   <span className="block text-sm font-medium text-gray-700 mb-1">Course</span>
-                  <select
+                  <SearchableSelect
                     value={examForm.courseId}
                     onChange={event => setExamForm(form => ({ ...form, courseId: event.target.value, examId: '' }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -2764,11 +2881,11 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                     {trainingCourses.filter(course => (course.exams || []).length > 0).map(course => (
                       <option key={course.id} value={course.id}>{course.title}</option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                 </label>
                 <label className="block">
                   <span className="block text-sm font-medium text-gray-700 mb-1">Exam</span>
-                  <select
+                  <SearchableSelect
                     value={examForm.examId}
                     onChange={event => setExamForm(form => ({ ...form, examId: event.target.value }))}
                     disabled={!selectedExamCourse}
@@ -2778,7 +2895,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                     {(selectedExamCourse?.exams || []).map(exam => (
                       <option key={exam.id} value={exam.id}>{exam.name} - pass {exam.passMark}%</option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                 </label>
                 <div className="grid grid-cols-2 gap-3">
                   <label className="block">
@@ -2787,7 +2904,8 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                       type="number"
                       min={0}
                       max={100}
-                      step={1}
+                      step={0.01}
+                      required
                       value={examForm.score}
                       onChange={event => setExamForm(form => ({ ...form, score: event.target.value }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -2797,12 +2915,23 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                     <span className="block text-sm font-medium text-gray-700 mb-1">Date</span>
                     <input
                       type="date"
+                      required
                       value={examForm.examDate}
                       onChange={event => setExamForm(form => ({ ...form, examDate: event.target.value }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </label>
                 </div>
+                <label className="block">
+                  <span className="block text-sm font-medium text-gray-700 mb-1">Result notes</span>
+                  <textarea
+                    rows={2}
+                    value={examForm.notes}
+                    onChange={event => setExamForm(form => ({ ...form, notes: event.target.value }))}
+                    placeholder="Optional notes about the exam result"
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  />
+                </label>
                 <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
                   <label className="flex items-start gap-3 text-sm text-indigo-950">
                     <input
@@ -2832,12 +2961,22 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                     Upload answer sheet
                   </span>
                   <span className="mt-1 block text-xs text-gray-500">
-                    Optional. Attach the student's marked answer sheet, scan, photo or PDF. Do not upload the question paper.
+                    Optional, up to 25 MB. Attach the student's marked answer sheet, scan, photo or PDF. Do not upload the question paper.
                   </span>
                   <input
                     type="file"
                     accept=".pdf,.jpg,.jpeg,.png,.heic,.webp,.doc,.docx,.xls,.xlsx,image/*,application/pdf"
-                    onChange={event => setExamUploadFile(event.target.files?.[0] || null)}
+                    onChange={event => {
+                      const file = event.target.files?.[0] || null;
+                      const fileError = examAnswerSheetValidationError(file);
+                      if (fileError) {
+                        toast.error(fileError);
+                        event.target.value = '';
+                        setExamUploadFile(null);
+                        return;
+                      }
+                      setExamUploadFile(file);
+                    }}
                     className="mt-3 block w-full text-xs text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-blue-600 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-blue-700"
                   />
                   {examUploadFile && (
@@ -2864,7 +3003,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                 <button
                   type="button"
                   onClick={handleLogExam}
-                  disabled={savingExam || !selectedExam}
+                  disabled={savingExam || !selectedExam || !examForm.score.trim() || !examForm.examDate}
                   className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                 >
                   {savingExam ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -2973,6 +3112,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
           trainingRecords={studentTrainingRecords}
           courses={trainingCourses}
           examResults={studentExamResults}
+          onRefreshExamResults={fetchStudentExamResults}
           users={users}
           enrolments={courseEnrolments}
           enrolmentsLoading={courseEnrolmentsLoading}
@@ -3047,7 +3187,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                 </div>
                 <div className="lg:w-56">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
-                  <select
+                  <SearchableSelect
                     value={topUpPaymentMethodId}
                     onChange={event => setTopUpPaymentMethodId(event.target.value)}
                     className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -3056,7 +3196,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                     {paymentMethods.filter(method => method.active && method.allowAccountTopup !== false).map(method => (
                       <option key={method.id} value={method.id}>{method.name}</option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                 </div>
                 <div className="min-w-0 flex-1">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
@@ -3367,7 +3507,9 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
         <div className="space-y-6">
           {/* Pending sign-off banner — shown to the student whose profile this is */}
           {user?.id === studentId && (() => {
-            const pendingAck = filteredRecords.filter(r => r.status === 'submitted' && !r.studentAck);
+            const pendingAck = filteredRecords.filter(record => (
+              recordRequiresAcknowledgement(record) && record.status === 'submitted' && !record.studentAck
+            ));
             if (pendingAck.length === 0) return null;
             return (
               <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 flex items-start gap-3">
@@ -3439,7 +3581,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                   </div>
                   <label className="block md:hidden">
                     <span className="sr-only">Course</span>
-                    <select
+                    <SearchableSelect
                       value={selectedTrainingCourseId}
                       onChange={(event) => setSelectedTrainingCourseId(event.target.value)}
                       className="w-full rounded-md border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -3456,7 +3598,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                           );
                         })
                       )}
-                    </select>
+                    </SearchableSelect>
                   </label>
                 </div>
                 <div className="mt-3 hidden gap-2 overflow-x-auto pb-1 md:flex">
@@ -3564,7 +3706,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                 </label>
                 <label className="block">
                   <span className="block text-xs font-medium text-gray-500 uppercase mb-1">Aircraft</span>
-                  <select
+                  <SearchableSelect
                     value={aircraftFilter}
                     onChange={(e) => setAircraftFilter(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -3573,11 +3715,11 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                     {Array.from(new Set(studentTrainingRecords.map(r => r.registration).filter(Boolean))).map(reg => (
                       <option key={reg} value={reg}>{reg}</option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                 </label>
                 <label className="block">
                   <span className="block text-xs font-medium text-gray-500 uppercase mb-1">Instructor</span>
-                  <select
+                  <SearchableSelect
                     value={instructorFilter}
                     onChange={(e) => setInstructorFilter(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -3586,7 +3728,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                     {users.filter(u => u.role === 'instructor' || u.role === 'admin' || u.role === 'senior_instructor').map(instructor => (
                       <option key={instructor.id} value={instructor.id}>{instructor.name}</option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                 </label>
               </div>
               {hasTrainingFilters && (
@@ -3871,21 +4013,37 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                     const lessonTitle = recordLessonDisplay.title;
                     const lessonCode = recordLessonDisplay.code;
                     const acknowledgedDetailsExpanded = expandedAcknowledgedRecordIds.has(record.id);
+                    const requiresAcknowledgement = recordRequiresAcknowledgement(record);
+                    const recordCourse = trainingCourses.find(c => c.id === record.courseId);
+                    const isRequestedTrainingRecord = record.id === requestedTrainingRecordId
+                      || (
+                        !requestedTrainingRecordId
+                        && Boolean(requestedTrainingLessonId)
+                        && record.lessonId === requestedTrainingLessonId
+                      );
 
-                    if (shouldCompactAcknowledgedLesson(record, acknowledgedDetailsExpanded)) {
+                    if (shouldUseCompactLessonRecord(record, {
+                      detailsExpanded: acknowledgedDetailsExpanded,
+                      requiresAcknowledgement,
+                      viewerCanExpand: !studentIsViewingOwnFile,
+                    })) {
                       return (
-                        <AcknowledgedLessonSummary
+                        <div
                           key={record.id}
-                          record={record}
-                          instructorName={record.sourceInstructorName || instructor?.name}
-                          lessonName={lessonTitle}
-                          onExpand={() => setAcknowledgedRecordExpanded(record.id, true)}
-                        />
+                          id={`training-record-${record.id}`}
+                          className={isRequestedTrainingRecord ? 'rounded-xl ring-4 ring-blue-300 ring-offset-2' : ''}
+                        >
+                          <AcknowledgedLessonSummary
+                            record={record}
+                            instructorName={record.sourceInstructorName || instructor?.name}
+                            lessonName={lessonTitle}
+                            onExpand={studentIsViewingOwnFile ? undefined : () => setAcknowledgedRecordExpanded(record.id, true)}
+                          />
+                        </div>
                       );
                     }
 
                     const totalTime = (record.dualTimeMin + record.soloTimeMin) / 60;
-                    const recordCourse = trainingCourses.find(c => c.id === record.courseId);
                     const matrixSummary = getRecordMatrixAssessmentSummary(record);
                     const isMatrixExpanded = expandedRecordMatrixIds.has(record.id);
                     const latestRevision = [...(record.auditLog || [])]
@@ -3894,7 +4052,11 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                     const revisionSummary = latestRevision?.changes?.summary as string[] | undefined;
 
                     return (
-                      <div key={record.id} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                      <div
+                        key={record.id}
+                        id={`training-record-${record.id}`}
+                        className={`overflow-hidden rounded-lg border bg-white shadow-sm ${isRequestedTrainingRecord ? 'border-blue-400 ring-4 ring-blue-200 ring-offset-2' : 'border-gray-200'}`}
+                      >
                         <div className="border-b border-gray-100 p-5">
                           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                             <div className="min-w-0">
@@ -4248,7 +4410,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
 
                           <div className="border-t border-gray-200 pt-4 space-y-3">
                           {/* Student sign-off prompt */}
-                          {record.status === 'submitted' && !record.studentAck && user?.id === studentId && (
+                          {requiresAcknowledgement && record.status === 'submitted' && !record.studentAck && user?.id === studentId && (
                             <div className="bg-amber-50 border border-amber-300 rounded-lg p-4">
                               <p className="text-sm font-semibold text-amber-900 mb-1">Your acknowledgement is required</p>
                               <p className="text-xs text-amber-700 mb-3">
@@ -4370,7 +4532,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                       </div>
                       <label className="block">
                         <span className="block text-sm font-medium text-gray-700 mb-1">Lesson</span>
-                        <select
+                        <SearchableSelect
                           value={trainingEditForm.lessonId}
                           onChange={event => {
                             const lessonId = event.target.value;
@@ -4388,13 +4550,13 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                               {trainingLessonOptionLabel(lesson)}
                             </option>
                           ))}
-                        </select>
+                        </SearchableSelect>
                       </label>
                     </div>
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                       <label className="block">
                         <span className="block text-sm font-medium text-gray-700 mb-1">Next Lesson</span>
-                        <select
+                        <SearchableSelect
                           value={trainingEditForm.nextLesson}
                           onChange={event => setTrainingEditForm(form => form ? { ...form, nextLesson: event.target.value } : form)}
                           className="w-full min-h-10 px-3 py-2 border border-gray-300 rounded-md bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -4414,7 +4576,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                             );
                           })}
                           <option value="Course complete">Course complete</option>
-                        </select>
+                        </SearchableSelect>
                         <p className="mt-1 text-xs text-gray-500">
                           Suggested from the selected lesson and grades: {suggestedNextLesson || 'Not set'}.
                         </p>
@@ -4530,7 +4692,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                     </label>
                     <label className="block">
                       <span className="block text-xs font-medium text-orange-800 mb-1">Result</span>
-                      <select
+                      <SearchableSelect
                         value={trainingEditForm.flightReviewResult}
                         onChange={event => setTrainingEditForm(form => form ? { ...form, flightReviewResult: event.target.value as TrainingRecordEditForm['flightReviewResult'] } : form)}
                         className="w-full px-3 py-2 border border-orange-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
@@ -4538,7 +4700,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                         <option value="not_assessed">Not assessed</option>
                         <option value="pass">Pass</option>
                         <option value="fail">Fail</option>
-                      </select>
+                      </SearchableSelect>
                     </label>
                     <label className="block md:col-span-3">
                       <span className="block text-xs font-medium text-orange-800 mb-1">
@@ -4601,7 +4763,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                               />
                             ) : (
-                              <select
+                              <SearchableSelect
                                 value={grade}
                                 onChange={event => setTrainingEditForm(form => form ? {
                                   ...form,
@@ -4615,7 +4777,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                                 {gradeOptions.map(option => (
                                   <option key={option} value={option}>{option}</option>
                                 ))}
-                              </select>
+                              </SearchableSelect>
                             )}
                           </label>
                         );
@@ -4673,7 +4835,8 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                     type="number"
                     min={0}
                     max={100}
-                    step={1}
+                    step={0.01}
+                    required
                     value={examEditForm.score}
                     onChange={event => setExamEditForm(form => form ? { ...form, score: event.target.value } : form)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -4683,6 +4846,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                   <span className="block text-sm font-medium text-gray-700 mb-1">Date</span>
                   <input
                     type="date"
+                    required
                     value={examEditForm.examDate}
                     onChange={event => setExamEditForm(form => form ? { ...form, examDate: event.target.value } : form)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -4730,14 +4894,22 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                   Replace answer sheet
                 </span>
                 <span className="mt-1 block text-xs text-gray-500">
-                  Optional. Uploading a new file replaces the current marked answer sheet.
+                  Optional, up to 25 MB. Uploading a new file replaces the current marked answer sheet.
                 </span>
                 <input
                   type="file"
                   accept=".pdf,.jpg,.jpeg,.png,.heic,.webp,.doc,.docx,.xls,.xlsx,image/*,application/pdf"
                   onChange={event => {
-                    setExamEditFile(event.target.files?.[0] || null);
-                    if (event.target.files?.[0]) {
+                    const file = event.target.files?.[0] || null;
+                    const fileError = examAnswerSheetValidationError(file);
+                    if (fileError) {
+                      toast.error(fileError);
+                      event.target.value = '';
+                      setExamEditFile(null);
+                      return;
+                    }
+                    setExamEditFile(file);
+                    if (file) {
                       setExamEditForm(form => form ? { ...form, removeExistingFile: false } : form);
                     }
                   }}
@@ -4784,7 +4956,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
               <button onClick={closeExamEditor} disabled={savingExamEdit} className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50">
                 Cancel
               </button>
-              <button onClick={saveExamEdit} disabled={savingExamEdit} className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+              <button onClick={saveExamEdit} disabled={savingExamEdit || !examEditForm.score.trim() || !examEditForm.examDate} className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
                 {savingExamEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                 Save Exam
               </button>
@@ -4806,7 +4978,30 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
         />
       )}
 
-      {showInfoEditor && (
+      {showInfoEditor && !requestedLicenceId && student && (
+        <StudentForm
+          isOpen
+          onClose={closeInfoEditor}
+          onSubmit={(studentData) => updateStudent(student.id, studentData)}
+          student={student}
+          isEdit
+          canEditEmail={isAdmin}
+          onSendPasswordReset={isAdmin ? sendPasswordReset : undefined}
+          passwordResetting={resettingUserId === student.id}
+          additionalSections={showXeroContactEditor ? (
+            <section>
+              <h3 className="mb-3 text-lg font-medium text-gray-900">Xero Contact</h3>
+              <XeroContactPanel
+                student={student}
+                canManage
+                onChanged={refetchStudents}
+              />
+            </section>
+          ) : undefined}
+        />
+      )}
+
+      {showInfoEditor && requestedLicenceId && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
             <div className="flex items-start justify-between p-6 border-b border-gray-200">
@@ -4851,13 +5046,13 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                   </label>
                   <label className="block">
                     <span className="block text-sm font-medium text-gray-700 mb-1">Medical Type</span>
-                    <select value={infoForm.medicalType} onChange={event => updateInfoField('medicalType', event.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <SearchableSelect value={infoForm.medicalType} onChange={event => updateInfoField('medicalType', event.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                       <option value="">Not recorded</option>
                       {infoForm.medicalType && !MEDICAL_TYPE_OPTIONS.includes(infoForm.medicalType) && (
                         <option value={infoForm.medicalType}>{infoForm.medicalType}</option>
                       )}
                       {MEDICAL_TYPE_OPTIONS.map(type => <option key={type} value={type}>{type}</option>)}
-                    </select>
+                    </SearchableSelect>
                   </label>
                   <label className="block">
                     <span className="block text-sm font-medium text-gray-700 mb-1">Medical Expiry</span>
@@ -4898,7 +5093,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
                       <label className="block">
                         <span className="mb-1 block text-sm font-medium text-gray-700">Licence</span>
-                        <select
+                        <SearchableSelect
                           value={infoLicenceDraft.type}
                           onChange={event => {
                             const type = event.target.value;
@@ -4912,7 +5107,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                           className="min-h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         >
                           <option value="">Select licence</option>
-                          {trainingSettings.licenceTypes.map(type => {
+                          {availableInfoLicenceTypes.map(type => {
                             const alreadyActive = infoForm.licences.some(licence =>
                               licence.isActive && normaliseCredentialOption(licence.type) === normaliseCredentialOption(type)
                             );
@@ -4922,12 +5117,12 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                               </option>
                             );
                           })}
-                        </select>
+                        </SearchableSelect>
                       </label>
                       <label className="block"><span className="mb-1 block text-sm font-medium text-gray-700">Licence number</span><input value={infoLicenceDraft.licenceNumber} onChange={event => setInfoLicenceDraft(prev => ({ ...prev, licenceNumber: event.target.value }))} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></label>
                       <label className="block">
                         <span className="mb-1 block text-sm font-medium text-gray-700">Issuing authority</span>
-                        <select
+                        <SearchableSelect
                           value={infoLicenceDraft.issuingAuthority}
                           onChange={event => setInfoLicenceDraft(prev => ({ ...prev, issuingAuthority: event.target.value }))}
                           className="min-h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -4936,7 +5131,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                           <option value="RAAus">RAAus</option>
                           <option value="CASA">CASA</option>
                           <option value="Other / overseas authority">Other / overseas authority</option>
-                        </select>
+                        </SearchableSelect>
                       </label>
                       <label className="block"><span className="mb-1 block text-sm font-medium text-gray-700">Issued</span><input type="date" value={infoLicenceDraft.dateObtained} onChange={event => setInfoLicenceDraft(prev => ({ ...prev, dateObtained: event.target.value }))} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></label>
                       <label className="block"><span className="mb-1 block text-sm font-medium text-gray-700">Expiry</span><input type="date" value={infoLicenceDraft.expiryDate} onChange={event => setInfoLicenceDraft(prev => ({ ...prev, expiryDate: event.target.value }))} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></label>
@@ -5004,13 +5199,13 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                     <label className="block md:col-span-2">
                       <span className="block text-sm font-medium text-gray-700 mb-1">Endorsement</span>
-                      <select
+                      <SearchableSelect
                         value={infoEndorsementDraft.type}
                         onChange={(event) => setInfoEndorsementDraft((prev) => ({ ...prev, type: event.target.value }))}
                         className="min-h-10 w-full px-3 py-2 border border-gray-300 rounded-md bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >
                         <option value="">Select endorsement</option>
-                        {trainingSettings.endorsementTypes.map((type) => {
+                        {availableInfoEndorsementTypes.map((type) => {
                           const alreadyActive = infoForm.endorsements.some(endorsement =>
                             endorsement.isActive && normaliseCredentialOption(endorsement.type) === normaliseCredentialOption(type)
                           );
@@ -5020,7 +5215,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                             </option>
                           );
                         })}
-                      </select>
+                      </SearchableSelect>
                     </label>
                     <label className="block">
                       <span className="block text-sm font-medium text-gray-700 mb-1">Obtained</span>
@@ -5204,6 +5399,13 @@ function calculateCourseProgress(
       if (resolvedLesson) touchedLessons.add(resolvedLesson.id);
     }
 
+    const flightTestCompletion = getCourseFlightTestCompletion(
+      lessons,
+      courseRecords,
+      record => resolveLessonForRecord(record)?.id,
+    );
+    flightTestCompletion.inferredPassedLessonIds.forEach(lessonId => touchedLessons.add(lessonId));
+
     const criteriaProgress = criteria.map((criterion) => {
       let bestScore = 0;
       let bestGrade = '';
@@ -5227,7 +5429,12 @@ function calculateCourseProgress(
         }
       }
 
-      return { criterion, bestGrade, bestScore, isComplete };
+      return {
+        criterion,
+        bestGrade,
+        bestScore,
+        isComplete: isComplete || flightTestCompletion.completedByFlightTest,
+      };
     });
 
     const completedLessons = touchedLessons.size;
@@ -5236,24 +5443,27 @@ function calculateCourseProgress(
       ? (criteriaProgress.reduce((sum, cp) => sum + cp.bestScore, 0) / criteriaProgress.length) * 100
       : 0;
 
-    const percentage = criteriaProgress.length > 0
+    const calculatedPercentage = criteriaProgress.length > 0
       ? Math.min(100, Math.round((lessonPercentage + criteriaPercentage) / 2))
       : Math.min(100, Math.round(lessonPercentage));
+    const percentage = flightTestCompletion.completedByFlightTest ? 100 : calculatedPercentage;
 
     const criteriaComplete = criteriaProgress.length > 0 && criteriaProgress.every((cp) => cp.isComplete);
     const lessonsComplete = completedLessons === lessons.length && lessons.length > 0;
-    const isComplete = courseCompletionRule === 'all_lessons_attempted'
+    const isCompleteByConfiguredRule = courseCompletionRule === 'all_lessons_attempted'
       ? lessonsComplete
       : courseCompletionRule === 'criteria_or_lessons'
         ? criteriaComplete || lessonsComplete
         : criteriaProgress.length > 0
           ? criteriaComplete
           : lessonsComplete;
+    const isComplete = flightTestCompletion.completedByFlightTest || isCompleteByConfiguredRule;
 
     return {
       course,
       percentage,
       isComplete,
+      completedByFlightTest: flightTestCompletion.completedByFlightTest,
       completedLessons,
       totalLessons: lessons.length,
       criteriaProgress,
@@ -5269,6 +5479,7 @@ interface CourseProgressTabProps {
   trainingRecords: TrainingRecord[];
   courses: TrainingModule[];
   examResults: StudentExamResult[];
+  onRefreshExamResults: () => Promise<StudentExamResult[] | null>;
   users: AppUser[];
   enrolments: StudentCourseEnrolment[];
   enrolmentsLoading: boolean;
@@ -5297,7 +5508,11 @@ interface CourseProgressTabProps {
   refetchStudents: () => Promise<void>;
 }
 
-const MatrixProgressSummaryCard: React.FC<{ course: TrainingModule; studentId: string }> = ({ course, studentId }) => {
+const MatrixProgressSummaryCard: React.FC<{
+  course: TrainingModule;
+  studentId: string;
+  completedByFlightTest: boolean;
+}> = ({ course, studentId, completedByFlightTest }) => {
   const { rowsById, requirements, bestAssessmentByRow, loading } = useSyllabusMatrix(course.id, studentId);
 
   const summary = useMemo(() => {
@@ -5319,13 +5534,19 @@ const MatrixProgressSummaryCard: React.FC<{ course: TrainingModule; studentId: s
       .sort((a, b) => (a.row?.sortOrder ?? 0) - (b.row?.sortOrder ?? 0));
 
     return {
-      metCount: met.length,
+      metCount: completedByFlightTest ? requirements.length : met.length,
       totalCount: requirements.length,
-      percentage: requirements.length > 0 ? Math.round((met.length / requirements.length) * 100) : 0,
-      standardOneRemaining: remaining.filter((item) => item.requirement.requiredStandard === 1).length,
-      remaining: remaining.slice(0, 6),
+      percentage: completedByFlightTest
+        ? 100
+        : requirements.length > 0
+          ? Math.round((met.length / requirements.length) * 100)
+          : 0,
+      standardOneRemaining: completedByFlightTest
+        ? 0
+        : remaining.filter((item) => item.requirement.requiredStandard === 1).length,
+      remaining: completedByFlightTest ? [] : remaining.slice(0, 6),
     };
-  }, [bestAssessmentByRow, requirements, rowsById]);
+  }, [bestAssessmentByRow, completedByFlightTest, requirements, rowsById]);
 
   if (loading) {
     return <div className="mt-4 h-24 animate-pulse rounded-xl border border-slate-200 bg-slate-100" />;
@@ -5341,7 +5562,9 @@ const MatrixProgressSummaryCard: React.FC<{ course: TrainingModule; studentId: s
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">CASA Matrix Readiness</p>
           <p className="mt-1 text-sm text-blue-950">
-            {summary.metCount} of {summary.totalCount} required matrix items meet the lesson standards recorded so far.
+            {completedByFlightTest
+              ? `Passed flight test: all ${summary.totalCount} required matrix items are satisfied.`
+              : `${summary.metCount} of ${summary.totalCount} required matrix items meet the lesson standards recorded so far.`}
           </p>
         </div>
         <div className="text-right">
@@ -5387,18 +5610,18 @@ const StudentCourseLessonLibrary: React.FC<{
     [records]
   );
 
+  const resolveLessonIndex = useCallback((record: TrainingRecord) => {
+    const byId = record.lessonId ? course.lessons.findIndex((lesson) => lesson.id === record.lessonId) : -1;
+    if (byId >= 0) return byId;
+    const byCode = (record.lessonCodes || [])
+      .map((code) => matchLessonIndexByLabel(course.lessons, code))
+      .find((index) => index >= 0);
+    return byCode ?? -1;
+  }, [course.lessons]);
+
   const attemptedIndexes = useMemo(
-    () => sortedRecords
-      .map((record) => {
-        const byId = record.lessonId ? course.lessons.findIndex((lesson) => lesson.id === record.lessonId) : -1;
-        if (byId >= 0) return byId;
-        const byCode = (record.lessonCodes || [])
-          .map((code) => matchLessonIndexByLabel(course.lessons, code))
-          .find((index) => index >= 0);
-        return byCode ?? -1;
-      })
-      .filter((index) => index >= 0),
-    [course.lessons, sortedRecords]
+    () => sortedRecords.map(resolveLessonIndex).filter((index) => index >= 0),
+    [resolveLessonIndex, sortedRecords]
   );
 
   const attemptedLessonIds = useMemo(
@@ -5406,15 +5629,33 @@ const StudentCourseLessonLibrary: React.FC<{
     [attemptedIndexes, course.lessons]
   );
 
+  const flightTestCompletion = useMemo(
+    () => getCourseFlightTestCompletion(
+      course.lessons,
+      sortedRecords,
+      record => {
+        const index = resolveLessonIndex(record);
+        return index >= 0 ? course.lessons[index]?.id : undefined;
+      },
+    ),
+    [course.lessons, resolveLessonIndex, sortedRecords]
+  );
+  const passedLessonIds = flightTestCompletion.inferredPassedLessonIds;
+  const completedLessonIds = useMemo(() => new Set([
+    ...attemptedLessonIds,
+    ...passedLessonIds,
+  ]), [attemptedLessonIds, passedLessonIds]);
+
   const latestAttemptedIndex = attemptedIndexes.length > 0 ? Math.max(...attemptedIndexes) : -1;
   const recommendedIndex = useMemo(() => {
+    if (flightTestCompletion.completedByFlightTest) return Math.max(0, course.lessons.length - 1);
     const latestRecord = sortedRecords[0];
     const fromRecord = matchLessonIndexByLabel(course.lessons, latestRecord?.nextLesson);
     if (fromRecord >= 0) return fromRecord;
-    const firstUnattempted = course.lessons.findIndex((lesson) => !attemptedLessonIds.has(lesson.id));
+    const firstUnattempted = course.lessons.findIndex((lesson) => !completedLessonIds.has(lesson.id));
     if (firstUnattempted >= 0) return firstUnattempted;
     return latestAttemptedIndex >= 0 ? latestAttemptedIndex : 0;
-  }, [attemptedLessonIds, course.lessons, latestAttemptedIndex, sortedRecords]);
+  }, [completedLessonIds, course.lessons, flightTestCompletion.completedByFlightTest, latestAttemptedIndex, sortedRecords]);
 
   const accessibleLessonLimit = Math.max(0, Math.min(course.lessons.length - 1, recommendedIndex));
   const [selectedLessonId, setSelectedLessonId] = useState<string>(course.lessons[accessibleLessonLimit]?.id || course.lessons[0]?.id || '');
@@ -5462,10 +5703,12 @@ const StudentCourseLessonLibrary: React.FC<{
         </div>
         <div className="flex flex-wrap gap-2 text-xs font-semibold">
           <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700 ring-1 ring-emerald-200">
-            {attemptedLessonIds.size} {attemptedLessonIds.size === 1 ? 'lesson' : 'lessons'} unlocked by training so far
+            {completedLessonIds.size} {completedLessonIds.size === 1 ? 'lesson' : 'lessons'} {flightTestCompletion.completedByFlightTest ? 'passed' : 'unlocked by training so far'}
           </span>
           <span className="rounded-full bg-blue-50 px-3 py-1 text-blue-700 ring-1 ring-blue-200">
-            Next: {course.lessons[recommendedIndex]?.name || course.lessons[recommendedIndex]?.sequenceTitle || 'Course complete'}
+            {flightTestCompletion.completedByFlightTest
+              ? 'Course complete'
+              : `Next: ${course.lessons[recommendedIndex]?.name || course.lessons[recommendedIndex]?.sequenceTitle || 'Course complete'}`}
           </span>
         </div>
       </div>
@@ -5479,7 +5722,8 @@ const StudentCourseLessonLibrary: React.FC<{
           <div className="max-h-[70vh] space-y-2 overflow-y-auto pr-1">
             {course.lessons.map((lesson, index) => {
               const isAccessible = index <= accessibleLessonLimit;
-              const isCompleted = attemptedLessonIds.has(lesson.id);
+              const isPassedByFlightTest = passedLessonIds.has(lesson.id);
+              const isCompleted = completedLessonIds.has(lesson.id);
               const isRecommended = index === recommendedIndex;
               const isSelected = selectedLessonId === lesson.id;
 
@@ -5514,7 +5758,9 @@ const StudentCourseLessonLibrary: React.FC<{
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-1">
                       {isCompleted ? (
-                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 ring-1 ring-emerald-200">Previous</span>
+                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                          {isPassedByFlightTest ? 'Passed' : 'Previous'}
+                        </span>
                       ) : isRecommended ? (
                         <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 ring-1 ring-blue-200">Next</span>
                       ) : !isAccessible ? (
@@ -5666,6 +5912,7 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
   trainingRecords,
   courses,
   examResults,
+  onRefreshExamResults,
   users,
   enrolments,
   enrolmentsLoading,
@@ -5678,6 +5925,8 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
   const canAccessExamSheets = canAccessUploadedExamSheets(user);
   const [exportingCourseId, setExportingCourseId] = useState<string | null>(null);
   const [pendingCourseExport, setPendingCourseExport] = useState<TrainingModule | null>(null);
+  const [pendingCourseExamResults, setPendingCourseExamResults] = useState<StudentExamResult[]>([]);
+  const [expandedCompletedCourseIds, setExpandedCompletedCourseIds] = useState<Set<string>>(new Set());
   const [grantingEndorsementCourseIds, setGrantingEndorsementCourseIds] = useState<Set<string>>(new Set());
   const [selectedEnrolCourseId, setSelectedEnrolCourseId] = useState('');
   const [enrolmentNotes, setEnrolmentNotes] = useState('');
@@ -5757,34 +6006,45 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
 
   useEffect(() => {
     if (!student || !user || !hasAnyRole(user, ['admin', 'instructor', 'senior_instructor'])) return;
-    enrolledCourses.forEach(({ course, isComplete, percentage }) => {
-      if (isComplete && percentage >= 100 && (course.completionEndorsementEnabled || course.completionLicenceEnabled)) {
+    enrolledCourses.forEach(({ course, isComplete, percentage, completedByFlightTest }) => {
+      if (!completedByFlightTest && isComplete && percentage >= 100 && (course.completionEndorsementEnabled || course.completionLicenceEnabled)) {
         void grantCompletionAwards(course);
       }
     });
   }, [enrolledCourses, grantCompletionAwards, student, user]);
 
-  const runCourseExport = async (course: TrainingModule, includeExamEvidence: boolean) => {
+  const runCourseExport = async (
+    course: TrainingModule,
+    includeExamEvidence: boolean,
+    examResultsForExport: StudentExamResult[] = examResults,
+  ) => {
     if (!student) {
       toast.error('Student file is still loading');
       return;
     }
 
     setPendingCourseExport(null);
+    setPendingCourseExamResults([]);
     setExportingCourseId(course.id);
     try {
-      const { exportCoursePdf } = await import('../../utils/coursePdfExport');
       await exportCoursePdf({
         student,
         course,
         records: trainingRecords,
-        exams: examResults,
+        exams: examResultsForExport,
         users,
         exportedBy: user,
         courseEnrolments: enrolments,
         includeExamSheets: includeExamEvidence && canAccessExamSheets,
       });
-      toast.success(includeExamEvidence ? 'Course PDF exported with exam evidence' : 'Course PDF exported');
+      const includedExamCount = courseExamResultsForExport(course, examResultsForExport).length;
+      toast.success(
+        includeExamEvidence
+          ? `Course PDF exported with ${includedExamCount} exam ${includedExamCount === 1 ? 'record' : 'records'} and uploaded evidence`
+          : includedExamCount > 0
+            ? `Course PDF exported with ${includedExamCount} exam ${includedExamCount === 1 ? 'record' : 'records'}`
+            : 'Course PDF exported',
+      );
     } catch (error) {
       console.error('Failed to export course PDF:', error);
       toast.error('Failed to export course PDF');
@@ -5793,19 +6053,28 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
     }
   };
 
-  const handleExportCourse = (course: TrainingModule) => {
-    const examEvidence = courseExamEvidenceForExport(course, examResults);
+  const handleExportCourse = async (course: TrainingModule) => {
+    setExportingCourseId(course.id);
+    const refreshedExamResults = await onRefreshExamResults();
+    setExportingCourseId(null);
+    if (!refreshedExamResults) {
+      toast.error('Exam records could not be loaded. Retry before exporting so the PDF is complete.');
+      return;
+    }
+
+    const examEvidence = courseExamEvidenceForExport(course, refreshedExamResults);
     if (canAccessExamSheets && examEvidence.length > 0) {
+      setPendingCourseExamResults(refreshedExamResults);
       setPendingCourseExport(course);
       return;
     }
 
-    void runCourseExport(course, false);
+    await runCourseExport(course, false, refreshedExamResults);
   };
 
   const pendingExamEvidence = useMemo(
-    () => pendingCourseExport ? courseExamEvidenceForExport(pendingCourseExport, examResults) : [],
-    [examResults, pendingCourseExport],
+    () => pendingCourseExport ? courseExamEvidenceForExport(pendingCourseExport, pendingCourseExamResults) : [],
+    [pendingCourseExamResults, pendingCourseExport],
   );
 
   const handleEnrolCourse = async () => {
@@ -5927,7 +6196,7 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
 
             <div className="space-y-4 px-5 py-4">
               <p className="text-sm leading-6 text-gray-700">
-                Attaching evidence adds the uploaded marked sheets or exam files as pages at the end of the PDF. Choose the smaller progress report when the evidence is not needed.
+                Exam result summaries are always included in the course PDF. Attaching evidence also adds the uploaded marked sheets or exam files as pages at the end. Choose the smaller report when the uploaded files are not needed.
               </p>
               <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">Available evidence</p>
@@ -5953,14 +6222,14 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
               <button
                 type="button"
                 autoFocus
-                onClick={() => void runCourseExport(pendingCourseExport, false)}
+                onClick={() => void runCourseExport(pendingCourseExport, false, pendingCourseExamResults)}
                 className="inline-flex min-h-11 items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-100"
               >
-                Export without evidence
+                Export results only
               </button>
               <button
                 type="button"
-                onClick={() => void runCourseExport(pendingCourseExport, true)}
+                onClick={() => void runCourseExport(pendingCourseExport, true, pendingCourseExamResults)}
                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-800"
               >
                 <Download className="h-4 w-4" />
@@ -5977,7 +6246,7 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
             <div className="flex-1">
               <p className="text-sm font-semibold text-gray-900">Course Enrolment</p>
               <p className="text-xs text-gray-500 mt-1">Enrol this member before the first lesson is logged.</p>
-              <select
+              <SearchableSelect
                 value={selectedEnrolCourseId}
                 onChange={(event) => setSelectedEnrolCourseId(event.target.value)}
                 disabled={enrolmentsLoading || enrolmentChoices.length === 0}
@@ -5989,7 +6258,7 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
                 {enrolmentChoices.map(course => (
                   <option key={course.id} value={course.id}>{course.title}</option>
                 ))}
-              </select>
+              </SearchableSelect>
             </div>
             <div className="flex-1">
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Notes</label>
@@ -6039,7 +6308,7 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
             </div>
           </div>
 
-      {enrolledCourses.map(({ course, percentage, isComplete, completedLessons, totalLessons, criteriaProgress, hasCriteria }) => {
+      {enrolledCourses.map(({ course, percentage, isComplete, completedByFlightTest, completedLessons, totalLessons, criteriaProgress, hasCriteria }) => {
         const enrolment = enrolments.find(item => item.courseId === course.id && item.status === 'active');
         const courseRecords = trainingRecords.filter((record) => record.courseId === course.id && record.status !== 'draft');
         const declarationRequired = Boolean(course.requiresFlyingDeclaration);
@@ -6057,11 +6326,12 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
           enrolment?.guardianDeclarationSignedAt &&
           (enrolment.guardianDeclarationVersion ?? 0) >= (course.flyingDeclarationVersion ?? 1)
         );
+        const completedCourseExpanded = !isComplete || expandedCompletedCourseIds.has(course.id);
 
         return (
         <div key={course.id} className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
           <div className="p-6">
-            <div className="flex items-start justify-between mb-4">
+            <div className={`flex items-start justify-between ${completedCourseExpanded ? 'mb-4' : ''}`}>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center space-x-2 mb-1">
                   <h3 className="text-lg font-semibold text-gray-900 truncate">{course.title}</h3>
@@ -6102,6 +6372,23 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
                 <p className="text-sm text-gray-500">{course.category} &middot; v{course.version}</p>
               </div>
               <div className="ml-4 flex shrink-0 items-start gap-3">
+                {isComplete && (
+                  <button
+                    type="button"
+                    onClick={() => setExpandedCompletedCourseIds(current => {
+                      const next = new Set(current);
+                      if (next.has(course.id)) next.delete(course.id);
+                      else next.add(course.id);
+                      return next;
+                    })}
+                    aria-expanded={completedCourseExpanded}
+                    aria-controls={`completed-course-details-${course.id}`}
+                    className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                  >
+                    {completedCourseExpanded ? 'Collapse' : 'View details'}
+                    <ChevronDown className={`h-4 w-4 transition-transform ${completedCourseExpanded ? 'rotate-180' : ''}`} />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => handleExportCourse(course)}
@@ -6118,6 +6405,14 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
                 </div>
               </div>
             </div>
+
+            {completedCourseExpanded && (
+              <div id={`completed-course-details-${course.id}`}>
+            {completedByFlightTest && (
+              <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+                Passed flight test: course completed, with all earlier lessons and assessment criteria treated as passed.
+              </div>
+            )}
 
             {declarationRequired && (
               <div className={`mb-4 rounded-lg border p-3 text-sm ${
@@ -6174,7 +6469,9 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
             {/* Progress bar */}
             <div className="mb-4">
               <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
-                <span>{completedLessons} of {totalLessons} lessons attempted</span>
+                <span>
+                  {completedLessons} of {totalLessons} lessons {completedByFlightTest ? 'passed or covered by the flight test' : 'attempted'}
+                </span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2.5">
                 <div
@@ -6197,7 +6494,7 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
                     return (
                       <div
                         key={criterion.id}
-                        title={`Best grade: ${bestGrade || 'None'}`}
+                        title={completedByFlightTest && !bestGrade ? 'Satisfied by passed flight test' : `Best grade: ${bestGrade || 'None'}`}
                         className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${chipClass}`}
                       >
                         {critComplete && <CheckCircle className="h-3 w-3 mr-1" />}
@@ -6212,9 +6509,17 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
               </div>
             )}
 
-            {student && <MatrixProgressSummaryCard course={course} studentId={student.id} />}
+            {student && (
+              <MatrixProgressSummaryCard
+                course={course}
+                studentId={student.id}
+                completedByFlightTest={completedByFlightTest}
+              />
+            )}
 
             <StudentCourseLessonLibrary course={course} records={courseRecords} />
+              </div>
+            )}
           </div>
         </div>
         );

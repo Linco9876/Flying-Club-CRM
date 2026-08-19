@@ -1,5 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { renderDeclarationSigningEmail } from "../_shared/declarationSigningEmail.ts";
+import { brandPortalEmailHtml } from "../_shared/emailBranding.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -46,11 +48,13 @@ const sendBrevoEmail = async ({
   toName,
   subject,
   html,
+  text,
 }: {
   to: string;
   toName?: string;
   subject: string;
   html: string;
+  text?: string;
 }) => {
   const apiKey = Deno.env.get("BREVO_API_KEY");
   if (!apiKey) return { sent: false, error: "BREVO_API_KEY is not configured" };
@@ -68,7 +72,8 @@ const sendBrevoEmail = async ({
       sender: { email: senderEmail, name: senderName },
       to: [{ email: to, name: toName || to }],
       subject,
-      htmlContent: html,
+      htmlContent: await brandPortalEmailHtml(html),
+      ...(text ? { textContent: text } : {}),
     }),
   });
 
@@ -280,28 +285,29 @@ Deno.serve(async (req: Request) => {
         continue;
       }
 
-      const subject = recipient === "student"
-        ? `Please sign your ${course.title} flying declaration`
-        : `Parent/guardian declaration required for ${student?.name || "student"}`;
-      const html = `
-        <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827">
-          <h2 style="margin:0 0 12px">Bendigo Flying Club declaration</h2>
-          <p>${recipient === "student"
-            ? `Please review and sign your flying declaration for <strong>${course.title}</strong>.`
-            : `Please review and sign the under-18 parent/guardian declaration for <strong>${student?.name || "the student"}</strong> in <strong>${course.title}</strong>.`}</p>
-          <p><a href="${link}" style="display:inline-block;background:#2563eb;color:white;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:bold">Open signing link</a></p>
-          <p style="font-size:13px;color:#4b5563">This one-time link expires in 14 days. If you did not expect this email, contact Bendigo Flying Club.</p>
-          <p style="font-size:12px;color:#6b7280;word-break:break-all">${link}</p>
-        </div>
-      `;
+      const recipientName = recipient === "student"
+        ? student?.name
+        : enrolment.guardian_declaration_signed_name || student?.emergency_contact_name || studentExtra?.emergency_contact_name || "Parent or guardian";
+      const message = renderDeclarationSigningEmail({
+        recipientType: recipient === "guardian" ? "guardian" : "student",
+        recipientName,
+        studentName: student?.name || "the student",
+        courseTitle: course.title || "Flight training",
+        declarationTitle: recipient === "student"
+          ? course.flying_declaration_title
+          : course.guardian_declaration_title,
+        declarationVersion,
+        signingUrl: link,
+      });
 
       let sendResult = { sent: false, error: "Manual link generated" as string | null };
       if (resolvedDelivery === "email" && recipientEmail) {
         sendResult = await sendBrevoEmail({
           to: recipientEmail,
-          toName: recipient === "student" ? student?.name : enrolment.guardian_declaration_signed_name,
-          subject,
-          html,
+          toName: recipientName,
+          subject: message.subject,
+          html: message.html,
+          text: message.text,
         });
       } else if (resolvedDelivery === "sms" && recipientPhone) {
         sendResult = await sendBrevoSms({

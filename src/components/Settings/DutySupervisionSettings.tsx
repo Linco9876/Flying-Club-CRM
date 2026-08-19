@@ -4,6 +4,8 @@ import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { requiresAutomaticInstructorSupervision } from '../../utils/supervisionRoles';
+import { getOrganisationLocationValidationError } from '../../utils/organisationLocationRules';
+import { SettingsLoadError } from './SettingsLoadError';
 
 type StaffRow = { id: string; name: string; email: string; roles: string[] };
 type RequirementDraft = { enabled: boolean; locations: string; preflightMinutes: number; postflightMinutes: number; notes: string };
@@ -64,6 +66,7 @@ export const DutySupervisionSettings: React.FC<{ canEdit?: boolean; onFormChange
   const [clockLocations, setClockLocations] = useState<DutyClockLocationDraft[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -120,8 +123,10 @@ export const DutySupervisionSettings: React.FC<{ canEdit?: boolean; onFormChange
         isPrimary: Boolean(row.is_primary),
         isActive: Boolean(row.is_active),
       })));
-    } catch (error) {
-      console.error('Failed to load duty and supervision settings', error);
+      setLoadError(null);
+    } catch (caught) {
+      console.error('Failed to load duty and supervision settings', caught);
+      setLoadError(caught instanceof Error ? caught.message : 'Duty and supervision settings could not be loaded');
       toast.error('Duty and supervision settings could not be loaded');
     } finally {
       setLoading(false);
@@ -147,12 +152,33 @@ export const DutySupervisionSettings: React.FC<{ canEdit?: boolean; onFormChange
 
   const save = React.useCallback(async () => {
     if (!user?.id || !canEdit) return;
+    if (loadError) throw new Error('Duty and supervision settings must load successfully before they can be changed.');
     setSaving(true);
     try {
-      for (const location of clockLocations) {
-        if (!location.name.trim()) throw new Error('Every duty clock location needs a name');
-        if (!Number.isFinite(location.latitude) || location.latitude < -90 || location.latitude > 90) throw new Error(`${location.name}: enter a valid latitude`);
-        if (!Number.isFinite(location.longitude) || location.longitude < -180 || location.longitude > 180) throw new Error(`${location.name}: enter a valid longitude`);
+      const locationError = getOrganisationLocationValidationError(clockLocations);
+      if (locationError) throw new Error(locationError);
+      for (const person of staff) {
+        const requirement = requirements[person.id];
+        if (requirement?.enabled && (
+          !Number.isInteger(requirement.preflightMinutes)
+          || requirement.preflightMinutes < 0
+          || requirement.preflightMinutes > 240
+          || !Number.isInteger(requirement.postflightMinutes)
+          || requirement.postflightMinutes < 0
+          || requirement.postflightMinutes > 240
+        )) {
+          throw new Error(`${person.name}: supervision coverage must be a whole number from 0 to 240 minutes.`);
+        }
+        const authorisation = authorisations[person.id];
+        if (authorisation?.enabled && (
+          !Number.isInteger(authorisation.priority)
+          || authorisation.priority < 1
+          || !Number.isInteger(authorisation.maximumConcurrent)
+          || authorisation.maximumConcurrent < 1
+          || authorisation.maximumConcurrent > 20
+        )) {
+          throw new Error(`${person.name}: priority must be a positive whole number and capacity must be from 1 to 20.`);
+        }
       }
       const { error: locationSaveError } = await supabase.rpc('save_organisation_locations', {
         p_locations: clockLocations.map((location) => ({
@@ -216,7 +242,7 @@ export const DutySupervisionSettings: React.FC<{ canEdit?: boolean; onFormChange
     } finally {
       setSaving(false);
     }
-  }, [authorisations, canEdit, clockLocations, load, requirements, staff, user?.id]);
+  }, [authorisations, canEdit, clockLocations, load, loadError, requirements, staff, user?.id]);
 
   useEffect(() => {
     const settingsWindow = window as Window & { __dutysupervisionSettingsSave?: () => Promise<void>; __dutysupervisionSettingsCancel?: () => Promise<void> };
@@ -232,6 +258,7 @@ export const DutySupervisionSettings: React.FC<{ canEdit?: boolean; onFormChange
   const supervisedCount = useMemo(() => Object.values(requirements).filter(value => value.enabled).length, [requirements]);
 
   if (loading) return <div className="p-8 text-center text-sm text-gray-500">Loading supervision settings…</div>;
+  if (loadError) return <SettingsLoadError section="Duty & Supervision" error={loadError} onRetry={load} />;
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
@@ -248,7 +275,7 @@ export const DutySupervisionSettings: React.FC<{ canEdit?: boolean; onFormChange
 
       <section className="rounded-xl border border-gray-200 bg-gray-50 p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2"><MapPin className="h-5 w-5 text-blue-600" /><div><h3 className="font-bold text-gray-950">Duty clock locations</h3><p className="text-xs text-gray-500">The mobile app asks for notes when GPS falls outside these radiuses.</p></div></div>
+          <div className="flex items-center gap-2"><MapPin className="h-5 w-5 text-blue-600" /><div><h3 className="font-bold text-gray-950">Duty clock locations</h3><p className="text-xs text-gray-500">The mobile app asks for notes when GPS falls outside these radii.</p></div></div>
           {canEdit && <button type="button" onClick={() => { setClockLocations(current => [...current, { key: `new-${Date.now()}`, name: '', address: '', latitude: -36.7391667, longitude: 144.3297222, radiusMetres: 1200, isPrimary: current.length === 0, isActive: true }]); markChanged(); }} className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-bold text-gray-700"><Plus className="h-4 w-4" /> Add location</button>}
         </div>
         <div className="mt-4 space-y-3">
@@ -264,7 +291,7 @@ export const DutySupervisionSettings: React.FC<{ canEdit?: boolean; onFormChange
       </section>
 
       <section>
-        <div className="mb-3 flex items-center gap-2"><Users className="h-5 w-5 text-indigo-600" /><div><h3 className="font-bold text-gray-950">Instructor supervision requirements</h3><p className="text-xs text-gray-500">Instructors without Senior Instructor or CFI authority always require supervision for flight bookings. Additional requirements can still be configured.</p></div></div>
+        <div className="mb-3 flex items-center gap-2"><Users className="h-5 w-5 text-indigo-600" /><div><h3 className="font-bold text-gray-950">Instructor supervision requirements</h3><p className="text-xs text-gray-500">Instructors without Senior Instructor or CFI/DCFI authority always require supervision for flight bookings. Additional requirements can still be configured.</p></div></div>
         <div className="space-y-3">
           {staff.map(person => {
             const value = requirements[person.id];

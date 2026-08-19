@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -32,6 +33,8 @@ import { useAuth } from '../../context/AuthContext';
 import { usePageLoadState } from '../../context/PageLoadContext';
 import { prefetchStudentProfile } from './studentProfileLoader';
 import { useAdminPasswordReset } from '../../hooks/useAdminPasswordReset';
+import { getActiveMemberSummaryCounts } from '../../utils/memberSummaryCounts';
+import { portalRolesUserMayCreate } from '../../utils/portalUserCreation';
 
 export const StudentList: React.FC = () => {
   const navigate = useNavigate();
@@ -51,6 +54,11 @@ export const StudentList: React.FC = () => {
   const [viewMode, setViewMode] = useState<'detailed' | 'slim'>('detailed');
   const [openActionsId, setOpenActionsId] = useState<string | null>(null);
   const canManageMembers = user?.role === 'admin' || user?.roles?.includes('admin');
+  const currentUserRoles = user?.roles && user.roles.length > 0
+    ? user.roles
+    : user?.role ? [user.role] : [];
+  const allowedPortalUserRoles = portalRolesUserMayCreate(currentUserRoles);
+  const canAddPortalUsers = allowedPortalUserRoles.length > 0;
   const canReinstateTrialVoucherMembers =
     canManageMembers ||
     user?.role === 'instructor' ||
@@ -80,26 +88,10 @@ export const StudentList: React.FC = () => {
     return roles.includes(roleFilter);
   }, [roleFilter]);
 
-  const memberStatusCounts = useMemo(() => {
-    const active = students.filter(student => student.isActive !== false).length;
-    const archived = students.length - active;
-    const roles = {
-      admin: 0,
-      instructor: 0,
-      pilot: 0,
-      student: 0
-    };
-
-    students.forEach(student => {
-      const memberRoles = getMemberRoles(student);
-      if (memberRoles.includes('admin')) roles.admin += 1;
-      if (memberRoles.includes('instructor') || memberRoles.includes('senior_instructor')) roles.instructor += 1;
-      if (memberRoles.includes('pilot')) roles.pilot += 1;
-      if (memberRoles.includes('student')) roles.student += 1;
-    });
-
-    return { active, archived, total: students.length, roles };
-  }, [students]);
+  const memberStatusCounts = useMemo(
+    () => getActiveMemberSummaryCounts(students),
+    [students],
+  );
 
   const rawVisibleMembers = useMemo(() => {
     const terms = normaliseSearch(searchTerm).split(/\s+/).filter(Boolean);
@@ -203,7 +195,7 @@ export const StudentList: React.FC = () => {
 
   const roleLabels: Record<UserRole, string> = {
     admin: 'Admin',
-    cfi: 'CFI',
+    cfi: 'CFI / DCFI review',
     senior_instructor: 'Senior Instructor',
     instructor: 'Instructor',
     pilot: 'Pilot',
@@ -507,7 +499,7 @@ export const StudentList: React.FC = () => {
           <div className="flex flex-col gap-3 bg-gradient-to-r from-slate-950 via-slate-900 to-blue-950 px-4 py-4 text-white sm:flex-row sm:items-center sm:justify-between sm:px-5">
             <div>
               <h2 className="text-2xl font-bold leading-tight text-white sm:text-xl">Members</h2>
-              <p className="text-sm text-blue-100/80">{visibleMembers.length} shown from {memberStatusCounts.total}</p>
+              <p className="text-sm text-blue-100/80">{visibleMembers.length} shown · {memberStatusCounts.total} active members</p>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <div className="hidden gap-2 overflow-x-auto sm:flex">
@@ -523,7 +515,7 @@ export const StudentList: React.FC = () => {
                   </div>
                 ))}
               </div>
-              {canManageMembers && (
+              {canAddPortalUsers && (
                 <button
                   onClick={() => setShowInviteModal(true)}
                   className="inline-flex self-start items-center justify-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-slate-950 shadow-sm transition-colors hover:bg-blue-50 sm:self-auto sm:px-3"
@@ -559,7 +551,7 @@ export const StudentList: React.FC = () => {
           <div className="grid grid-cols-2 gap-2 sm:hidden">
             <label className="block">
               <span className="sr-only">Status</span>
-              <select
+              <SearchableSelect
                 value={statusFilter}
                 onChange={event => setStatusFilter(event.target.value as typeof statusFilter)}
                 className="w-full rounded-xl border border-gray-300 bg-white px-3 py-3 text-sm font-semibold text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -567,11 +559,11 @@ export const StudentList: React.FC = () => {
                 <option value="active">Active ({memberStatusCounts.active})</option>
                 <option value="archived">Archived ({memberStatusCounts.archived})</option>
                 <option value="all">All ({memberStatusCounts.total})</option>
-              </select>
+              </SearchableSelect>
             </label>
             <label className="block">
               <span className="sr-only">Role</span>
-              <select
+              <SearchableSelect
                 value={roleFilter}
                 onChange={event => setRoleFilter(event.target.value as typeof roleFilter)}
                 className="w-full rounded-xl border border-gray-300 bg-white px-3 py-3 text-sm font-semibold text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -584,7 +576,7 @@ export const StudentList: React.FC = () => {
                     </option>
                   );
                 })}
-              </select>
+              </SearchableSelect>
             </label>
           </div>
 
@@ -611,7 +603,7 @@ export const StudentList: React.FC = () => {
           <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
             <label className="relative block">
               <ArrowUpDown className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <select
+              <SearchableSelect
                 value={sortBy}
                 onChange={event => setSortBy(event.target.value as typeof sortBy)}
                 className="w-full rounded-xl border border-gray-300 bg-white py-3 pl-10 pr-8 text-sm font-semibold text-gray-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 lg:rounded-lg lg:py-2.5"
@@ -619,7 +611,7 @@ export const StudentList: React.FC = () => {
                 {sortOptions.map(option => (
                   <option key={option.id} value={option.id}>Sort: {option.label}</option>
                 ))}
-              </select>
+              </SearchableSelect>
             </label>
             <button
               type="button"
@@ -874,6 +866,7 @@ export const StudentList: React.FC = () => {
           isOpen
           onClose={() => setShowInviteModal(false)}
           onInvite={handleInviteUser}
+          allowedRoles={allowedPortalUserRoles}
         />
       )}
     </div>

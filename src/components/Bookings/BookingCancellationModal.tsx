@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import { useMemo, useState } from 'react';
 import { AlertTriangle, Loader2, X } from 'lucide-react';
 import type { Booking } from '../../types';
@@ -62,10 +63,10 @@ export const BookingCancellationModal = ({ booking, onClose, onConfirm }: Bookin
             <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-200">
               Cancellation reason {insideNoticePeriod && <span className="text-red-500">*</span>}
             </label>
-            <select value={reasonId} onChange={(event) => setReasonId(event.target.value)} disabled={loading} className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-[#454b56] dark:bg-[#10131a] dark:text-gray-100">
+            <SearchableSelect value={reasonId} onChange={(event) => setReasonId(event.target.value)} disabled={loading} className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-[#454b56] dark:bg-[#10131a] dark:text-gray-100">
               <option value="">{loading ? 'Loading reasons...' : 'Select a reason'}</option>
               {activeReasons.map(reason => <option key={reason.id} value={reason.id}>{reason.name}</option>)}
-            </select>
+            </SearchableSelect>
             {selectedReason?.description && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{selectedReason.description}</p>}
           </div>
 

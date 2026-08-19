@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useState } from 'react';
 import { User, ArrowUpDown, Eye, Plus, AlertCircle, CheckCircle } from 'lucide-react';
 import { useBillingAccounts } from '../../hooks/useBillingAccounts';
@@ -82,7 +83,7 @@ const TopUpModal: React.FC<TopUpModalProps> = ({ userId, userName, onClose, onCo
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
-            <select
+            <SearchableSelect
               value={paymentMethodId}
               onChange={e => setPaymentMethodId(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -91,7 +92,7 @@ const TopUpModal: React.FC<TopUpModalProps> = ({ userId, userName, onClose, onCo
               {paymentMethods.filter(pm => pm.active && pm.allowAccountTopup !== false).map(pm => (
                 <option key={pm.id} value={pm.id}>{pm.name}</option>
               ))}
-            </select>
+            </SearchableSelect>
           </div>
           <div className="flex gap-3 pt-2">
             <button
@@ -198,7 +199,7 @@ export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }
       {/* Table */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-100">
+          <table className="mobile-card-table min-w-full divide-y divide-gray-100">
             <thead>
               <tr className="bg-gray-50">
                 <th
@@ -232,7 +233,7 @@ export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }
               ) : (
                 sorted.map(account => (
                   <tr key={account.userId} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-5 py-3.5 whitespace-nowrap">
+                    <td data-label="Pilot" className="px-5 py-3.5 whitespace-nowrap">
                       <div className="flex items-center gap-2.5">
                         <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center">
                           <User className="h-4 w-4 text-blue-600" />
@@ -244,8 +245,8 @@ export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }
                         />
                       </div>
                     </td>
-                    <td className="px-5 py-3.5 whitespace-nowrap text-sm text-gray-500">{account.email}</td>
-                    <td className="px-5 py-3.5 whitespace-nowrap">
+                    <td data-label="Email" className="px-5 py-3.5 whitespace-nowrap text-sm text-gray-500">{account.email}</td>
+                    <td data-label="Xero credit" className="px-5 py-3.5 whitespace-nowrap">
                       {!account.xeroLinked ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">
                           <AlertCircle className="h-3.5 w-3.5" /> Xero setup required
@@ -272,7 +273,7 @@ export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }
                         </>
                       )}
                     </td>
-                    <td className="px-5 py-3.5 whitespace-nowrap">
+                    <td data-label="Unpaid flights" className="px-5 py-3.5 whitespace-nowrap">
                       {!account.xeroLinked ? (
                         <span className="text-xs text-gray-400">Not shown</span>
                       ) : (account.unpaidFlightCount ?? 0) > 0 ? (
@@ -286,7 +287,7 @@ export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }
                         </span>
                       )}
                     </td>
-                    <td className="px-5 py-3.5 whitespace-nowrap text-sm text-gray-600">
+                    <td data-label="Transactions" className="px-5 py-3.5 whitespace-nowrap text-sm text-gray-600">
                       {account.xeroLinked ? account.totalTransactions : <span className="text-xs text-gray-400">Not shown</span>}
                       {account.xeroLinked && account.lastTransactionDate && (
                         <div className="text-xs text-gray-400">
@@ -294,7 +295,7 @@ export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }
                         </div>
                       )}
                     </td>
-                    <td className="px-5 py-3.5 whitespace-nowrap">
+                    <td data-label="Actions" className="px-5 py-3.5 whitespace-nowrap">
                       {account.xeroLinked ? <div className="flex items-center gap-2">
                         <button
                           onClick={() => setTopUpUserId(account.userId)}

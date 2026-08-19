@@ -20,6 +20,7 @@ import {
   isExistingAccountSignupError,
   requestPendingAccountSetup,
 } from '../../utils/pendingAccountSetup';
+import { isUnder18On } from '../../utils/membershipChangeRules';
 
 type PaymentMethod = 'becs' | 'invoice' | 'card';
 const turnstileEnabled = Boolean(import.meta.env.VITE_TURNSTILE_SITE_KEY);
@@ -39,7 +40,11 @@ const fallbackClasses: PublicMembershipClass[] = [
   { code: 'affiliate', name: 'Affiliate', description: 'Non-voting affiliate membership', annualFee: 45, hasVotingRights: false, canSelfBookAircraft: true },
 ];
 
-export const MembershipJoinPage: React.FC = () => {
+interface MembershipJoinPageProps {
+  intent: PortalSignupIntent;
+}
+
+export const MembershipJoinPage: React.FC<MembershipJoinPageProps> = ({ intent }) => {
   const navigate = useNavigate();
   const { user, isLoading: authLoading, refreshUser } = useAuth();
   const {
@@ -48,7 +53,6 @@ export const MembershipJoinPage: React.FC = () => {
   } = useFinancialProviders();
   const prefilledUserId = useRef<string | null>(null);
   const [step, setStep] = useState(0);
-  const [signupIntent, setSignupIntent] = useState<PortalSignupIntent>('portal');
   const [busy, setBusy] = useState(false);
   const [complete, setComplete] = useState<'confirm-email' | 'account-created' | 'membership-submitted' | null>(null);
   const [showPassword, setShowPassword] = useState(false);
@@ -82,7 +86,7 @@ export const MembershipJoinPage: React.FC = () => {
     membershipDocumentsLoading,
     membershipDocumentsError,
   );
-  const wantsMembership = Boolean(user) || signupIntent === 'membership';
+  const wantsMembership = Boolean(user) || intent === 'membership';
   const steps = useMemo(
     () => getPortalSignupSteps(wantsMembership ? 'membership' : 'portal'),
     [wantsMembership],
@@ -97,10 +101,6 @@ export const MembershipJoinPage: React.FC = () => {
     financialProviders.stripe.paymentsAvailable,
     financialProviders.xero.postingAvailable,
   ]);
-
-  useEffect(() => {
-    if (user) setSignupIntent('membership');
-  }, [user]);
 
   useEffect(() => {
     if (availablePaymentMethods.length > 0 && !availablePaymentMethods.includes(paymentMethod)) {
@@ -167,22 +167,31 @@ export const MembershipJoinPage: React.FC = () => {
   }, [user]);
 
   const isUnder18 = useMemo(() => {
-    if (!form.dateOfBirth) return false;
-    const birthday = new Date(`${form.dateOfBirth}T00:00:00`);
-    const threshold = new Date();
-    threshold.setFullYear(threshold.getFullYear() - 18);
-    return birthday > threshold;
+    return isUnder18On(form.dateOfBirth);
   }, [form.dateOfBirth]);
+  const availableMembershipClasses = useMemo(
+    () => membershipClasses.filter(item => (
+      item.code === 'junior'
+        ? isUnder18
+        : !(item.code === 'full' && isUnder18)
+    )),
+    [isUnder18, membershipClasses],
+  );
+
+  useEffect(() => {
+    if (availableMembershipClasses.some(item => item.code === form.membershipClass)) return;
+    const preferredClass = availableMembershipClasses.find(item => item.code === (isUnder18 ? 'junior' : 'full'))
+      ?? availableMembershipClasses[0];
+    setForm(current => ({ ...current, membershipClass: preferredClass?.code ?? '' }));
+  }, [availableMembershipClasses, form.membershipClass, isUnder18]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const outcome = params.get('payment_setup');
     if (outcome === 'success') {
-      setSignupIntent('membership');
       setComplete('membership-submitted');
       toast.success('Payment method securely saved');
     } else if (outcome === 'cancelled') {
-      setSignupIntent('membership');
       setStep(3);
       toast('Payment setup was cancelled. No money was transferred.', { icon: 'ℹ️' });
     }
@@ -198,6 +207,10 @@ export const MembershipJoinPage: React.FC = () => {
       }
       if (form.membershipClass === 'junior' && !isUnder18) {
         toast.error('Junior membership requires a date of birth showing the applicant is under 18');
+        return false;
+      }
+      if (form.membershipClass === 'full' && isUnder18) {
+        toast.error('Full membership is not available to applicants under 18');
         return false;
       }
     }
@@ -242,8 +255,8 @@ export const MembershipJoinPage: React.FC = () => {
         scholarshipContributionEnabled: scholarshipEnabled,
         scholarshipContributionAmount: scholarshipEnabled ? scholarshipAmount : scholarshipSettings.defaultAmount,
         authorityAccepted: paymentMethod === 'invoice' ? false : authorityAccepted,
-        successUrl: `${window.location.origin}/join?payment_setup=success`,
-        cancelUrl: `${window.location.origin}/join?payment_setup=cancelled`,
+        successUrl: `${window.location.origin}/membership-join?payment_setup=success`,
+        cancelUrl: `${window.location.origin}/membership-join?payment_setup=cancelled`,
       },
     });
     if (error) throw error;
@@ -424,9 +437,15 @@ export const MembershipJoinPage: React.FC = () => {
         <div className="mb-6 text-center text-white">
           <Plane className="mx-auto h-9 w-9" />
           <p className="mt-3 text-xs font-semibold uppercase tracking-[0.25em] text-sky-200">Bendigo Flying Club</p>
-          <h1 className="mt-2 text-3xl font-bold">{user ? 'Apply for club membership' : 'Create your portal account'}</h1>
+          <h1 className="mt-2 text-3xl font-bold">
+            {user ? 'Apply for club membership' : wantsMembership ? 'Join Bendigo Flying Club' : 'Create your portal account'}
+          </h1>
           <p className="mt-2 text-sm text-blue-100">
-            {user ? `Applying as ${user.name}` : 'Membership is optional and can be added now or later.'}
+            {user
+              ? `Applying as ${user.name}`
+              : wantsMembership
+                ? 'Create your portal account and submit your membership application.'
+                : 'Create portal access without starting a club membership application.'}
           </p>
         </div>
 
@@ -441,49 +460,29 @@ export const MembershipJoinPage: React.FC = () => {
 
           <div className="mt-7 min-h-[390px]">
             {step === 0 && <div>
-              {!user && <>
-                <h2 className="text-xl font-bold">How would you like to start?</h2>
-                <p className="mt-1 text-sm text-slate-600">Both choices create the same secure portal account. Club membership is optional.</p>
-                <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    aria-pressed={signupIntent === 'portal'}
-                    onClick={() => setSignupIntent('portal')}
-                    className={`rounded-2xl border-2 p-5 text-left transition ${signupIntent === 'portal' ? 'border-blue-600 bg-blue-50' : 'border-slate-200 hover:border-blue-300'}`}
-                  >
-                    <UserPlus className="h-6 w-6 text-blue-700" />
-                    <span className="mt-3 block font-bold">Portal account only</span>
-                    <span className="mt-1 block text-sm leading-5 text-slate-600">Create an account without applying or paying for club membership.</span>
-                    <span className="mt-3 block text-xs font-semibold text-blue-800">You can add membership later</span>
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={signupIntent === 'membership'}
-                    onClick={() => setSignupIntent('membership')}
-                    className={`rounded-2xl border-2 p-5 text-left transition ${signupIntent === 'membership' ? 'border-blue-600 bg-blue-50' : 'border-slate-200 hover:border-blue-300'}`}
-                  >
-                    <CreditCard className="h-6 w-6 text-blue-700" />
-                    <span className="mt-3 block font-bold">Account and club membership</span>
-                    <span className="mt-1 block text-sm leading-5 text-slate-600">Apply for membership and choose how you would like to pay.</span>
-                    <span className="mt-3 block text-xs font-semibold text-blue-800">Membership approval rules still apply</span>
-                  </button>
-                </div>
+              {!user && !wantsMembership && <>
+                <UserPlus className="h-9 w-9 text-blue-700" />
+                <h2 className="mt-3 text-xl font-bold">Portal account only</h2>
+                <p className="mt-1 text-sm leading-6 text-slate-600">Set up your login and portal profile. This does not submit a club membership application or create a payment.</p>
               </>}
               {wantsMembership ? <>
-                <h2 className={`${user ? '' : 'mt-7'} text-xl font-bold`}>Choose your membership</h2>
+                <h2 className="text-xl font-bold">Choose your membership</h2>
                 <p className="mt-1 text-sm text-slate-600">Fees are annual, include GST and the first year is prorated to 30 June when membership commences.</p>
+                <label className="mt-5 block text-sm font-medium">Date of birth <span className="text-red-600">*</span>
+                  <input required type="date" autoComplete="bday" value={form.dateOfBirth} onChange={e => update('dateOfBirth', e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3" />
+                  <span className="mt-1 block text-xs font-normal text-slate-500">
+                    {isUnder18 ? 'Full membership is not available to applicants under 18.' : 'Junior membership appears only for applicants under 18.'}
+                  </span>
+                </label>
                 <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                  {membershipClasses.map(item => <button key={item.code} type="button" onClick={() => update('membershipClass', item.code)} className={`rounded-2xl border-2 p-4 text-left transition ${form.membershipClass === item.code ? 'border-blue-600 bg-blue-50' : 'border-slate-200 hover:border-blue-300'}`}>
+                  {availableMembershipClasses.map(item => <button key={item.code} type="button" onClick={() => update('membershipClass', item.code)} className={`rounded-2xl border-2 p-4 text-left transition ${form.membershipClass === item.code ? 'border-blue-600 bg-blue-50' : 'border-slate-200 hover:border-blue-300'}`}>
                     <span className="block font-bold">{item.name}</span><span className="mt-1 block text-2xl font-bold">${item.annualFee}<span className="text-xs font-normal text-slate-600">/year</span></span><span className="mt-2 block text-xs text-slate-600">{item.description}</span><span className="mt-2 block text-[11px] font-semibold text-blue-800">{[item.hasVotingRights ? 'Voting rights' : 'Non-voting', item.canSelfBookAircraft ? 'Aircraft self-booking included' : 'No aircraft self-booking'].join(' · ')}</span>
                   </button>)}
                 </div>
-                <label className="mt-5 block text-sm font-medium">Date of birth <span className="text-red-600">*</span>
-                  <input required type="date" autoComplete="bday" value={form.dateOfBirth} onChange={e => update('dateOfBirth', e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3" />
-                </label>
                 <p className="mt-5 rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">Life membership is awarded by the club and is not available through online signup. RAAus membership is separate from club membership.</p>
               </> : (
                 <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm leading-6 text-emerald-950">
-                  No membership application, invoice or automatic payment will be created. Aircraft self-booking remains subject to the club’s membership rules.
+                  No membership application, invoice or automatic payment will be created. You can buy membership later from the Club Membership tab or by opening <a href="/membership-join" className="font-semibold text-emerald-900 underline">the membership signup page</a>.
                 </div>
               )}
             </div>}

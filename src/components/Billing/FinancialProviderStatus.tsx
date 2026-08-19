@@ -19,11 +19,14 @@ export const FinancialProviderStatus: React.FC<{
 }> = ({ compact = false, showRefresh = false }) => {
   const { capabilities, loading, error, refresh } = useFinancialProviders();
   const connected = capabilities.financeEnabled;
+  const unavailable = Boolean(error);
 
   return (
     <section
       className={`rounded-xl border ${
-        connected
+        unavailable
+          ? 'border-rose-300 bg-rose-50 dark:border-rose-800 dark:bg-rose-950/30'
+          : connected
           ? 'border-slate-200 bg-white dark:border-[#2c2f36] dark:bg-[#171a21]'
           : 'border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30'
       } ${compact ? 'p-3' : 'p-4'}`}
@@ -33,6 +36,8 @@ export const FinancialProviderStatus: React.FC<{
         <div className="flex min-w-0 items-start gap-3">
           {loading ? (
             <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-blue-600" />
+          ) : unavailable ? (
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-rose-700" />
           ) : connected ? (
             <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
           ) : (
@@ -40,7 +45,11 @@ export const FinancialProviderStatus: React.FC<{
           )}
           <div>
             <h3 className="text-sm font-bold text-slate-950 dark:text-slate-100">
-              {loading ? 'Checking financial services' : financialProviderModeLabel(capabilities)}
+              {loading
+                ? 'Checking financial services'
+                : unavailable
+                  ? 'Financial service status unavailable'
+                  : financialProviderModeLabel(capabilities)}
             </h3>
             <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-300">
               {error || financialProviderModeDescription(capabilities)}
@@ -59,7 +68,7 @@ export const FinancialProviderStatus: React.FC<{
           </button>
         )}
       </div>
-      {!loading && (
+      {!loading && !unavailable && (
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
           <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${
             capabilities.stripe.connected

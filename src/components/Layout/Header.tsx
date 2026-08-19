@@ -82,11 +82,11 @@ export const Header: React.FC = () => {
 
   return (
     <header className="app-sticky-header sticky top-0 z-40 border-b border-gray-200/80 bg-white shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
-      <div className="w-full px-3 pl-16 sm:pl-24 sm:pr-6 lg:px-8">
-        <div className="grid min-h-[4.25rem] grid-cols-[minmax(0,1fr)_auto] items-center gap-2 py-2 lg:min-h-16 lg:grid-cols-[minmax(18rem,1fr)_auto_minmax(18rem,1fr)] lg:py-0">
+      <div className="app-header-safe-area w-full px-3 sm:px-6 lg:px-8">
+        <div className="grid min-h-14 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 py-1.5 lg:min-h-16 lg:grid-cols-[minmax(18rem,1fr)_auto_minmax(18rem,1fr)] lg:py-0">
           <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-3 lg:col-start-1 lg:row-start-1">
             {settings?.logo_url ? (
-              <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-white p-1 shadow-sm dark:border-[#363b45] dark:bg-[#11141a] sm:h-11 sm:w-11">
+              <div className="h-9 w-9 flex-shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-white p-1 shadow-sm dark:border-[#363b45] dark:bg-[#11141a] sm:h-10 sm:w-10 lg:h-11 lg:w-11">
                 <img
                   src={settings.logo_url}
                   alt={`${businessName} logo`}
@@ -94,17 +94,17 @@ export const Header: React.FC = () => {
                 />
               </div>
             ) : (
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-blue-600 shadow-sm sm:h-11 sm:w-11">
-                <Plane className="h-6 w-6 text-white" />
+              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-blue-600 shadow-sm sm:h-10 sm:w-10 lg:h-11 lg:w-11">
+                <Plane className="h-5 w-5 text-white lg:h-6 lg:w-6" />
               </div>
             )}
             <div className="min-w-0">
-              <h1 className="max-w-[11rem] truncate text-base font-bold leading-tight text-gray-950 dark:text-gray-100 sm:max-w-none sm:text-xl">{businessName}</h1>
-              <p className="hidden text-xs text-gray-500 dark:text-gray-400 sm:block">Members Flight Management System</p>
+              <h1 className="max-w-[10.5rem] truncate text-sm font-bold leading-tight text-gray-950 dark:text-gray-100 min-[390px]:max-w-[13rem] min-[390px]:text-base sm:max-w-none lg:text-xl">{businessName}</h1>
+              <p className="hidden text-xs text-gray-500 dark:text-gray-400 lg:block">Members Flight Management System</p>
             </div>
           </div>
 
-          <nav className="no-scrollbar col-span-2 row-start-2 flex min-w-0 justify-center overflow-x-auto rounded-xl bg-gray-100 p-1 dark:bg-[#11141a] lg:col-span-1 lg:col-start-2 lg:row-start-1">
+          <nav className="no-scrollbar hidden min-w-0 justify-center overflow-x-auto rounded-xl bg-gray-100 p-1 dark:bg-[#11141a] lg:col-start-2 lg:row-start-1 lg:flex">
             {topNavItems.map(item => {
               const Icon = item.icon;
               return (
@@ -132,10 +132,12 @@ export const Header: React.FC = () => {
           </nav>
 
           <div className="col-start-2 row-start-1 flex items-center justify-end gap-2 sm:gap-3 lg:col-start-3 lg:row-start-1">
-            <PwaInstallButton />
+            <div className="hidden sm:block">
+              <PwaInstallButton />
+            </div>
             <NotificationBell />
 
-            <div className="hidden min-w-0 items-center gap-2 sm:flex">
+            <div className="flex min-w-0 items-center gap-2">
               <div className="hidden min-w-0 text-right xl:block">
                 <p className="max-w-40 truncate text-sm font-semibold leading-tight text-gray-900 dark:text-gray-100">{user?.name}</p>
               </div>
@@ -155,7 +157,7 @@ export const Header: React.FC = () => {
 
             <button
               onClick={logout}
-              className="rounded-full border border-transparent p-2 text-gray-400 transition-colors hover:border-gray-200 hover:bg-gray-50 hover:text-gray-700 dark:hover:border-[#363b45] dark:hover:bg-[#11141a] dark:hover:text-gray-100"
+              className="hidden rounded-full border border-transparent p-2 text-gray-400 transition-colors hover:border-gray-200 hover:bg-gray-50 hover:text-gray-700 dark:hover:border-[#363b45] dark:hover:bg-[#11141a] dark:hover:text-gray-100 lg:block"
               title="Logout"
               aria-label="Logout"
             >

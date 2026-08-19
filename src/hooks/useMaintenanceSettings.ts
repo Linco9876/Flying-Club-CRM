@@ -87,6 +87,8 @@ export const useMaintenanceSettings = () => {
           ...savedSettings,
           id: settingsResult.data.id,
         });
+      } else {
+        setSettings(DEFAULT_SETTINGS);
       }
       setError(null);
     } catch (error) {
@@ -99,6 +101,7 @@ export const useMaintenanceSettings = () => {
   };
 
   const createTemplate = async (template: Omit<MaintenanceMilestoneTemplate, 'id'>) => {
+    if (error) throw new Error('Maintenance settings must load successfully before templates can be changed.');
     try {
       const { error } = await supabase
         .from('maintenance_milestone_templates')
@@ -129,6 +132,7 @@ export const useMaintenanceSettings = () => {
   };
 
   const updateTemplate = async (id: string, updates: Partial<MaintenanceMilestoneTemplate>) => {
+    if (error) throw new Error('Maintenance settings must load successfully before templates can be changed.');
     try {
       const updateData: any = { updated_at: new Date().toISOString() };
       if (updates.name !== undefined) {
@@ -168,6 +172,7 @@ export const useMaintenanceSettings = () => {
   };
 
   const deleteTemplate = async (id: string) => {
+    if (error) throw new Error('Maintenance settings must load successfully before templates can be changed.');
     try {
       const { error } = await supabase
         .from('maintenance_milestone_templates')
@@ -187,6 +192,7 @@ export const useMaintenanceSettings = () => {
   };
 
   const updateSettings = async (newSettings: Partial<MaintenanceSettingsData>) => {
+    if (error) throw new Error('Maintenance settings must load successfully before they can be changed.');
     try {
       const settingsPayload = { ...settings, ...newSettings };
       delete settingsPayload.id;

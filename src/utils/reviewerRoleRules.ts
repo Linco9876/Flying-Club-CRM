@@ -10,7 +10,7 @@ export const CRM_REVIEWER_ROLE_OPTIONS: ReadonlyArray<{
   label: string;
 }> = [
   { role: 'admin', label: 'Admin' },
-  { role: 'cfi', label: 'CFI' },
+  { role: 'cfi', label: 'CFI / DCFI' },
   { role: 'senior_instructor', label: 'Senior Instructor' },
   { role: 'instructor', label: 'Instructor' },
 ];

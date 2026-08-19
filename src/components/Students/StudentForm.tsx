@@ -1,9 +1,12 @@
+import { SearchableSelect } from '../common/SearchableSelect';
+import { SearchableSuggestionInput } from '../common/SearchableSuggestionInput';
 import React, { useEffect, useState } from 'react';
 import { X, User, Phone, Save, Loader2, Shield, FileText, KeyRound } from 'lucide-react';
 import { Student, Endorsement, Licence } from '../../types';
 import toast from 'react-hot-toast';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useTrainingSettings } from '../../hooks/useTrainingSettings';
+import { availableCredentialOptions, hasCredentialType } from '../../utils/credentialDropdowns';
 
 interface StudentFormProps {
   isOpen: boolean;
@@ -14,6 +17,7 @@ interface StudentFormProps {
   canEditEmail?: boolean;
   onSendPasswordReset?: (student: Student) => Promise<boolean>;
   passwordResetting?: boolean;
+  additionalSections?: React.ReactNode;
 }
 
 const buildFormData = (student?: Student) => ({
@@ -30,7 +34,8 @@ const buildFormData = (student?: Student) => ({
   medicalType: student?.medicalType || '',
   medicalExpiry: student?.medicalExpiry?.toISOString().split('T')[0] || '',
   membershipExpiry: student?.licenceExpiry?.toISOString().split('T')[0] || '',
-  lastFlightReview: student?.lastFlightReview?.toISOString().split('T')[0] || '',
+  lastRaausBfrDate: (student?.lastRaausBfrDate || student?.lastFlightReview)?.toISOString().split('T')[0] || '',
+  lastCasaAfrDate: student?.lastCasaAfrDate?.toISOString().split('T')[0] || '',
   occupation: student?.occupation || '',
   alternatePhone: student?.alternatePhone || '',
   emergencyContact: {
@@ -51,6 +56,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
   canEditEmail = true,
   onSendPasswordReset,
   passwordResetting = false,
+  additionalSections,
 }) => {
   const [formData, setFormData] = useState(buildFormData(student));
   const { aircraft } = useAircraft();
@@ -68,7 +74,14 @@ export const StudentForm: React.FC<StudentFormProps> = ({
     isActive: true
   });
 
-  const allEndorsementTypes = trainingSettings.endorsementTypes;
+  const availableEndorsementTypes = availableCredentialOptions(
+    trainingSettings.endorsementTypes,
+    formData.endorsements,
+  );
+  const availableLicenceTypes = availableCredentialOptions(
+    trainingSettings.licenceTypes,
+    formData.licences,
+  );
   const [newLicence, setNewLicence] = useState({
     type: '',
     licenceNumber: '',
@@ -106,7 +119,9 @@ export const StudentForm: React.FC<StudentFormProps> = ({
       dateOfBirth: formData.dateOfBirth ? new Date(formData.dateOfBirth) : undefined,
       medicalExpiry: formData.medicalExpiry ? new Date(formData.medicalExpiry) : undefined,
       licenceExpiry: formData.membershipExpiry ? new Date(formData.membershipExpiry) : undefined,
-      lastFlightReview: formData.lastFlightReview ? new Date(formData.lastFlightReview) : undefined,
+      lastRaausBfrDate: formData.lastRaausBfrDate ? new Date(formData.lastRaausBfrDate) : undefined,
+      lastCasaAfrDate: formData.lastCasaAfrDate ? new Date(formData.lastCasaAfrDate) : undefined,
+      lastFlightReview: formData.lastRaausBfrDate ? new Date(formData.lastRaausBfrDate) : undefined,
       occupation: formData.occupation || undefined,
       alternatePhone: formData.alternatePhone || undefined,
       emergencyContact: formData.emergencyContact.name ? formData.emergencyContact : undefined
@@ -131,6 +146,11 @@ export const StudentForm: React.FC<StudentFormProps> = ({
 
     if (!newEndorsement.dateObtained) {
       toast.error('Please select a date for the endorsement');
+      return;
+    }
+
+    if (hasCredentialType(formData.endorsements, newEndorsement.type)) {
+      toast.error('That endorsement is already recorded for this member');
       return;
     }
 
@@ -171,8 +191,8 @@ export const StudentForm: React.FC<StudentFormProps> = ({
       toast.error('Please select a licence type');
       return;
     }
-    if (formData.licences.some(item => item.isActive && item.type.trim().toLowerCase() === newLicence.type.trim().toLowerCase())) {
-      toast.error('That active licence is already recorded');
+    if (hasCredentialType(formData.licences, newLicence.type)) {
+      toast.error('That licence is already recorded for this member');
       return;
     }
     const licence: Licence = {
@@ -298,7 +318,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Preferred Aircraft
                 </label>
-                <select
+                <SearchableSelect
                   value={formData.preferredAircraftId}
                   onChange={(e) => setFormData(prev => ({ ...prev, preferredAircraftId: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -307,7 +327,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
                   {aircraft.filter(a => !a.isArchived).map(a => (
                     <option key={a.id} value={a.id}>{a.registration} - {a.make} {a.model}</option>
                   ))}
-                </select>
+                </SearchableSelect>
               </div>
             </div>
           </div>
@@ -442,6 +462,34 @@ export const StudentForm: React.FC<StudentFormProps> = ({
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Last RAAus BFR date
+                </label>
+                <input
+                  type="date"
+                  max={new Date().toISOString().split('T')[0]}
+                  value={formData.lastRaausBfrDate}
+                  onChange={(e) => setFormData(prev => ({ ...prev, lastRaausBfrDate: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="mt-1 text-xs text-gray-500">RAAus reviews renew this date only.</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Last CASA AFR date
+                </label>
+                <input
+                  type="date"
+                  max={new Date().toISOString().split('T')[0]}
+                  value={formData.lastCasaAfrDate}
+                  onChange={(e) => setFormData(prev => ({ ...prev, lastCasaAfrDate: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="mt-1 text-xs text-gray-500">CASA AFR completion also renews the RAAus BFR date.</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Medical Expiry
                 </label>
                 <input
@@ -456,7 +504,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Medical Type
                 </label>
-                <select
+                <SearchableSelect
                   value={formData.medicalType}
                   onChange={(e) => setFormData(prev => ({ ...prev, medicalType: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -467,7 +515,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
                   <option value="CASA Basic Class 2">CASA Basic Class 2</option>
                   <option value="CASA Class 2">CASA Class 2</option>
                   <option value="CASA Class 1">CASA Class 1</option>
-                </select>
+                </SearchableSelect>
               </div>
             </div>
           </div>
@@ -513,7 +561,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Relationship
                 </label>
-                <select
+                <SearchableSelect
                   value={formData.emergencyContact.relationship}
                   onChange={(e) => setFormData(prev => ({ 
                     ...prev, 
@@ -528,7 +576,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
                   <option value="Sibling">Sibling</option>
                   <option value="Friend">Friend</option>
                   <option value="Other">Other</option>
-                </select>
+                </SearchableSelect>
               </div>
             </div>
           </div>
@@ -543,8 +591,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <label className="block">
                   <span className="mb-1 block text-xs text-gray-600">Licence type</span>
-                  <input list="members-edit-licence-types" value={newLicence.type} onChange={event => setNewLicence(prev => ({ ...prev, type: event.target.value }))} className="w-full rounded-md border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Select licence" />
-                  <datalist id="members-edit-licence-types">{trainingSettings.licenceTypes.map(type => <option key={type} value={type} />)}</datalist>
+                  <SearchableSuggestionInput options={availableLicenceTypes} value={newLicence.type} onValueChange={type => setNewLicence(prev => ({ ...prev, type }))} className="w-full rounded-md border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Select or enter licence" />
                 </label>
                 <label className="block"><span className="mb-1 block text-xs text-gray-600">Licence number</span><input value={newLicence.licenceNumber} onChange={event => setNewLicence(prev => ({ ...prev, licenceNumber: event.target.value }))} className="w-full rounded-md border border-gray-300 px-3 py-2" /></label>
                 <label className="block"><span className="mb-1 block text-xs text-gray-600">Issued</span><input type="date" value={newLicence.dateObtained} onChange={event => setNewLicence(prev => ({ ...prev, dateObtained: event.target.value }))} className="w-full rounded-md border border-gray-300 px-3 py-2" /></label>
@@ -597,18 +644,13 @@ export const StudentForm: React.FC<StudentFormProps> = ({
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs text-gray-600 mb-1">Type</label>
-                      <input
-                        list="members-edit-endorsement-types"
+                      <SearchableSuggestionInput
+                        options={availableEndorsementTypes}
                         value={newEndorsement.type}
-                        onChange={(e) => setNewEndorsement(prev => ({ ...prev, type: e.target.value }))}
+                        onValueChange={type => setNewEndorsement(prev => ({ ...prev, type }))}
                         placeholder="Select or enter endorsement"
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
-                      <datalist id="members-edit-endorsement-types">
-                        {allEndorsementTypes.map(type => (
-                          <option key={type} value={type} />
-                        ))}
-                      </datalist>
                     </div>
                     <div>
                       <label className="block text-xs text-gray-600 mb-1">Obtained</label>
@@ -670,6 +712,8 @@ export const StudentForm: React.FC<StudentFormProps> = ({
               </div>
             )}
           </div>
+
+          {additionalSections}
 
           <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
             <button

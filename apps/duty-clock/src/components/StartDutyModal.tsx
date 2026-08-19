@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import type { DutyContext, StartDutyInput } from '../types';
 import { type AppColours, useAppTheme } from '../theme';
 import { formatDateTime } from '../utils/time';
@@ -110,10 +111,11 @@ export const StartDutyModal = ({ visible, context, working, onClose, onStart }: 
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <SafeAreaView style={styles.flex} edges={['top', 'left', 'right', 'bottom']}>
+        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.header}>
           <View><Text style={styles.title}>Start duty</Text><Text style={styles.subtitle}>Confirm the details below.</Text></View>
-          <Pressable onPress={onClose} accessibilityRole="button" hitSlop={12}><Text style={styles.close}>Close</Text></Pressable>
+          <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close start duty" hitSlop={8} style={styles.closeButton}><Text style={styles.close}>Close</Text></Pressable>
         </View>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <Text style={styles.sectionLabel}>START TIME</Text>
@@ -176,7 +178,8 @@ export const StartDutyModal = ({ visible, context, working, onClose, onStart }: 
           <PrimaryButton tone="success" loading={working} onPress={() => void submit()}>Start duty</PrimaryButton>
           <Text style={styles.privacy}>Location is captured only when you press Start duty. This app does not track background location.</Text>
         </ScrollView>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
     </Modal>
   );
 };
@@ -186,6 +189,7 @@ const createStyles = (colours: AppColours) => StyleSheet.create({
   header: { backgroundColor: colours.surface, paddingHorizontal: 22, paddingTop: 18, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: colours.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: { color: colours.navy, fontSize: 25, fontWeight: '900' },
   subtitle: { color: colours.muted, fontSize: 13, marginTop: 2 },
+  closeButton: { minWidth: 48, minHeight: 44, alignItems: 'flex-end', justifyContent: 'center' },
   close: { color: colours.blue, fontSize: 15, fontWeight: '800' },
   content: { padding: 20, paddingBottom: 44, gap: 12, backgroundColor: colours.background },
   sectionLabel: { color: colours.muted, fontSize: 11, letterSpacing: 1.5, fontWeight: '900', marginTop: 8 },
@@ -207,7 +211,7 @@ const createStyles = (colours: AppColours) => StyleSheet.create({
   kssLabel: { color: colours.ink, fontSize: 14, fontWeight: '800', marginTop: 16 },
   kssHint: { color: colours.muted, fontSize: 11, marginTop: 2 },
   scoreRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 10, marginBottom: 8 },
-  score: { width: 34, height: 34, borderRadius: 11, borderWidth: 1, borderColor: colours.inputBorder, alignItems: 'center', justifyContent: 'center' },
+  score: { width: 44, height: 44, borderRadius: 13, borderWidth: 1, borderColor: colours.inputBorder, alignItems: 'center', justifyContent: 'center' },
   scoreSelected: { backgroundColor: colours.blue, borderColor: colours.blue },
   scoreText: { color: colours.ink, fontSize: 13, fontWeight: '800' },
   scoreTextSelected: { color: '#fff' },

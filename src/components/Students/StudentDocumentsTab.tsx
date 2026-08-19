@@ -1,11 +1,15 @@
-import React, { useMemo, useState } from 'react';
-import { Calendar, Download, Edit3, FileText, Loader2, Plus, Save, Trash2, Upload, User, X } from 'lucide-react';
+import React, { useMemo, useRef, useState } from 'react';
+import { Calendar, CheckCircle2, Download, Edit3, FileText, Loader2, Plus, Save, Trash2, Upload, User, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { Student } from '../../types';
 import { hasAnyRole } from '../../utils/rbac';
 import { useLatestEffect } from '../../hooks/useLatestEffect';
+import {
+  studentDocumentUploadFailureMessage,
+  studentDocumentValidationError,
+} from '../../utils/studentDocumentUpload';
 
 interface StudentDocumentsTabProps {
   student: Student;
@@ -50,8 +54,10 @@ export const StudentDocumentsTab: React.FC<StudentDocumentsTabProps> = ({ studen
   const [loading, setLoading] = useState(true);
   const [showUploadForm, setShowUploadForm] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const canManage = Boolean(user && (student.id === user.id || hasAnyRole(user, ['admin', 'instructor', 'senior_instructor'])));
 
@@ -61,6 +67,12 @@ export const StudentDocumentsTab: React.FC<StudentDocumentsTabProps> = ({ studen
     ['CASA / RAAus ID', student.casaId || student.raausId || 'ID not recorded'],
     ['Emergency Contact', student.emergencyContact ? `${student.emergencyContact.name} recorded` : 'Missing'],
   ], [student]);
+
+  const closeUploadForm = () => {
+    setShowUploadForm(false);
+    setSelectedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   const fetchDocuments = async () => {
     try {
@@ -112,11 +124,16 @@ export const StudentDocumentsTab: React.FC<StudentDocumentsTabProps> = ({ studen
     if (!user || !canManage) return;
 
     const form = new FormData(event.currentTarget);
-    const file = form.get('file') as File;
+    const file = selectedFile || form.get('file') as File;
     const displayName = String(form.get('displayName') || '').trim();
 
-    if (!file?.name || !displayName) {
+    if (!displayName) {
       toast.error('Add a document name and choose a file');
+      return;
+    }
+    const validationError = studentDocumentValidationError(file);
+    if (validationError) {
+      toast.error(validationError);
       return;
     }
 
@@ -142,12 +159,12 @@ export const StudentDocumentsTab: React.FC<StudentDocumentsTabProps> = ({ studen
         throw error;
       }
 
-      setShowUploadForm(false);
+      closeUploadForm();
       await fetchDocuments();
       toast.success('Document uploaded');
     } catch (error) {
       console.error('Error uploading student document:', error);
-      toast.error('Failed to upload document');
+      toast.error(studentDocumentUploadFailureMessage(error), { duration: 7000 });
     } finally {
       setUploading(false);
     }
@@ -214,7 +231,10 @@ export const StudentDocumentsTab: React.FC<StudentDocumentsTabProps> = ({ studen
           </div>
           {canManage && (
             <button
-              onClick={() => setShowUploadForm(true)}
+              onClick={() => {
+                setSelectedFile(null);
+                setShowUploadForm(true);
+              }}
               className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
               <Plus className="h-4 w-4" />
@@ -329,7 +349,7 @@ export const StudentDocumentsTab: React.FC<StudentDocumentsTabProps> = ({ studen
                 <h2 className="text-xl font-semibold text-gray-900">Add Student Document</h2>
                 <p className="text-sm text-gray-500 mt-1">{student.name}</p>
               </div>
-              <button onClick={() => setShowUploadForm(false)} className="p-1 text-gray-400 hover:text-gray-600">
+              <button onClick={closeUploadForm} disabled={uploading} className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-50" aria-label="Close document upload">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -338,17 +358,53 @@ export const StudentDocumentsTab: React.FC<StudentDocumentsTabProps> = ({ studen
                 <label className="block text-sm font-medium text-gray-700 mb-2">Document Name</label>
                 <input name="displayName" required placeholder="e.g. RAAus membership card" className={inputClass} />
               </div>
-              <label className="flex flex-col items-center justify-center h-36 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100">
-                <Upload className="h-8 w-8 text-gray-500 mb-2" />
-                <span className="text-sm font-medium text-gray-700">Choose a file</span>
-                <span className="text-xs text-gray-500 mt-1">PDF, image, Word document or spreadsheet</span>
-                <input name="file" type="file" required className="hidden" />
-              </label>
+              <div className="space-y-2" aria-live="polite">
+                <label className={`flex min-h-36 flex-col items-center justify-center rounded-lg border-2 border-dashed px-4 py-5 text-center transition-colors ${selectedFile ? 'border-emerald-400 bg-emerald-50 hover:bg-emerald-100' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'} ${uploading ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
+                  {selectedFile ? (
+                    <>
+                      <CheckCircle2 className="mb-2 h-9 w-9 text-emerald-600" />
+                      <span className="text-xs font-bold uppercase tracking-wide text-emerald-700">Ready to upload</span>
+                      <span className="mt-1 max-w-full break-all text-sm font-semibold text-gray-900">{selectedFile.name}</span>
+                      <span className="mt-1 text-xs text-gray-600">{selectedFile.type || 'Document'} · {formatSize(selectedFile.size)}</span>
+                      <span className="mt-2 text-xs font-medium text-blue-700">Click to replace this file</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="mb-2 h-8 w-8 text-gray-500" />
+                      <span className="text-sm font-medium text-gray-700">Choose a file</span>
+                      <span className="mt-1 text-xs text-gray-500">PDF, image, Word document or spreadsheet · maximum 25 MB</span>
+                    </>
+                  )}
+                  <input
+                    ref={fileInputRef}
+                    name="file"
+                    type="file"
+                    required
+                    disabled={uploading}
+                    className="hidden"
+                    onChange={event => setSelectedFile(event.target.files?.[0] || null)}
+                  />
+                </label>
+                {selectedFile && (
+                  <button
+                    type="button"
+                    disabled={uploading}
+                    onClick={() => {
+                      setSelectedFile(null);
+                      if (fileInputRef.current) fileInputRef.current.value = '';
+                    }}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-red-700 hover:text-red-800 disabled:opacity-50"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    Remove selected file
+                  </button>
+                )}
+              </div>
               <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
-                <button type="button" onClick={() => setShowUploadForm(false)} disabled={uploading} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50">
+                <button type="button" onClick={closeUploadForm} disabled={uploading} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50">
                   Cancel
                 </button>
-                <button type="submit" disabled={uploading} className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                <button type="submit" disabled={uploading || !selectedFile} className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
                   {uploading && <Loader2 className="h-4 w-4 animate-spin" />}
                   Upload Document
                 </button>

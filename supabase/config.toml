@@ -73,3 +73,18 @@ verify_jwt = false
 # Validates the high-entropy kiosk key itself for login. Admin management actions
 # independently require a valid AAL2 administrator session.
 verify_jwt = false
+
+[functions.push-notifications]
+# Supports authenticated device subscription actions and a separately signed
+# database worker request. Both paths validate credentials inside the function.
+verify_jwt = false
+
+[functions.portal-feedback]
+# Validates the bearer token, active profile and staff role inside the function.
+# The email recipient is fixed server-side and submission records are service-role only.
+verify_jwt = false
+
+[functions.guest-booking-emails]
+# Invoked only by the database outbox worker and authenticated with the existing
+# high-entropy internal worker secret. No browser or anonymous email action exists.
+verify_jwt = false

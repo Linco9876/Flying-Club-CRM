@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import { useState } from 'react';
 import { Pencil, Plus, Save, Trash2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -6,6 +7,8 @@ import {
   BookingCancellationReasonInput,
   useBookingCancellationReasons,
 } from '../../hooks/useBookingCancellationReasons';
+import { SettingsLoadError } from './SettingsLoadError';
+import { getCancellationReasonValidationError } from '../../utils/cancellationReasonRules';
 
 interface CancellationReasonsSettingsProps {
   canEdit: boolean;
@@ -21,7 +24,7 @@ const emptyReason = (): BookingCancellationReasonInput => ({
 });
 
 export const CancellationReasonsSettings = ({ canEdit }: CancellationReasonsSettingsProps) => {
-  const { reasons, loading, createReason, updateReason, deleteReason } = useBookingCancellationReasons();
+  const { reasons, loading, error, createReason, updateReason, deleteReason, refetch } = useBookingCancellationReasons();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<BookingCancellationReasonInput | null>(null);
   const [saving, setSaving] = useState(false);
@@ -39,8 +42,10 @@ export const CancellationReasonsSettings = ({ canEdit }: CancellationReasonsSett
   };
 
   const save = async () => {
-    if (!draft?.name.trim()) {
-      toast.error('Enter a cancellation reason name');
+    if (!draft) return;
+    const validationError = getCancellationReasonValidationError(draft, reasons, editingId === 'new' ? null : editingId);
+    if (validationError) {
+      toast.error(validationError);
       return;
     }
     setSaving(true);
@@ -68,6 +73,7 @@ export const CancellationReasonsSettings = ({ canEdit }: CancellationReasonsSett
   };
 
   if (loading) return <p className="text-sm text-gray-500">Loading cancellation reasons...</p>;
+  if (error) return <SettingsLoadError section="Cancellation reasons" error={error} onRetry={refetch} />;
 
   return (
     <div className="space-y-3">
@@ -93,11 +99,11 @@ export const CancellationReasonsSettings = ({ canEdit }: CancellationReasonsSett
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">Fee outcome</label>
-            <select value={draft.feeType} onChange={(e) => setDraft({ ...draft, feeType: e.target.value as BookingCancellationReasonInput['feeType'] })} className="w-full rounded-md border border-gray-300 px-3 py-2">
+            <SearchableSelect value={draft.feeType} onChange={(e) => setDraft({ ...draft, feeType: e.target.value as BookingCancellationReasonInput['feeType'] })} className="w-full rounded-md border border-gray-300 px-3 py-2">
               <option value="none">No fee</option>
               <option value="late_cancel">Late cancellation fee</option>
               <option value="no_show">No-show fee</option>
-            </select>
+            </SearchableSelect>
           </div>
           <div className="md:col-span-2">
             <label className="mb-1 block text-sm font-medium text-gray-700">Description</label>

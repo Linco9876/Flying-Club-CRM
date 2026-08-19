@@ -42,6 +42,8 @@ supabase/.branches/
 
 # Local generated artifacts and scratch work
 output/
+__pycache__/
+*.py[cod]
 .playwright-cli/
 playwright-report/
 test-results/

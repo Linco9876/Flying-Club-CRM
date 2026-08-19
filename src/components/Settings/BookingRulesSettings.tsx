@@ -3,6 +3,8 @@ import { Clock } from 'lucide-react';
 import { useBookingRulesSettings } from '../../hooks/useSettings';
 import { BookingFieldSettings } from './BookingFieldSettings';
 import { CancellationReasonsSettings } from './CancellationReasonsSettings';
+import { getBookingRulesValidationError } from '../../utils/bookingSettingsRules';
+import { SettingsLoadError } from './SettingsLoadError';
 
 interface BookingRulesSettingsProps {
   canEdit: boolean;
@@ -10,7 +12,7 @@ interface BookingRulesSettingsProps {
 }
 
 export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canEdit, onFormChange }) => {
-  const { settings, loading, updateSettings } = useBookingRulesSettings();
+  const { settings, loading, error, updateSettings, refetch } = useBookingRulesSettings();
   const [formData, setFormData] = useState({
     minBookingNoticeHours: 2,
     maxBookingAdvanceDays: 30,
@@ -69,6 +71,13 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
 
   useEffect(() => {
     (window as any).__bookingrulesSettingsSave = async () => {
+      const validationError = getBookingRulesValidationError(formData);
+      if (validationError) throw new Error(validationError);
+      const saveBookingFields = (window as any).__bookingFieldsEmbeddedSave;
+      if (typeof saveBookingFields !== 'function') {
+        throw new Error('Booking form field settings are not ready. Refresh the page and try again.');
+      }
+      await saveBookingFields();
       await updateSettings({
         min_booking_notice_hours: formData.minBookingNoticeHours,
         max_booking_advance_days: formData.maxBookingAdvanceDays,
@@ -94,7 +103,6 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
         fatigue_include_supervision: formData.fatigueIncludeSupervision,
         fatigue_block_on_breach: formData.fatigueBlockOnBreach
       });
-      await (window as any).__bookingFieldsEmbeddedSave?.();
     };
     (window as any).__bookingrulesSettingsCancel = () => {
       if (!settings) return;
@@ -123,7 +131,11 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
         fatigueIncludeSupervision: settings.fatigue_include_supervision ?? true,
         fatigueBlockOnBreach: settings.fatigue_block_on_breach ?? true
       });
-      (window as any).__bookingFieldsEmbeddedCancel?.();
+      const cancelBookingFields = (window as any).__bookingFieldsEmbeddedCancel;
+      if (typeof cancelBookingFields !== 'function') {
+        throw new Error('Booking form field settings are not ready. Refresh the page and try again.');
+      }
+      cancelBookingFields();
     };
     return () => {
       delete (window as any).__bookingrulesSettingsSave;
@@ -143,6 +155,7 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
       </div>
     );
   }
+  if (error) return <SettingsLoadError section="Bookings & Rules" error={error} onRetry={refetch} />;
 
   return (
     <div className="p-6 space-y-8">

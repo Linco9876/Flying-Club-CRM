@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useState, useEffect } from 'react';
 import { X, Save, Calculator, Plane, User } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -254,7 +255,7 @@ export const FlightLogForm: React.FC<FlightLogFormProps> = ({
                 Instructor
               </label>
               {user?.role === 'admin' ? (
-                <select
+                <SearchableSelect
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   defaultValue={booking.instructorId || ''}
                 >
@@ -262,7 +263,7 @@ export const FlightLogForm: React.FC<FlightLogFormProps> = ({
                   {mockStudents.filter(s => s.role === 'instructor').map(inst => (
                     <option key={inst.id} value={inst.id}>{inst.name}</option>
                   ))}
-                </select>
+                </SearchableSelect>
               ) : (
                 <input
                   type="text"

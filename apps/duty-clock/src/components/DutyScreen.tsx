@@ -13,6 +13,8 @@ import { PRIVACY_URL, SUPPORT_URL } from '../config';
 import { AppearanceSelector } from './AppearanceSelector';
 import { InstallPwaButton } from './InstallPwaButton';
 import { DutyHistoryModal } from './DutyHistoryModal';
+import { detachDutyClockPushSubscription, PhoneNotificationsCard } from './PhoneNotificationsCard';
+import { getDutyBreakReminderState } from '../utils/breakReminder';
 
 type Props = { user: User };
 
@@ -42,7 +44,14 @@ export const DutyScreen = ({ user }: Props) => {
   const logout = () => {
     Alert.alert('Sign out?', 'Your active duty will continue running.', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign out', style: 'destructive', onPress: () => void supabase.auth.signOut() },
+      { text: 'Sign out', style: 'destructive', onPress: () => void (async () => {
+        try {
+          await detachDutyClockPushSubscription();
+        } catch (caught) {
+          console.warn('Could not detach Duty Clock phone notifications during sign out', caught);
+        }
+        await supabase.auth.signOut();
+      })() },
     ]);
   };
 
@@ -56,13 +65,45 @@ export const DutyScreen = ({ user }: Props) => {
         <View style={styles.deniedIcon}><Text style={styles.deniedIconText}>!</Text></View>
         <Text style={styles.deniedTitle}>Instructor access required</Text>
         <Text style={styles.deniedText}>Your account is signed in, but it is not assigned an instructor, senior instructor or administrator role.</Text>
-        <View style={styles.deniedButton}><PrimaryButton tone="neutral" onPress={() => void supabase.auth.signOut()}>Sign out</PrimaryButton></View>
+        <View style={styles.deniedButton}><PrimaryButton tone="neutral" onPress={() => void (async () => {
+          try { await detachDutyClockPushSubscription(); } catch { /* Sign out even if the network is unavailable. */ }
+          await supabase.auth.signOut();
+        })()}>Sign out</PrimaryButton></View>
       </SafeAreaView>
     );
   }
 
   const dutyElapsed = context.activeDuty ? now - new Date(context.activeDuty.actualStart).getTime() : 0;
   const breakElapsed = context.activeBreak ? now - new Date(context.activeBreak.startedAt).getTime() : 0;
+  const breakReminder = context.activeDuty ? getDutyBreakReminderState({
+    now,
+    dutyStart: context.activeDuty.actualStart,
+    policyEnabled: context.fatiguePolicy.enabled,
+    requiredAfterMinutes: context.fatiguePolicy.breakRequiredAfterMinutes,
+    minimumBreakMinutes: context.fatiguePolicy.minimumBreakMinutes,
+    recordedBreaks: context.recordedBreaks,
+    activeBreakStart: context.activeBreak?.startedAt,
+  }) : undefined;
+  const breakTitle = context.activeBreak
+    ? formatDuration(breakElapsed)
+    : breakReminder?.state === 'due'
+      ? 'Break required'
+      : breakReminder?.state === 'warning'
+        ? 'Break due soon'
+        : breakReminder?.state === 'satisfied'
+          ? 'Requirement met'
+          : 'Take a break';
+  const breakDetail = context.activeBreak
+    ? `Started ${formatClockTime(context.activeBreak.startedAt)} · remain free of duty for at least ${context.fatiguePolicy.minimumBreakMinutes} min`
+    : breakReminder?.state === 'due'
+      ? `Take at least ${context.fatiguePolicy.minimumBreakMinutes} min free of all duty now.`
+      : breakReminder?.state === 'warning'
+        ? `Due in ${breakReminder.minutesUntilDue} min · take at least ${context.fatiguePolicy.minimumBreakMinutes} min free of duty.`
+        : breakReminder?.state === 'scheduled' && breakReminder.dueAt
+          ? `Required break due by ${formatClockTime(breakReminder.dueAt)}.`
+          : breakReminder?.state === 'satisfied'
+            ? 'A qualifying break has already been recorded for this duty period.'
+            : 'Start this when you are free of all duty.';
 
   return (
     <SafeAreaView role="main" style={styles.safe} edges={['top', 'left', 'right']}>
@@ -111,11 +152,17 @@ export const DutyScreen = ({ user }: Props) => {
               <View style={styles.detailRow}><Text style={styles.detailLabel}>Maximum end</Text><Text style={styles.detailValue}>{formatClockTime(context.activeDuty.maximumEnd)}</Text></View>
             </View>
 
-            <View style={[styles.breakCard, context.activeBreak && styles.breakCardActive]}>
+            <View style={[
+              styles.breakCard,
+              context.activeBreak && styles.breakCardActive,
+              breakReminder?.state === 'warning' && styles.breakCardWarning,
+              breakReminder?.state === 'due' && styles.breakCardDue,
+              breakReminder?.state === 'satisfied' && styles.breakCardSatisfied,
+            ]}>
               <View style={styles.breakCopy}>
-                <Text style={styles.breakEyebrow}>{context.activeBreak ? 'BREAK IN PROGRESS' : 'BREAKS'}</Text>
-                <Text style={styles.breakTitle}>{context.activeBreak ? formatDuration(breakElapsed) : 'Take a break'}</Text>
-                <Text style={styles.breakDetail}>{context.activeBreak ? `Started ${formatClockTime(context.activeBreak.startedAt)}` : 'Start this when you are free of all duty.'}</Text>
+                <Text style={styles.breakEyebrow}>{context.activeBreak ? 'BREAK IN PROGRESS' : breakReminder?.state === 'satisfied' ? 'BREAK COMPLETE' : 'BREAKS'}</Text>
+                <Text style={styles.breakTitle}>{breakTitle}</Text>
+                <Text style={styles.breakDetail}>{breakDetail}</Text>
               </View>
               <Pressable
                 disabled={working}
@@ -156,6 +203,8 @@ export const DutyScreen = ({ user }: Props) => {
         <AppearanceSelector />
       </ScrollView>
 
+      <PhoneNotificationsCard />
+
       <StartDutyModal visible={startVisible} context={context} working={working} onClose={() => setStartVisible(false)} onStart={startDuty} />
       <EndDutyModal visible={endVisible} context={context} working={working} onClose={() => setEndVisible(false)} onEnd={endDuty} />
       <DutyHistoryModal visible={historyVisible} userId={user.id} onClose={() => setHistoryVisible(false)} />
@@ -165,7 +214,7 @@ export const DutyScreen = ({ user }: Props) => {
 
 const createStyles = (colours: AppColours) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colours.background },
-  content: { flexGrow: 1, padding: 20, paddingBottom: 42, gap: 18 },
+  content: { flexGrow: 1, padding: 20, paddingBottom: 82, gap: 18 },
   loading: { flex: 1, backgroundColor: colours.background, alignItems: 'center', justifyContent: 'center', padding: 28 },
   loadingText: { color: colours.muted, marginTop: 12, fontSize: 14 },
   topbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
@@ -199,6 +248,9 @@ const createStyles = (colours: AppColours) => StyleSheet.create({
   detailValue: { color: '#fff', fontSize: 12, fontWeight: '800', flexShrink: 1, textAlign: 'right' },
   breakCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 20, backgroundColor: colours.surface, borderWidth: 1, borderColor: colours.border, padding: 17 },
   breakCardActive: { backgroundColor: colours.amberLight, borderColor: colours.amberBorder },
+  breakCardWarning: { backgroundColor: colours.amberLight, borderColor: colours.amberBorder },
+  breakCardDue: { backgroundColor: colours.redLight, borderColor: colours.red },
+  breakCardSatisfied: { backgroundColor: colours.greenLight, borderColor: colours.greenBorder },
   breakCopy: { flex: 1 },
   breakEyebrow: { color: colours.amber, fontSize: 10, fontWeight: '900', letterSpacing: 1.1 },
   breakTitle: { color: colours.navy, fontSize: 22, fontWeight: '900', marginTop: 3, fontVariant: ['tabular-nums'] },

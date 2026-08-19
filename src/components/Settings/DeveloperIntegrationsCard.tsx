@@ -2,6 +2,7 @@ import React from 'react';
 import { Check, Clipboard, Code2, KeyRound, Loader2, Radio, Webhook } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
+import { SettingsLoadError } from './SettingsLoadError';
 
 const API_SCOPES = [
   ['availability:read', 'Availability'],
@@ -40,19 +41,33 @@ export const DeveloperIntegrationsCard: React.FC<{ canEdit: boolean }> = ({ canE
   const [webhookUrl, setWebhookUrl] = React.useState('');
   const [events, setEvents] = React.useState<string[]>(['bookings.insert', 'bookings.update']);
   const [busy, setBusy] = React.useState('');
+  const [loading, setLoading] = React.useState(true);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
   const [oneTimeSecret, setOneTimeSecret] = React.useState<{ title: string; value: string }>();
 
   const load = React.useCallback(async () => {
-    const [keyResult, webhookResult] = await Promise.all([
-      supabase.from('integration_api_keys').select('id, name, key_prefix, scopes, is_active, expires_at, last_used_at, created_at').order('created_at', { ascending: false }),
-      supabase.from('integration_webhook_endpoints').select('id, name, url, subscribed_events, is_active, last_success_at, last_failure_at').order('created_at', { ascending: false }),
-    ]);
-    if (keyResult.error || webhookResult.error) {
-      toast.error(keyResult.error?.message || webhookResult.error?.message || 'Could not load developer integrations');
-      return;
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const [keyResult, webhookResult] = await Promise.all([
+        supabase.from('integration_api_keys').select('id, name, key_prefix, scopes, is_active, expires_at, last_used_at, created_at').order('created_at', { ascending: false }),
+        supabase.from('integration_webhook_endpoints').select('id, name, url, subscribed_events, is_active, last_success_at, last_failure_at').order('created_at', { ascending: false }),
+      ]);
+      if (keyResult.error || webhookResult.error) {
+        throw keyResult.error || webhookResult.error || new Error('Could not load developer integrations');
+      }
+      setKeys((keyResult.data || []) as ApiKeyRow[]);
+      setWebhooks((webhookResult.data || []) as WebhookRow[]);
+      setLoadError(null);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : 'Could not load developer integrations';
+      setKeys([]);
+      setWebhooks([]);
+      setLoadError(message);
+      toast.error(message);
+    } finally {
+      setLoading(false);
     }
-    setKeys((keyResult.data || []) as ApiKeyRow[]);
-    setWebhooks((webhookResult.data || []) as WebhookRow[]);
   }, []);
 
   React.useEffect(() => { void load(); }, [load]);
@@ -92,6 +107,13 @@ export const DeveloperIntegrationsCard: React.FC<{ canEdit: boolean }> = ({ canE
 
   const toggle = (value: string, values: string[], update: React.Dispatch<React.SetStateAction<string[]>>) =>
     update(values.includes(value) ? values.filter((item) => item !== value) : [...values, value]);
+
+  if (loading) {
+    return <section className="rounded-xl border border-gray-200 bg-white p-5 text-sm text-gray-600"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading developer integrations...</section>;
+  }
+  if (loadError) {
+    return <SettingsLoadError section="Developer integrations" error={loadError} onRetry={load} />;
+  }
 
   return (
     <section className="space-y-6 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">

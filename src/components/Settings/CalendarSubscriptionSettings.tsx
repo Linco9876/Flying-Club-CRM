@@ -2,6 +2,7 @@ import React from 'react';
 import { CalendarClock, Check, Clipboard, ExternalLink, Loader2, RefreshCw, Shield, Smartphone } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { publicSupabaseUrl, supabase } from '../../lib/supabase';
+import { SettingsLoadError } from './SettingsLoadError';
 
 interface CalendarFeedSettings {
   user_id: string;
@@ -44,6 +45,7 @@ const ToggleRow = ({
 export const CalendarSubscriptionSettings: React.FC<CalendarSubscriptionSettingsProps> = ({ userId, canEdit, hasStaffRole }) => {
   const [settings, setSettings] = React.useState<CalendarFeedSettings | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
   const supabaseUrl = publicSupabaseUrl;
@@ -53,6 +55,7 @@ export const CalendarSubscriptionSettings: React.FC<CalendarSubscriptionSettings
   const loadSettings = React.useCallback(async () => {
     if (!userId) return;
     setLoading(true);
+    setLoadError(null);
     try {
       const { data, error } = await supabase
         .from('calendar_feed_settings')
@@ -62,6 +65,7 @@ export const CalendarSubscriptionSettings: React.FC<CalendarSubscriptionSettings
       if (error) throw error;
       if (data) {
         setSettings(data as CalendarFeedSettings);
+        setLoadError(null);
         return;
       }
       if (!canEdit) return;
@@ -72,9 +76,13 @@ export const CalendarSubscriptionSettings: React.FC<CalendarSubscriptionSettings
         .single();
       if (createError) throw createError;
       setSettings(created as CalendarFeedSettings);
+      setLoadError(null);
     } catch (error: unknown) {
       console.error('Could not load calendar subscription:', error);
-      toast.error(error instanceof Error ? error.message : 'Could not load calendar subscription');
+      const message = error instanceof Error ? error.message : 'Could not load calendar subscription';
+      setSettings(null);
+      setLoadError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -129,6 +137,10 @@ export const CalendarSubscriptionSettings: React.FC<CalendarSubscriptionSettings
 
   if (loading) {
     return <div className="flex items-center gap-2 rounded-xl border border-slate-200 p-4 text-sm text-slate-600 dark:border-slate-700 dark:text-slate-300"><Loader2 className="h-4 w-4 animate-spin" />Preparing your private calendar…</div>;
+  }
+
+  if (loadError) {
+    return <SettingsLoadError section="Calendar subscription" error={loadError} onRetry={loadSettings} />;
   }
 
   if (!settings) {

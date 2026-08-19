@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { getCourseAwardDate, getFlightReviewDueDate } from './pilotReviewCurrency.ts';
+import {
+  applyRegulatoryReviewDate,
+  getCourseAwardDate,
+  getFlightReviewDueDate,
+} from './pilotReviewCurrency.ts';
 
 test('course awards use the latest submitted or locked record date', () => {
   const fallback = new Date('2026-08-03T12:00:00+10:00');
@@ -60,4 +64,78 @@ test('course lesson imports hydrate a selected flight-test result before databas
   assert.match(migration, /new\.flight_review_result/i);
   assert.match(migration, /Further training required/i);
   assert.match(migration, /assert_function_permission_manifest/i);
+});
+
+test('a RAAus BFR advances only RAAus currency', () => {
+  assert.deepEqual(applyRegulatoryReviewDate({
+    authority: 'raaus',
+    completedOn: '2026-08-10',
+    resetsFlightReview: true,
+    lastRaausBfrDate: '2024-06-01',
+    lastCasaAfrDate: '2025-03-20',
+  }), {
+    lastRaausBfrDate: '2026-08-10',
+    lastCasaAfrDate: '2025-03-20',
+  });
+});
+
+test('a CASA AFR advances both CASA AFR and RAAus BFR currency', () => {
+  assert.deepEqual(applyRegulatoryReviewDate({
+    authority: 'casa',
+    completedOn: '2026-08-10',
+    resetsFlightReview: true,
+    lastRaausBfrDate: '2025-03-20',
+    lastCasaAfrDate: '2024-06-01',
+  }), {
+    lastRaausBfrDate: '2026-08-10',
+    lastCasaAfrDate: '2026-08-10',
+  });
+});
+
+test('a review without a currency reset changes neither date', () => {
+  assert.deepEqual(applyRegulatoryReviewDate({
+    authority: 'casa',
+    completedOn: '2026-08-10',
+    resetsFlightReview: false,
+    lastRaausBfrDate: '2025-03-20',
+    lastCasaAfrDate: '2024-06-01',
+  }), {
+    lastRaausBfrDate: '2025-03-20',
+    lastCasaAfrDate: '2024-06-01',
+  });
+});
+
+test('split review currency migration keeps authority effects separate and self-service dates safe', () => {
+  const migration = readFileSync(
+    new URL('../../supabase/migrations/20260810113000_split_raaus_bfr_and_casa_afr_currency.sql', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(migration, /last_raaus_bfr_date date/i);
+  assert.match(migration, /last_casa_afr_date date/i);
+  assert.match(migration, /IF v_event\.authority = 'casa'/i);
+  assert.match(migration, /ELSIF v_event\.authority = 'raaus'/i);
+  assert.match(migration, /Flight review dates cannot be in the future/i);
+  assert.match(migration, /Users can insert own safe student profile row/i);
+});
+
+test('passed course flight tests atomically complete the course and grant Pilot status', () => {
+  const migration = readFileSync(
+    new URL('../../supabase/migrations/20260805113000_complete_course_after_passed_flight_test.sql', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS completed_at timestamptz/i);
+  assert.match(migration, /completion_source_training_record_id uuid/i);
+  assert.match(migration, /INSERT INTO public\.student_course_enrolments/i);
+  assert.match(migration, /ON CONFLICT \(student_id, course_id\) DO UPDATE/i);
+  assert.match(migration, /SET status = 'completed'/i);
+  assert.match(migration, /training_record\.status <> 'draft'/i);
+  assert.match(migration, /training_record\.flight_review_result = 'pass'/i);
+  assert.match(migration, /lesson\.is_flight_test/i);
+  assert.match(migration, /VALUES \(target_user_id, 'pilot'\)/i);
+  assert.match(migration, /NEW\.pilot_role_granted :=/i);
+  assert.match(migration, /INSERT INTO public\.endorsements/i);
+  assert.match(migration, /INSERT INTO public\.licences/i);
+  assert.match(migration, /SELECT private\.assert_function_permission_manifest\(\)/i);
 });

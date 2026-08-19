@@ -7,6 +7,7 @@ import {
 } from "../_shared/trialVoucherReadiness.ts";
 import { getConnectedStripeAccountId, stripeHeaders } from "../_shared/stripeConnectAccount.ts";
 import { getActiveStripeMode, stripePriceIdForMode, testModeSubject, type StripeMode } from "../_shared/stripeMode.ts";
+import { brandPortalEmailHtml } from "../_shared/emailBranding.ts";
 
 type SupabaseAdminClient = any;
 
@@ -287,7 +288,7 @@ const sendVoucherAccountSetupEmail = async ({
       sender: { email: senderEmail, name: senderName },
       to: [{ email, name: fullName || email }],
       subject: testModeSubject(isTestMode ? "test" : "live", "Set up your Bendigo Flying Club trial flight booking account"),
-      htmlContent: html,
+      htmlContent: await brandPortalEmailHtml(html),
     }),
   });
 
@@ -297,6 +298,44 @@ const sendVoucherAccountSetupEmail = async ({
   }
 
   return { sent: true, error: null };
+};
+
+const recordTrialBookingConfirmationDelivery = async ({
+  adminClient,
+  booking,
+  recipientEmail,
+  recipientName,
+}: {
+  adminClient: SupabaseAdminClient;
+  booking: any;
+  recipientEmail: string;
+  recipientName: string;
+}) => {
+  if (!booking?.bookingId || !booking?.startTime || !recipientEmail) return;
+  const sentAt = new Date().toISOString();
+  const startEpoch = Math.floor(new Date(booking.startTime).getTime() / 1000);
+  const { error } = await adminClient.from("guest_booking_email_deliveries").upsert({
+    booking_id: booking.bookingId,
+    delivery_kind: "confirmation",
+    recipient_email: recipientEmail.trim().toLowerCase(),
+    recipient_name: recipientName || null,
+    booking_start_time: booking.startTime,
+    scheduled_for: sentAt,
+    status: "sent",
+    source: "trial_voucher_confirmation",
+    dedupe_key: `confirmation:${booking.bookingId}:${recipientEmail.trim().toLowerCase()}:${startEpoch}`,
+    attempt_count: 1,
+    next_attempt_at: sentAt,
+    processing_started_at: null,
+    sent_at: sentAt,
+    last_error: null,
+    updated_at: sentAt,
+  }, { onConflict: "dedupe_key" });
+  if (error) {
+    // The tailored confirmation has already been delivered. Recording failure
+    // must not tell the guest that their successful email failed.
+    console.error("Could not record trial booking confirmation delivery", error);
+  }
 };
 
 const sendTrialBookingConfirmationEmail = async ({
@@ -516,7 +555,7 @@ const sendTrialBookingConfirmationEmail = async ({
         voucher?.stripe_mode === "test" || voucher?.is_test_mode ? "test" : "live",
         isUpdate ? "Your Bendigo Flying Club trial flight booking has been updated" : "Your Bendigo Flying Club trial flight is booked",
       ),
-      htmlContent: html,
+      htmlContent: await brandPortalEmailHtml(html),
       textContent: plainText,
     }),
   });
@@ -525,6 +564,13 @@ const sendTrialBookingConfirmationEmail = async ({
     const body = await response.text();
     return { sent: false, error: body || `Brevo email failed with ${response.status}` };
   }
+
+  await recordTrialBookingConfirmationDelivery({
+    adminClient,
+    booking,
+    recipientEmail: to,
+    recipientName: toName,
+  });
 
   return { sent: true, error: null };
 };

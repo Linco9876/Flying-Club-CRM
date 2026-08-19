@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "reviewed_at": "2026-08-05",
+  "reviewed_at": "2026-08-18",
   "source_project": "Flying Club CRM Australia",
   "rules": {
     "anonymous_token_public": [
@@ -35,6 +35,18 @@
       "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
     },
     {
+      "signature": "public.accept_booking_supervision(p_booking_id uuid)",
+      "name": "accept_booking_supervision",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Authorised senior instructor self-service RPC. The function locks the booking and enforces current authorisation, scope, qualification, duty and capacity before recording an explicit supervision commitment."
+    },
+    {
       "signature": "public.acknowledge_booking_supervision(p_booking_id uuid)",
       "name": "acknowledge_booking_supervision",
       "classification": "authenticated_self_service",
@@ -67,6 +79,18 @@
       "security_definer": true,
       "fixed_search_path": true,
       "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.admin_update_membership_status(p_membership_id uuid, p_legal_status text, p_reason text, p_membership_class_code text)",
+      "name": "admin_update_membership_status",
+      "classification": "staff_aal2",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "MFA-protected administrator legal-status control with class eligibility enforcement, audit history and accounting preservation."
     },
     {
       "signature": "public.apply_booking_conflict_policy()",
@@ -1950,6 +1974,17 @@
       "rationale": "Invoked only by the student review-currency normalisation trigger; client EXECUTE is unnecessary."
     },
     {
+      "signature": "public.claim_guest_booking_email_deliveries(p_limit integer)",
+      "name": "claim_guest_booking_email_deliveries",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Claims the service-only guest booking email outbox after atomically revalidating booking snapshots and applying the twelve-hour reminder suppression rule."
+    },
+    {
       "signature": "public.claim_notification_push_deliveries(p_limit integer)",
       "name": "claim_notification_push_deliveries",
       "classification": "service_worker",
@@ -1959,6 +1994,17 @@
       "security_definer": true,
       "fixed_search_path": true,
       "rationale": "Claims queued Web Push deliveries for the authenticated background worker."
+    },
+    {
+      "signature": "public.invoke_guest_booking_email_worker(p_delivery_id uuid)",
+      "name": "invoke_guest_booking_email_worker",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invokes the protected guest booking email worker from booking triggers and cron."
     },
     {
       "signature": "public.invoke_notification_push_worker(p_notification_id uuid)",

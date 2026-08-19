@@ -33,18 +33,35 @@ test('training records open the signed-in pilot own record', () => {
   );
 });
 
-test('booking notifications open the booking list with the booking identified', () => {
+test('booking notifications open the booking day with the booking identified', () => {
   assert.equal(
     getNotificationDestination({
       type: 'supervision_assigned',
       bookingId,
     }),
-    `/calendar?view=list&bookingId=${bookingId}`
+    `/calendar?view=day&bookingId=${bookingId}`
+  );
+});
+
+test('booking approvals use the same focused day destination', () => {
+  assert.equal(
+    getNotificationDestination({
+      type: 'booking_approval',
+      metadata: { booking_id: bookingId },
+    }),
+    `/calendar?view=day&bookingId=${bookingId}`
   );
 });
 
 test('safe portal metadata routes remain available as a fallback', () => {
   assert.equal(getSafeNotificationRoute('/membership?section=renewal'), '/membership?section=renewal');
+});
+
+test('Duty Clock break reminders open the portal duty record', () => {
+  assert.equal(
+    getNotificationDestination({ type: 'duty_break_reminder', metadata: { route: '/duty' } }),
+    '/duty'
+  );
 });
 
 test('external, protocol-relative and unsupported metadata routes are rejected', () => {
@@ -60,5 +77,16 @@ test('invalid record identifiers do not create a destination', () => {
       metadata: { student_id: '../settings', licence_id: 'not-a-licence' },
     }),
     null
+  );
+});
+
+test('outstanding record notifications target the exact pop-out record', () => {
+  const flightLogId = '77777777-7777-4777-8777-777777777777';
+  assert.equal(
+    getNotificationDestination({
+      type: 'outstanding_record',
+      metadata: { outstanding_flight_log_id: flightLogId },
+    }),
+    `/training/outstanding-records?outstandingFlightLogId=${flightLogId}`,
   );
 });

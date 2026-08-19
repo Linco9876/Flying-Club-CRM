@@ -1,13 +1,16 @@
-import React, { useMemo, useState } from "react";
+import { SearchableSelect } from '../common/SearchableSelect';
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Copy,
   ExternalLink,
   FileUp,
   Loader2,
+  LockKeyhole,
   Pencil,
   Plus,
   Save,
@@ -37,6 +40,11 @@ import {
   FORMAL_REVIEW_FINDINGS_LABEL,
   requiresFormalReviewFindings,
 } from "../../utils/flightReviewFindings";
+import {
+  buildRpcLogbookEntryExample,
+  normaliseRpcEndorsements,
+  rpcEndorsementOptions,
+} from "../../utils/rpcFlightTest";
 import { StudentFileLink } from "../Students/StudentFileLink";
 
 type TemplateStep = "basic" | "rules" | "checklist" | "publish";
@@ -122,6 +130,15 @@ interface FlightReviewRecordEditorProps {
   reviewerName: string;
   currentUserId: string;
   flightComments?: string;
+  endorsementOptions?: string[];
+  linkedFlight?: {
+    id: string;
+    aircraftId?: string;
+    aircraftType?: string;
+    registration?: string;
+    reviewDate?: string;
+    flightMinutes?: number;
+  };
   onClose: () => void;
   onUpdateRecord: ReturnType<typeof useFlightReviews>["updateReview"];
   onUpdateItem: ReturnType<typeof useFlightReviews>["updateItem"];
@@ -141,6 +158,8 @@ export const FlightReviewRecordEditor: React.FC<
   reviewerName,
   currentUserId,
   flightComments,
+  endorsementOptions = [],
+  linkedFlight,
   onClose,
   onUpdateRecord,
   onUpdateItem,
@@ -163,6 +182,10 @@ export const FlightReviewRecordEditor: React.FC<
       record.assessmentDetails.applicantMembershipNumber || "",
     applicantMembershipExpiry:
       record.assessmentDetails.applicantMembershipExpiry || "",
+    examinerMembershipNumber:
+      record.assessmentDetails.examinerMembershipNumber ||
+      record.externalExaminerIdentifier ||
+      "",
     totalFlightHours:
       record.assessmentDetails.totalFlightHours?.toString() || "",
     dualFlightHours: record.assessmentDetails.dualFlightHours?.toString() || "",
@@ -170,8 +193,9 @@ export const FlightReviewRecordEditor: React.FC<
       record.assessmentDetails.commandFlightHours?.toString() || "",
     raausFlightHours:
       record.assessmentDetails.raausFlightHours?.toString() || "",
-    certificateGroup: record.assessmentDetails.certificateGroup || "",
-    endorsementsSought: record.assessmentDetails.endorsementsSought || "",
+    endorsementsSought: normaliseRpcEndorsements(
+      record.assessmentDetails.endorsementsSought,
+    ),
     emergencyPlanConfirmed: record.emergencyPlanConfirmed,
     reviewerSummary: record.reviewerSummary,
     remedialPlan: record.remedialPlan,
@@ -185,9 +209,12 @@ export const FlightReviewRecordEditor: React.FC<
   );
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [endorsementMenuOpen, setEndorsementMenuOpen] = useState(false);
   const [attachmentCategory, setAttachmentCategory] =
     useState<FlightReviewAttachmentCategory>(
-      config.required_evidence[0] || "other",
+      record.reviewType === "raaus_rpc_flight_test"
+        ? "other"
+        : config.required_evidence[0] || "other",
     );
   const groupedItems = useMemo(() => {
     const groups = new Map<string, FlightReviewRecordItem[]>();
@@ -208,14 +235,22 @@ export const FlightReviewRecordEditor: React.FC<
   const belowMinimum =
     Number(form.groundMinutes || 0) < config.minimum_ground_minutes ||
     Number(form.flightMinutes || 0) < config.minimum_flight_minutes;
+  const isRpcFlightTest = record.reviewType === "raaus_rpc_flight_test";
   const requiresLogbookConfirmation =
     record.reviewType === "raaus_bfr" ||
     config.requires_logbook_confirmation === true;
   const requiresAuthorityConfirmation =
-    record.reviewType === "raaus_bfr" ||
-    config.requires_authority_submission_confirmation === true;
+    !isRpcFlightTest && (
+      record.reviewType === "raaus_bfr" ||
+      config.requires_authority_submission_confirmation === true
+    );
   const isPassFail = config.outcome_scheme === "pass_fail";
-  const isRpcFlightTest = record.reviewType === "raaus_rpc_flight_test";
+  const isLinkedToLoggedFlight = Boolean(linkedFlight?.id || record.flightLogId);
+  const aircraftInputsLocked = form.status === "draft" && isLinkedToLoggedFlight;
+  const availableEndorsements = useMemo(
+    () => rpcEndorsementOptions(endorsementOptions, form.endorsementsSought),
+    [endorsementOptions, form.endorsementsSought],
+  );
   const rpcDetailsComplete =
     !isRpcFlightTest ||
     (Boolean(form.applicantMembershipNumber.trim()) &&
@@ -224,8 +259,54 @@ export const FlightReviewRecordEditor: React.FC<
       Boolean(form.dualFlightHours) &&
       Boolean(form.commandFlightHours) &&
       Boolean(form.raausFlightHours) &&
-      Boolean(form.certificateGroup.trim()) &&
-      Boolean(form.endorsementsSought.trim()));
+      form.endorsementsSought.length > 0);
+  const logbookEntryExample = useMemo(
+    () => buildRpcLogbookEntryExample({
+      reviewDate: form.completionDate || form.reviewDate,
+      aircraftType: form.aircraftType,
+      registration: form.registration,
+      flightMinutes: Number(form.flightMinutes || 0),
+      endorsements: form.endorsementsSought,
+      reviewerName: form.reviewerSignName || reviewerName,
+      reviewerIdentifier: form.examinerMembershipNumber,
+      outcome: form.status === "completed"
+        ? "passed"
+        : form.status === "further_training_required"
+          ? "further_training_required"
+          : "pending",
+    }),
+    [
+      form.aircraftType,
+      form.completionDate,
+      form.endorsementsSought,
+      form.examinerMembershipNumber,
+      form.flightMinutes,
+      form.registration,
+      form.reviewDate,
+      form.reviewerSignName,
+      form.status,
+      reviewerName,
+    ],
+  );
+
+  useEffect(() => {
+    if (!linkedFlight?.id) return;
+    setForm(current => ({
+      ...current,
+      aircraftType: linkedFlight.aircraftType || current.aircraftType,
+      registration: linkedFlight.registration || current.registration,
+      reviewDate: linkedFlight.reviewDate || current.reviewDate,
+      flightMinutes: linkedFlight.flightMinutes !== undefined
+        ? String(linkedFlight.flightMinutes)
+        : current.flightMinutes,
+    }));
+  }, [
+    linkedFlight?.aircraftType,
+    linkedFlight?.flightMinutes,
+    linkedFlight?.id,
+    linkedFlight?.registration,
+    linkedFlight?.reviewDate,
+  ]);
 
   const save = async (statusOverride?: FlightReviewStatus) => {
     const nextStatus = statusOverride || form.status;
@@ -236,7 +317,7 @@ export const FlightReviewRecordEditor: React.FC<
       return;
     }
     if (nextStatus === "completed" && !rpcDetailsComplete) {
-      toast.error("Complete the RPC001 applicant and aeronautical experience details");
+      toast.error("Complete the RPC applicant and aeronautical experience details");
       return;
     }
     if (requiresFormalReviewFindings({
@@ -273,19 +354,25 @@ export const FlightReviewRecordEditor: React.FC<
           nextStatus === "completed" ? form.completionDate : undefined,
         groundMinutes: Math.max(0, Number(form.groundMinutes || 0)),
         flightMinutes: Math.max(0, Number(form.flightMinutes || 0)),
+        flightLogId: linkedFlight?.id || record.flightLogId,
+        aircraftId: linkedFlight?.aircraftId || record.aircraftId,
         aircraftType: form.aircraftType.trim(),
         registration: form.registration.trim(),
-        aircraftGroup: form.aircraftGroup.trim(),
+        aircraftGroup: isRpcFlightTest
+          ? record.aircraftGroup
+          : form.aircraftGroup.trim(),
         candidateObjectives: form.candidateObjectives.trim(),
         assessmentDetails: {
+          ...record.assessmentDetails,
           applicantMembershipNumber: form.applicantMembershipNumber.trim(),
           applicantMembershipExpiry: form.applicantMembershipExpiry,
+          examinerMembershipNumber: form.examinerMembershipNumber.trim(),
           totalFlightHours: Number(form.totalFlightHours || 0),
           dualFlightHours: Number(form.dualFlightHours || 0),
           commandFlightHours: Number(form.commandFlightHours || 0),
           raausFlightHours: Number(form.raausFlightHours || 0),
-          certificateGroup: form.certificateGroup.trim(),
-          endorsementsSought: form.endorsementsSought.trim(),
+          certificateGroup: undefined,
+          endorsementsSought: form.endorsementsSought,
         },
         emergencyPlanConfirmed: form.emergencyPlanConfirmed,
         reviewerSummary: form.reviewerSummary.trim(),
@@ -432,56 +519,67 @@ export const FlightReviewRecordEditor: React.FC<
                     min="0"
                     step="5"
                     value={form.flightMinutes}
+                    disabled={aircraftInputsLocked}
                     onChange={(event) =>
                       setForm((current) => ({
                         ...current,
                         flightMinutes: event.target.value,
                       }))
                     }
-                    className={inputClass}
+                    className={`${inputClass} disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-600 dark:disabled:bg-[#252a33] dark:disabled:text-gray-300`}
                   />
                 </label>
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
                   Aircraft type
                   <input
                     value={form.aircraftType}
+                    disabled={aircraftInputsLocked}
                     onChange={(event) =>
                       setForm((current) => ({
                         ...current,
                         aircraftType: event.target.value,
                       }))
                     }
-                    className={inputClass}
+                    className={`${inputClass} disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-600 dark:disabled:bg-[#252a33] dark:disabled:text-gray-300`}
                   />
                 </label>
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
                   Registration
                   <input
                     value={form.registration}
+                    disabled={aircraftInputsLocked}
                     onChange={(event) =>
                       setForm((current) => ({
                         ...current,
                         registration: event.target.value,
                       }))
                     }
-                    className={inputClass}
+                    className={`${inputClass} disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-600 dark:disabled:bg-[#252a33] dark:disabled:text-gray-300`}
                   />
                 </label>
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                  Aircraft group
-                  <input
-                    value={form.aircraftGroup}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        aircraftGroup: event.target.value,
-                      }))
-                    }
-                    placeholder="e.g. Group A"
-                    className={inputClass}
-                  />
-                </label>
+                {!isRpcFlightTest && (
+                  <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                    Aircraft group
+                    <input
+                      value={form.aircraftGroup}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          aircraftGroup: event.target.value,
+                        }))
+                      }
+                      placeholder="e.g. Group A"
+                      className={inputClass}
+                    />
+                  </label>
+                )}
               </div>
+              {aircraftInputsLocked && (
+                <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-blue-700 dark:text-blue-300">
+                  <LockKeyhole className="h-3.5 w-3.5" />
+                  Aircraft details and flight time are prefilled from the linked logged flight and locked while this record is a draft.
+                </p>
+              )}
               <label className="mt-4 block text-sm font-medium text-gray-700 dark:text-gray-200">
                 Candidate objectives
                 <textarea
@@ -500,7 +598,7 @@ export const FlightReviewRecordEditor: React.FC<
                 <div className="mt-5 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-500/25 dark:bg-blue-500/10">
                   <div>
                     <h4 className="font-bold text-blue-950 dark:text-blue-100">
-                      RPC001 applicant and experience details
+                      RPC applicant and experience details
                     </h4>
                     <p className="mt-1 text-xs leading-5 text-blue-800 dark:text-blue-200">
                       Record the details used by the examiner to confirm eligibility for initial RPC issue.
@@ -535,33 +633,84 @@ export const FlightReviewRecordEditor: React.FC<
                       />
                     </label>
                     <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                      Certificate aircraft group
+                      Examiner RAAus number
                       <input
-                        value={form.certificateGroup}
+                        value={form.examinerMembershipNumber}
                         onChange={(event) =>
                           setForm((current) => ({
                             ...current,
-                            certificateGroup: event.target.value,
+                            examinerMembershipNumber: event.target.value,
                           }))
                         }
-                        placeholder="e.g. Group A"
+                        placeholder="Prefilled for club examiners"
                         className={inputClass}
                       />
                     </label>
-                    <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                    <div className="relative text-sm font-medium text-gray-700 dark:text-gray-200 sm:col-span-2">
                       Endorsements to issue
-                      <input
-                        value={form.endorsementsSought}
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            endorsementsSought: event.target.value,
-                          }))
-                        }
-                        placeholder="e.g. HF, Radio"
-                        className={inputClass}
-                      />
-                    </label>
+                      <button
+                        type="button"
+                        aria-expanded={endorsementMenuOpen}
+                        onClick={() => setEndorsementMenuOpen(open => !open)}
+                        className={`${inputClass} flex items-center justify-between gap-3 text-left`}
+                      >
+                        <span className={form.endorsementsSought.length > 0 ? "text-gray-950 dark:text-gray-100" : "text-gray-500"}>
+                          {form.endorsementsSought.length > 0
+                            ? `${form.endorsementsSought.length} selected`
+                            : "Select one or more endorsements"}
+                        </span>
+                        <ChevronDown className={`h-4 w-4 shrink-0 transition ${endorsementMenuOpen ? "rotate-180" : ""}`} />
+                      </button>
+                      {endorsementMenuOpen && (
+                        <div className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white p-2 shadow-xl dark:border-[#39414d] dark:bg-[#171a21]">
+                          {availableEndorsements.map(option => {
+                            const selected = form.endorsementsSought.includes(option);
+                            return (
+                              <label key={option} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-md px-3 py-2 hover:bg-blue-50 dark:hover:bg-blue-500/10">
+                                <input
+                                  type="checkbox"
+                                  checked={selected}
+                                  onChange={() => setForm(current => ({
+                                    ...current,
+                                    endorsementsSought: selected
+                                      ? current.endorsementsSought.filter(value => value !== option)
+                                      : [...current.endorsementsSought, option],
+                                  }))}
+                                  className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                                />
+                                <span>{option}</span>
+                              </label>
+                            );
+                          })}
+                          <button
+                            type="button"
+                            onClick={() => setEndorsementMenuOpen(false)}
+                            className="mt-1 min-h-10 w-full rounded-md bg-blue-600 px-3 py-2 text-sm font-bold text-white hover:bg-blue-500"
+                          >
+                            Done
+                          </button>
+                        </div>
+                      )}
+                      {form.endorsementsSought.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {form.endorsementsSought.map(option => (
+                            <button
+                              key={option}
+                              type="button"
+                              onClick={() => setForm(current => ({
+                                ...current,
+                                endorsementsSought: current.endorsementsSought.filter(value => value !== option),
+                              }))}
+                              className="inline-flex min-h-8 items-center gap-1 rounded-full bg-blue-100 px-2.5 py-1 text-xs font-bold text-blue-800 dark:bg-blue-500/15 dark:text-blue-200"
+                              title={`Remove ${option}`}
+                            >
+                              {option}
+                              <X className="h-3 w-3" />
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     {[
                       ["totalFlightHours", "Total flight hours"],
                       ["dualFlightHours", "Dual hours"],
@@ -691,7 +840,7 @@ export const FlightReviewRecordEditor: React.FC<
                                     </p>
                                   )}
                                 </div>
-                                <select
+                                <SearchableSelect
                                   value={item.result}
                                   onChange={async (event) => {
                                     try {
@@ -723,7 +872,7 @@ export const FlightReviewRecordEditor: React.FC<
                                       Not applicable
                                     </option>
                                   )}
-                                </select>
+                                </SearchableSelect>
                               </div>
                               <textarea
                                 defaultValue={item.notes}
@@ -822,6 +971,38 @@ export const FlightReviewRecordEditor: React.FC<
                   />
                 </label>
               )}
+              {isRpcFlightTest && (
+                <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-500/25 dark:bg-blue-500/10">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h4 className="font-bold text-blue-950 dark:text-blue-100">
+                        Example student logbook entry
+                      </h4>
+                      <p className="mt-1 text-xs leading-5 text-blue-800 dark:text-blue-200">
+                        Reference wording for the examiner. Check the result, hours and endorsements before signing the student's logbook.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(logbookEntryExample);
+                          toast.success("Logbook example copied");
+                        } catch {
+                          toast.error("Could not copy the logbook example");
+                        }
+                      }}
+                      className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-blue-300 bg-white px-3 py-2 text-xs font-bold text-blue-800 hover:bg-blue-100 dark:border-blue-500/30 dark:bg-[#11141a] dark:text-blue-200"
+                    >
+                      <Copy className="h-4 w-4" />
+                      Copy entry
+                    </button>
+                  </div>
+                  <p className="mt-3 rounded-lg border border-blue-100 bg-white p-3 text-sm leading-6 text-gray-800 dark:border-blue-500/20 dark:bg-[#11141a] dark:text-gray-100">
+                    {logbookEntryExample}
+                  </p>
+                </div>
+              )}
               {(requiresLogbookConfirmation ||
                 requiresAuthorityConfirmation) && (
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -865,12 +1046,14 @@ export const FlightReviewRecordEditor: React.FC<
           <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
             <section className={`${panelClass} p-4`}>
               <h3 className="font-bold text-gray-950 dark:text-gray-100">
-                Evidence
+                {isRpcFlightTest ? "Optional attachments" : "Evidence"}
               </h3>
               <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
-                Files are private to the candidate and authorised staff.
+                {isRpcFlightTest
+                  ? "No authority form or supporting evidence is required. Add a private file only when it is genuinely useful."
+                  : "Files are private to the candidate and authorised staff."}
               </p>
-              {config.required_evidence.length > 0 && (
+              {!isRpcFlightTest && config.required_evidence.length > 0 && (
                 <p className="mt-2 text-xs font-semibold text-amber-700 dark:text-amber-300">
                   Required:{" "}
                   {config.required_evidence
@@ -878,7 +1061,7 @@ export const FlightReviewRecordEditor: React.FC<
                     .join(", ")}
                 </p>
               )}
-              <select
+              <SearchableSelect
                 value={attachmentCategory}
                 onChange={(event) =>
                   setAttachmentCategory(
@@ -887,19 +1070,21 @@ export const FlightReviewRecordEditor: React.FC<
                 }
                 className={inputClass}
               >
-                {Object.entries(evidenceLabels).map(([value, label]) => (
+                {Object.entries(evidenceLabels)
+                  .filter(([value]) => !isRpcFlightTest || value !== "authority_form")
+                  .map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
               <label className="mt-3 flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-blue-300 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-100 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-200">
                 {uploading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <FileUp className="h-4 w-4" />
                 )}{" "}
-                Upload evidence
+                Upload optional file
                 <input
                   type="file"
                   className="sr-only"
@@ -942,7 +1127,7 @@ export const FlightReviewRecordEditor: React.FC<
               <h3 className="font-bold text-gray-950 dark:text-gray-100">
                 Save or complete
               </h3>
-              <select
+              <SearchableSelect
                 value={form.status}
                 onChange={(event) =>
                   setForm((current) => ({
@@ -958,7 +1143,7 @@ export const FlightReviewRecordEditor: React.FC<
                   Further training required
                 </option>
                 <option value="cancelled">Cancelled</option>
-              </select>
+              </SearchableSelect>
               <button
                 type="button"
                 onClick={() => void save()}
@@ -1337,7 +1522,7 @@ export const FlightReviewWorkspace: React.FC = () => {
                   </label>
                   <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
                     Template type
-                    <select
+                    <SearchableSelect
                       value={editingTemplate.coursePurpose}
                       onChange={(event) =>
                         setEditingTemplate(
@@ -1356,7 +1541,7 @@ export const FlightReviewWorkspace: React.FC = () => {
                       <option value="proficiency_check">
                         Proficiency check
                       </option>
-                    </select>
+                    </SearchableSelect>
                   </label>
                   <label className="sm:col-span-2 text-sm font-medium text-gray-700 dark:text-gray-200">
                     Description
@@ -1422,7 +1607,7 @@ export const FlightReviewWorkspace: React.FC = () => {
                   </label>
                   <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
                     Authority
-                    <select
+                    <SearchableSelect
                       value={editingTemplate.configuration.authority}
                       onChange={(event) =>
                         setEditingTemplate(
@@ -1443,7 +1628,7 @@ export const FlightReviewWorkspace: React.FC = () => {
                       <option value="casa">CASA</option>
                       <option value="club">Club</option>
                       <option value="other">Other</option>
-                    </select>
+                    </SearchableSelect>
                   </label>
                   <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
                     Minimum ground minutes
@@ -1520,7 +1705,7 @@ export const FlightReviewWorkspace: React.FC = () => {
                   </label>
                   <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
                     Outcome wording
-                    <select
+                    <SearchableSelect
                       value={editingTemplate.configuration.outcome_scheme}
                       onChange={(event) =>
                         setEditingTemplate(
@@ -1541,7 +1726,7 @@ export const FlightReviewWorkspace: React.FC = () => {
                         Completed / further training
                       </option>
                       <option value="pass_fail">Pass / fail</option>
-                    </select>
+                    </SearchableSelect>
                   </label>
                   <div className="sm:col-span-2 grid gap-3 md:grid-cols-2">
                     <label className="flex items-start gap-3 rounded-lg border border-gray-200 p-3 text-sm dark:border-[#343b46]">
@@ -2194,7 +2379,7 @@ export const FlightReviewWorkspace: React.FC = () => {
                   </div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">
                     Template status
-                    <select
+                    <SearchableSelect
                       value={editingTemplate.status}
                       onChange={(event) =>
                         setEditingTemplate(
@@ -2210,7 +2395,7 @@ export const FlightReviewWorkspace: React.FC = () => {
                     >
                       <option value="draft">Draft</option>
                       <option value="published">Published</option>
-                    </select>
+                    </SearchableSelect>
                   </label>
                   <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-100">
                     <strong>Version safety:</strong> records already started

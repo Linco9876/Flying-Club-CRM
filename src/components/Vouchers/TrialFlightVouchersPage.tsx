@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CalendarDays, CheckCircle, Copy, Download, ExternalLink, Loader2, Mail, Maximize2, Minimize2, Pencil, Plane, Plus, Save, Search, ShieldCheck, Ticket, Users, XCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -2467,7 +2468,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
             <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">Issue voucher</h2>
             <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">Issue paid vouchers, send Stripe payment links, or pay from a member prepaid account.</p>
             <div className="grid gap-3">
-              <select value={issueForm.productId} onChange={e => setIssueForm(f => ({ ...f, productId: e.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100">
+              <SearchableSelect value={issueForm.productId} onChange={e => setIssueForm(f => ({ ...f, productId: e.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100">
                 <option value="">Select voucher product</option>
                 {activeProducts.map(product => {
                   const readiness = bookingReadiness(product);
@@ -2477,7 +2478,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
                     </option>
                   );
                 })}
-              </select>
+              </SearchableSelect>
               {selectedProduct && (
                 <div className={`rounded-lg border p-3 text-sm ${
                   selectedProductIsIssueable
@@ -2507,7 +2508,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
               )}
               <label className="text-sm text-gray-600 dark:text-gray-300">
                 Payment handling
-                <select
+                <SearchableSelect
                   value={issueForm.paymentHandling}
                   onChange={e => setIssueForm(f => ({ ...f, paymentHandling: e.target.value as VoucherIssuePaymentHandling }))}
                   className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100"
@@ -2516,7 +2517,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
                   <option value="stripe_link">Send payment link</option>
                   <option value="prepaid">Pay using prepaid account</option>
                   <option value="waived">Complimentary / waived</option>
-                </select>
+                </SearchableSelect>
               </label>
               {issueForm.paymentHandling === 'paid' && (
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs leading-5 text-emerald-900 dark:border-emerald-400/30 dark:bg-emerald-950/30 dark:text-emerald-100">
@@ -2545,7 +2546,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
                     placeholder="Search member by name, email, phone, RAAus or CASA..."
                     className="rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm dark:border-sky-400/30 dark:bg-[#111827] dark:text-gray-100"
                   />
-                  <select
+                  <SearchableSelect
                     value={issueForm.prepaidPayerUserId}
                     onChange={e => setIssueForm(f => ({ ...f, prepaidPayerUserId: e.target.value }))}
                     className="rounded-lg border border-sky-200 bg-white px-3 py-2 dark:border-sky-400/30 dark:bg-[#111827] dark:text-gray-100"
@@ -2556,7 +2557,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
                         {member.name} - {member.email}
                       </option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                   {selectedPrepaidMember && selectedProduct && (
                     <div className="rounded-lg bg-sky-100 px-3 py-2 text-xs leading-5 text-sky-900 dark:bg-sky-950/40 dark:text-sky-100">
                       Verified prepaid funds are checked when the voucher is issued. The member needs a positive verified prepaid balance and enough funds to cover the voucher. Top-ups can only be made in $1,000 increments.

@@ -7,10 +7,13 @@ import { supabase } from '../lib/supabase';
 import { statutoryRegisterCsv } from '../utils/membershipSettings';
 import {
   ClubMembership,
+  MembershipChangeRequest,
+  MembershipChangeTiming,
   MembershipApplication,
   MembershipClass,
   MembershipFeeDisposition,
   MembershipFinancialPeriod,
+  MembershipLegalStatus,
   MembershipPaymentMethod,
   MembershipPaymentPreference,
   MembershipRolloutMode,
@@ -61,7 +64,7 @@ interface ClubMembershipRow {
   commencement_method: ClubMembership['commencementMethod'];
   ended_at: string | null;
   end_reason: string | null;
-  member?: { name?: string; email?: string; xero_contact_id?: string | null } | null;
+  member?: { name?: string; email?: string; is_active?: boolean | null; xero_contact_id?: string | null; date_of_birth?: string | null } | null;
   membership_class?: {
     name?: string;
     code?: MembershipClass['code'];
@@ -114,6 +117,40 @@ interface MembershipPaymentPreferenceRow {
   last_collection_status: string | null;
   last_collection_error: string | null;
   updated_at: string;
+}
+
+interface MembershipChangeRequestRow {
+  id: string;
+  membership_id: string;
+  user_id: string;
+  from_membership_class_id: string;
+  to_membership_class_id: string;
+  status: MembershipChangeRequest['status'];
+  requested_effective_timing: MembershipChangeTiming;
+  effective_on: string;
+  request_reason: string;
+  requested_by: string | null;
+  submitted_at: string;
+  decided_at: string | null;
+  decided_by: string | null;
+  decision_reason: string | null;
+  applied_at: string | null;
+  member?: { name?: string; email?: string } | null;
+  from_membership_class?: { name?: string; code?: string } | null;
+  to_membership_class?: { name?: string; code?: string } | null;
+}
+
+export interface LegacyMembershipImportInput {
+  userId: string;
+  membershipClassCode: string;
+  commencedAt: string;
+  feeDisposition: 'invoice_required' | 'paid' | 'waived';
+  reason?: string;
+}
+
+export interface LegacyMembershipImportResult extends LegacyMembershipImportInput {
+  success: boolean;
+  error?: string;
 }
 
 const errorMessage = (error: unknown, fallback: string) => {
@@ -170,11 +207,37 @@ const mapMembership = (row: ClubMembershipRow): ClubMembership => ({
   endReason: row.end_reason,
   userName: row.member?.name,
   userEmail: row.member?.email,
+  userIsActive: row.member?.is_active !== false,
   xeroLinked: Boolean(row.member?.xero_contact_id),
   membershipClassName: row.membership_class?.name,
   membershipClassCode: row.membership_class?.code,
   hasVotingRights: Boolean(row.membership_class?.has_voting_rights),
   canSelfBookAircraft: row.membership_class?.can_self_book_aircraft !== false,
+  dateOfBirth: row.member?.date_of_birth,
+});
+
+const mapChangeRequest = (row: MembershipChangeRequestRow): MembershipChangeRequest => ({
+  id: row.id,
+  membershipId: row.membership_id,
+  userId: row.user_id,
+  fromMembershipClassId: row.from_membership_class_id,
+  toMembershipClassId: row.to_membership_class_id,
+  status: row.status,
+  requestedEffectiveTiming: row.requested_effective_timing,
+  effectiveOn: row.effective_on,
+  requestReason: row.request_reason,
+  requestedBy: row.requested_by,
+  submittedAt: row.submitted_at,
+  decidedAt: row.decided_at,
+  decidedBy: row.decided_by,
+  decisionReason: row.decision_reason,
+  appliedAt: row.applied_at,
+  userName: row.member?.name,
+  userEmail: row.member?.email,
+  fromMembershipClassName: row.from_membership_class?.name,
+  fromMembershipClassCode: row.from_membership_class?.code,
+  toMembershipClassName: row.to_membership_class?.name,
+  toMembershipClassCode: row.to_membership_class?.code,
 });
 
 const mapPeriod = (row: MembershipFinancialPeriodRow): MembershipFinancialPeriod => ({
@@ -230,6 +293,7 @@ export const useMembership = () => {
   const [classes, setClasses] = useState<MembershipClass[]>([]);
   const [applications, setApplications] = useState<MembershipApplication[]>([]);
   const [memberships, setMemberships] = useState<ClubMembership[]>([]);
+  const [changeRequests, setChangeRequests] = useState<MembershipChangeRequest[]>([]);
   const [periods, setPeriods] = useState<MembershipFinancialPeriod[]>([]);
   const [paymentPreferences, setPaymentPreferences] = useState<MembershipPaymentPreference[]>([]);
   const [settings, setSettings] = useState<MembershipSettings>({
@@ -265,7 +329,7 @@ export const useMembership = () => {
     if (!user?.id) return;
     setLoading(true);
     try {
-      const [classesResult, settingsResult, applicationsResult, membershipsResult, periodsResult, preferencesResult] = await Promise.all([
+      const [classesResult, settingsResult, applicationsResult, membershipsResult, changeRequestsResult, periodsResult, preferencesResult] = await Promise.all([
         supabase.from('membership_classes').select('*').order('sort_order'),
         supabase.from('membership_settings').select('*').eq('id', true).maybeSingle(),
         supabase.from('membership_applications').select(`
@@ -275,18 +339,25 @@ export const useMembership = () => {
         `).order('submitted_at', { ascending: false }),
         supabase.from('club_memberships').select(`
           *,
-          member:users!club_memberships_user_id_fkey(name,email,xero_contact_id),
+          member:users!club_memberships_user_id_fkey(name,email,is_active,xero_contact_id,date_of_birth),
           membership_class:membership_classes!club_memberships_membership_class_id_fkey(name,code,has_voting_rights,can_self_book_aircraft)
         `).order('commenced_at', { ascending: false }),
+        supabase.from('membership_change_requests').select(`
+          *,
+          member:users!membership_change_requests_user_id_fkey(name,email),
+          from_membership_class:membership_classes!membership_change_requests_from_membership_class_id_fkey(name,code),
+          to_membership_class:membership_classes!membership_change_requests_to_membership_class_id_fkey(name,code)
+        `).order('submitted_at', { ascending: false }),
         supabase.from('membership_financial_periods').select('*').order('financial_year_start', { ascending: false }),
         supabase.from('membership_payment_preferences').select('*'),
       ]);
 
-      const firstError = classesResult.error || settingsResult.error || applicationsResult.error || membershipsResult.error || periodsResult.error || preferencesResult.error;
+      const firstError = classesResult.error || settingsResult.error || applicationsResult.error || membershipsResult.error || changeRequestsResult.error || periodsResult.error || preferencesResult.error;
       if (firstError) throw firstError;
       setClasses(((classesResult.data || []) as MembershipClassRow[]).map(mapClass));
       setApplications(((applicationsResult.data || []) as MembershipApplicationRow[]).map(mapApplication));
       setMemberships(((membershipsResult.data || []) as ClubMembershipRow[]).map(mapMembership));
+      setChangeRequests(((changeRequestsResult.data || []) as MembershipChangeRequestRow[]).map(mapChangeRequest));
       setPeriods(((periodsResult.data || []) as MembershipFinancialPeriodRow[]).map(mapPeriod));
       setPaymentPreferences(((preferencesResult.data || []) as MembershipPaymentPreferenceRow[]).map(mapPaymentPreference));
       if (settingsResult.data) {
@@ -471,13 +542,7 @@ export const useMembership = () => {
       if (rpcError) throw rpcError;
     }, 'Membership fee waiver authorised');
 
-  const importLegacyMembership = (input: {
-    userId: string;
-    membershipClassCode: string;
-    commencedAt: string;
-    feeDisposition: 'invoice_required' | 'paid' | 'waived';
-    reason?: string;
-  }) => runAction('membership:import', async () => {
+  const importLegacyMembership = (input: LegacyMembershipImportInput) => runAction('membership:import', async () => {
     const { data, error: rpcError } = await supabase.rpc('import_legacy_membership', {
       p_user_id: input.userId,
       p_membership_class_code: input.membershipClassCode,
@@ -488,6 +553,48 @@ export const useMembership = () => {
     if (rpcError) throw rpcError;
     return data;
   }, 'Existing member added to the BFC register');
+
+  const importLegacyMembershipCsv = async (inputs: LegacyMembershipImportInput[]) => {
+    setBusyAction('membership:csv-import');
+    const results: LegacyMembershipImportResult[] = [];
+    try {
+      // Keep database pressure predictable for large opening-register files.
+      // Each RPC remains independently audited by the existing server function.
+      for (let offset = 0; offset < inputs.length; offset += 5) {
+        const batch = inputs.slice(offset, offset + 5);
+        const batchResults = await Promise.all(batch.map(async (input): Promise<LegacyMembershipImportResult> => {
+          try {
+            const { error: rpcError } = await supabase.rpc('import_legacy_membership', {
+              p_user_id: input.userId,
+              p_membership_class_code: input.membershipClassCode,
+              p_commenced_at: input.commencedAt,
+              p_fee_disposition: input.feeDisposition,
+              p_reason: input.reason || null,
+            });
+            return rpcError
+              ? { ...input, success: false, error: rpcError.message }
+              : { ...input, success: true };
+          } catch (importError) {
+            return {
+              ...input,
+              success: false,
+              error: errorMessage(importError, 'The member import request could not be completed.'),
+            };
+          }
+        }));
+        results.push(...batchResults);
+      }
+
+      await refetch();
+      const imported = results.filter(result => result.success).length;
+      const failed = results.length - imported;
+      if (imported > 0) toast.success(`${imported} existing member${imported === 1 ? '' : 's'} added to the BFC register`);
+      if (failed > 0) toast.error(`${failed} member${failed === 1 ? '' : 's'} could not be imported. Review the row results.`);
+      return results;
+    } finally {
+      setBusyAction(null);
+    }
+  };
 
   const createOrRefreshXeroInvoice = (periodId: string) =>
     runAction(`xero:${periodId}`, async () => {
@@ -604,6 +711,74 @@ export const useMembership = () => {
       ? 'Membership cancelled'
       : 'Membership application withdrawn');
 
+  const requestMembershipChange = (input: {
+    toMembershipClassCode: string;
+    effectiveTiming: MembershipChangeTiming;
+    reason: string;
+  }) => runAction('membership-change:request', async () => {
+    const { data, error: rpcError } = await supabase.rpc('request_membership_change', {
+      p_to_membership_class_code: input.toMembershipClassCode,
+      p_effective_timing: input.effectiveTiming,
+      p_reason: input.reason,
+    });
+    if (rpcError) throw rpcError;
+    return data;
+  }, 'Membership change request submitted');
+
+  const cancelMembershipChange = (requestId: string) =>
+    runAction(`membership-change:${requestId}`, async () => {
+      const { error: rpcError } = await supabase.rpc('cancel_membership_change_request', {
+        p_request_id: requestId,
+      });
+      if (rpcError) throw rpcError;
+    }, 'Membership change request cancelled');
+
+  const decideMembershipChange = (
+    requestId: string,
+    decision: 'approve' | 'reject',
+    reason: string,
+  ) => runAction(`membership-change:${requestId}`, async () => {
+    const { data, error: rpcError } = await supabase.rpc('decide_membership_change_request', {
+      p_request_id: requestId,
+      p_decision: decision,
+      p_reason: reason,
+    });
+    if (rpcError) throw rpcError;
+    return data;
+  }, decision === 'approve' ? 'Membership change approved' : 'Membership change rejected');
+
+  const changeMembership = (input: {
+    membershipId: string;
+    toMembershipClassCode: string;
+    effectiveTiming: MembershipChangeTiming;
+    reason: string;
+  }) => runAction(`membership-change:${input.membershipId}`, async () => {
+    const { data, error: rpcError } = await supabase.rpc('admin_change_membership', {
+      p_membership_id: input.membershipId,
+      p_to_membership_class_code: input.toMembershipClassCode,
+      p_effective_timing: input.effectiveTiming,
+      p_reason: input.reason,
+    });
+    if (rpcError) throw rpcError;
+    return data;
+  }, input.effectiveTiming === 'immediate' ? 'Membership changed' : 'Membership change scheduled');
+
+  const updateMembershipStatus = (input: {
+    membershipId: string;
+    legalStatus: MembershipLegalStatus;
+    reason: string;
+    membershipClassCode?: string;
+  }) => runAction(`membership-status:${input.membershipId}`, async () => {
+    const { data, error: rpcError } = await supabase.rpc('admin_update_membership_status', {
+      p_membership_id: input.membershipId,
+      p_legal_status: input.legalStatus,
+      p_reason: input.reason,
+      p_membership_class_code: input.membershipClassCode || null,
+    });
+    if (rpcError) throw rpcError;
+    return data;
+  }, input.legalStatus === 'current' ? 'Membership restored' : 'Membership status updated');
+
   const runLifecycle = () =>
     runAction('lifecycle', async () => {
       const { data, error: rpcError } = await supabase.rpc('process_membership_lifecycle');
@@ -699,12 +874,20 @@ export const useMembership = () => {
     () => paymentPreferences.find(preference => preference.userId === user?.id),
     [paymentPreferences, user?.id],
   );
+  const ownChangeRequest = useMemo(
+    () => changeRequests.find(request =>
+      request.userId === user?.id
+      && ['pending', 'approved', 'needs_review'].includes(request.status)
+    ),
+    [changeRequests, user?.id],
+  );
 
   return {
     isAdmin,
     classes,
     applications,
     memberships,
+    changeRequests,
     periods,
     paymentPreferences,
     settings,
@@ -712,6 +895,7 @@ export const useMembership = () => {
     ownMembership,
     ownPeriods,
     ownPaymentPreference,
+    ownChangeRequest,
     loading,
     busyAction,
     error,
@@ -721,6 +905,7 @@ export const useMembership = () => {
     setFeeDisposition,
     authorizeFeeWaiver,
     importLegacyMembership,
+    importLegacyMembershipCsv,
     createOrRefreshXeroInvoice,
     refreshAllXeroInvoices,
     issueMembershipRenewals,
@@ -728,6 +913,11 @@ export const useMembership = () => {
     collectApprovedMembership,
     savePaymentPreference,
     cancelMembership,
+    requestMembershipChange,
+    cancelMembershipChange,
+    decideMembershipChange,
+    changeMembership,
+    updateMembershipStatus,
     runLifecycle,
     updateSettings,
     exportStatutoryRegister,

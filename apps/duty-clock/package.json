@@ -1,21 +1,23 @@
 {
   "name": "bendigo-flying-club-duty-clock",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "main": "index.ts",
   "scripts": {
     "start": "expo start --web",
     "build": "expo export --platform web",
-    "check": "npm run typecheck && npx --yes expo-doctor",
+    "check": "npm run typecheck && npm run test:security-backports && npx --yes expo-doctor",
     "typecheck": "tsc --noEmit",
+    "test:security-backports": "node scripts/test-image-size-security.mjs",
     "assets:generate": "node scripts/generate-assets.mjs"
   },
   "dependencies": {
-    "@expo/metro-runtime": "~57.0.8",
+    "@expo/metro-runtime": "~57.0.9",
     "@supabase/supabase-js": "^2.110.7",
-    "expo": "~57.0.10",
-    "expo-location": "~57.0.7",
+    "expo": "~57.0.12",
+    "expo-location": "~57.0.9",
     "expo-status-bar": "~57.0.1",
+    "queue": "6.0.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.2",
@@ -24,11 +26,12 @@
     "react-native-web": "^0.21.2"
   },
   "devDependencies": {
-    "@types/react": "~19.2.2",
+    "@types/react": "^19.2.18",
     "sharp": "^0.35.3",
-    "typescript": "6.0.3"
+    "typescript": "~6.0.3"
   },
   "overrides": {
+    "image-size": "file:vendor/image-size",
     "uuid": "^11.1.1"
   }
 }

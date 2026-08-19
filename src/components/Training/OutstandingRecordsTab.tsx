@@ -1,5 +1,6 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { ClipboardList, CheckCircle, XCircle, ChevronRight, Plane, Clock, BookOpen, AlertCircle, ChevronDown, ChevronUp, Sparkles, RotateCcw, Loader2, Save, Link as LinkIcon, Trash2, Undo2, Award, ShieldCheck, Target, ArrowRight } from 'lucide-react';
+import { ClipboardList, CheckCircle, XCircle, ChevronRight, Plane, Clock, BookOpen, AlertCircle, ChevronDown, ChevronUp, Sparkles, RotateCcw, Loader2, Save, Link as LinkIcon, Trash2, Undo2, Award, ShieldCheck, Target, ArrowRight, Plus, ShieldAlert } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
@@ -22,7 +23,7 @@ import {
   normaliseSyllabusLessonKey,
   useSyllabusMatrix,
 } from '../../hooks/useSyllabusMatrix';
-import { getConsecutivePassReadiness, getTwoOccasionReadiness } from '../../utils/trainingReadiness';
+import { getConsecutivePassReadiness, getDefaultTrainingDeficiencyStage, getTrainingDeficiencyGate, getTwoOccasionReadiness } from '../../utils/trainingReadiness';
 import { hasRole } from '../../utils/rbac';
 import { InstructorComplianceRecordForm } from './InstructorComplianceRecordForm';
 import { useStudentCourseEnrolments } from '../../hooks/useStudentCourseEnrolments';
@@ -40,6 +41,14 @@ import {
   reviewMatchesDraftOrFlight,
 } from '../../utils/draftReviewLinking';
 import { enqueueTrainingRecordJob } from '../../utils/trainingRecordBackgroundQueue';
+import { shouldAdvanceToNextLesson } from '../../utils/trainingSettingsRules';
+import {
+  applyTrainingDeficiencyChanges,
+  NewTrainingDeficiency,
+  TrainingDeficiencyStage,
+  useTrainingDeficiencies,
+} from '../../hooks/useTrainingDeficiencies';
+import { getDraftStudentRecommendation } from '../../utils/draftStudentRecommendation';
 
 type Step = 'action' | 'course' | 'lesson' | 'form';
 type RecordEntryType = 'lesson' | 'review_test' | 'instructor_review';
@@ -59,6 +68,9 @@ interface RecordFormState {
   flightReviewType: string;
   flightReviewResult: 'pass' | 'fail' | 'not_assessed';
   flightReviewNotes: string;
+  newDeficiencies: NewTrainingDeficiency[];
+  resolvedDeficiencyIds: string[];
+  deficiencyResolutionNote: string;
 }
 
 interface QueuedTrainingRecordSubmit {
@@ -106,6 +118,11 @@ interface QueuedTrainingRecordSubmit {
   shouldMarkRecorded: boolean;
   shouldNotifyStudent: boolean;
   requiresAck: boolean;
+  deficiencyChanges?: {
+    newDeficiencies: NewTrainingDeficiency[];
+    resolvedDeficiencyIds: string[];
+    resolutionNote?: string;
+  };
 }
 
 function emptyForm(): RecordFormState {
@@ -121,6 +138,9 @@ function emptyForm(): RecordFormState {
     flightReviewType: 'Flight Review',
     flightReviewResult: 'not_assessed',
     flightReviewNotes: '',
+    newDeficiencies: [],
+    resolvedDeficiencyIds: [],
+    deficiencyResolutionNote: '',
   };
 }
 
@@ -189,15 +209,26 @@ function bestGrade(current: string | undefined, next: string | undefined, system
   return gradeRank(next, system) > gradeRank(current, system) ? next : current;
 }
 
-export const OutstandingRecordsTab: React.FC = () => {
+interface OutstandingRecordsTabProps {
+  popupOnly?: boolean;
+  requestedFlightLogId?: string;
+  onPopupClose?: () => void;
+}
+
+export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
+  popupOnly = false,
+  requestedFlightLogId,
+  onPopupClose,
+}) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const { settings: trainingSettings, loading: trainingSettingsLoading } = useTrainingSettings();
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = hasRole(user, 'admin');
   const isCfi = hasRole(user, 'cfi');
+  const canViewAllInstructorRecords = isAdmin || isCfi;
   const { outstandingLogs, dismissedLogs, loading, dismissRecord, restoreRecord, markRecorded, refetch } = useOutstandingRecords(
-    isAdmin ? undefined : user?.id,
-    isAdmin
+    canViewAllInstructorRecords ? undefined : user?.id,
+    canViewAllInstructorRecords
   );
   const { trainingRecords, loading: trainingRecordsLoading, addTrainingRecord, updateTrainingRecord, deleteDraftTrainingRecord } = useTrainingRecords();
   const { modules: allCourses, loading: coursesLoading } = useTrainingModules();
@@ -219,6 +250,9 @@ export const OutstandingRecordsTab: React.FC = () => {
     startedAt: string;
   } | null>(null);
   const [draftStudentId, setDraftStudentId] = useState('');
+  const [draftStudentPrefillStatus, setDraftStudentPrefillStatus] = useState<'idle' | 'loading' | 'current' | 'next' | 'none' | 'unavailable'>('idle');
+  const draftStudentPrefillRequestRef = useRef(0);
+  const draftStudentChangedRef = useRef(false);
   const [step, setStep] = useState<Step>('action');
   const [form, setForm] = useState<RecordFormState>(emptyForm());
   const [submitting, setSubmitting] = useState(false);
@@ -237,9 +271,19 @@ export const OutstandingRecordsTab: React.FC = () => {
   const [recordEntryType, setRecordEntryType] = useState<RecordEntryType | null>(null);
   const [activeReviewRecordId, setActiveReviewRecordId] = useState<string | null>(null);
   const [startingReview, setStartingReview] = useState(false);
+  const [deficiencyDraft, setDeficiencyDraft] = useState('');
+  const [deficiencyStage, setDeficiencyStage] = useState<TrainingDeficiencyStage>('pre_test');
+  const [popupRequestHandled, setPopupRequestHandled] = useState(false);
+  const [popupRequestMissing, setPopupRequestMissing] = useState(false);
   const requestedDraftStudentId = searchParams.get('draftStudentId') || '';
 
   const activeStudentId = activeLog?.student_id;
+  const {
+    openByCourse: openDeficienciesByCourse,
+    loading: deficienciesLoading,
+    error: deficienciesError,
+    refetch: refetchDeficiencies,
+  } = useTrainingDeficiencies(activeStudentId);
   const isDraftSession = Boolean(draftSession && activeLog?.id === draftSession.id);
   const { enrolments: activeStudentEnrolments, loading: enrolmentsLoading } = useStudentCourseEnrolments(activeStudentId);
   const flightReviews = useFlightReviews({
@@ -417,6 +461,37 @@ export const OutstandingRecordsTab: React.FC = () => {
     return selectedCourse.lessons[selectedLessonIndex + 1] ?? null;
   }, [selectedCourse, selectedLessonIndex]);
 
+  const selectedCourseOpenDeficiencies = useMemo(
+    () => selectedCourse ? (openDeficienciesByCourse.get(selectedCourse.id) ?? []) : [],
+    [openDeficienciesByCourse, selectedCourse]
+  );
+
+  const selectedLessonDeficiencyGate = getTrainingDeficiencyGate(selectedLesson);
+  const nextLessonDeficiencyGate = getTrainingDeficiencyGate(nextLessonAfterSelected);
+  const selectedLessonBlockingDeficiencies = useMemo(
+    () => selectedLessonDeficiencyGate
+      ? selectedCourseOpenDeficiencies.filter(deficiency => deficiency.stage === selectedLessonDeficiencyGate)
+      : [],
+    [selectedCourseOpenDeficiencies, selectedLessonDeficiencyGate]
+  );
+  const remainingDeficienciesAfterRecord = useMemo(() => {
+    const resolvedIds = new Set(form.resolvedDeficiencyIds ?? []);
+    return [
+      ...selectedCourseOpenDeficiencies.filter(deficiency => !resolvedIds.has(deficiency.id)),
+      ...(form.newDeficiencies ?? []).map(deficiency => ({
+        ...deficiency,
+        id: deficiency.clientReference,
+        courseId: selectedCourse?.id || '',
+      })),
+    ];
+  }, [form.newDeficiencies, form.resolvedDeficiencyIds, selectedCourse?.id, selectedCourseOpenDeficiencies]);
+  const nextLessonBlockingDeficiencies = useMemo(
+    () => nextLessonDeficiencyGate
+      ? remainingDeficienciesAfterRecord.filter(deficiency => deficiency.stage === nextLessonDeficiencyGate)
+      : [],
+    [nextLessonDeficiencyGate, remainingDeficienciesAfterRecord]
+  );
+
   const highestGradesToDate = useMemo(() => {
     if (!activeStudentId || !selectedCourse) return {};
 
@@ -457,7 +532,12 @@ export const OutstandingRecordsTab: React.FC = () => {
     nextLessonAfterSelected
   );
 
-  const lessonWillProceed = lessonPassed || (canProceedWithCarryForward && proceedWithCarryForward);
+  const lessonMeetsProgressionRule = shouldAdvanceToNextLesson(
+    trainingSettings.nextLessonRule,
+    lessonPassed,
+    canProceedWithCarryForward && proceedWithCarryForward,
+  );
+  const lessonWillProceed = lessonMeetsProgressionRule && nextLessonBlockingDeficiencies.length === 0;
 
   const matrixCriterionOutcomes = useMemo(() => {
     if (!hasMatrixAssessment || activeCriteria.length === 0) return [];
@@ -532,13 +612,15 @@ export const OutstandingRecordsTab: React.FC = () => {
     trainingRecords,
   ]);
 
-  const nextLessonForRecord = lessonWillProceed
-    ? consecutivePassReadiness.blocked || twoOccasionReadiness.blocked
-      ? (selectedLesson?.name || selectedLesson?.sequenceTitle || 'Repeat current lesson')
-      : (nextLessonAfterSelected?.name || nextLessonAfterSelected?.sequenceTitle || 'Course complete')
-    : selectedLesson
-      ? (selectedLesson.name || selectedLesson.sequenceTitle || 'Repeat current lesson')
-      : '';
+  const nextLessonForRecord = trainingSettings.nextLessonRule === 'manual'
+    ? ''
+    : lessonWillProceed
+      ? consecutivePassReadiness.blocked || twoOccasionReadiness.blocked
+        ? (selectedLesson?.name || selectedLesson?.sequenceTitle || 'Repeat current lesson')
+        : (nextLessonAfterSelected?.name || nextLessonAfterSelected?.sequenceTitle || 'Course complete')
+      : selectedLesson
+        ? (selectedLesson.name || selectedLesson.sequenceTitle || 'Repeat current lesson')
+        : '';
 
   const selectedCourseRequiresAck = Boolean(
     trainingSettings.forceStudentAcknowledgementForAllCourses ||
@@ -595,6 +677,13 @@ export const OutstandingRecordsTab: React.FC = () => {
       : undefined;
     return { course, lesson, previousRecord, previousLesson };
   }, [activeEnrolledCourseIds, activeStudentId, coursesWithLessons, enrolmentsLoading, trainingRecords]);
+  const recommendedLessonBlockingDeficiencies = useMemo(() => {
+    if (!recommendedLesson) return [];
+    const gate = getTrainingDeficiencyGate(recommendedLesson.lesson);
+    if (!gate) return [];
+    return (openDeficienciesByCourse.get(recommendedLesson.course.id) ?? [])
+      .filter(deficiency => deficiency.stage === gate);
+  }, [openDeficienciesByCourse, recommendedLesson]);
   const availableReviewTemplates = useMemo(() => {
     return flightReviews.templates.filter(template => {
       if (template.status !== 'published') return false;
@@ -626,11 +715,71 @@ export const OutstandingRecordsTab: React.FC = () => {
       .sort((a, b) => a.name.localeCompare(b.name)),
     [users]
   );
+  const prefillDraftStudentFromBooking = useCallback(async () => {
+    const requestId = ++draftStudentPrefillRequestRef.current;
+    draftStudentChangedRef.current = false;
+    setDraftStudentId('');
+    setDraftStudentPrefillStatus('loading');
+
+    if (!user?.id) {
+      setDraftStudentPrefillStatus('unavailable');
+      return;
+    }
+
+    const now = new Date();
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('student_id, start_time, end_time, status, deleted_at')
+      .eq('instructor_id', user.id)
+      .not('student_id', 'is', null)
+      .gte('end_time', now.toISOString())
+      .order('start_time', { ascending: true })
+      .limit(50);
+
+    if (requestId !== draftStudentPrefillRequestRef.current || draftStudentChangedRef.current) return;
+    if (error) {
+      console.warn('Could not prefill the draft student from bookings', error);
+      setDraftStudentPrefillStatus('unavailable');
+      return;
+    }
+
+    const recommendation = getDraftStudentRecommendation(
+      (data ?? []).map(booking => ({
+        studentId: booking.student_id,
+        startTime: booking.start_time,
+        endTime: booking.end_time,
+        status: booking.status,
+        deletedAt: booking.deleted_at,
+      })),
+      studentOptions.map(student => student.id),
+      now,
+    );
+
+    if (!recommendation) {
+      setDraftStudentPrefillStatus('none');
+      return;
+    }
+
+    setDraftStudentId(recommendation.studentId);
+    setDraftStudentPrefillStatus(recommendation.source);
+  }, [studentOptions, user?.id]);
+
+  const toggleDraftComposer = useCallback(() => {
+    if (showDraftComposer) {
+      draftStudentPrefillRequestRef.current += 1;
+      setDraftStudentPrefillStatus('idle');
+      setShowDraftComposer(false);
+      return;
+    }
+
+    setShowDraftComposer(true);
+    void prefillDraftStudentFromBooking();
+  }, [prefillDraftStudentFromBooking, showDraftComposer]);
   const draftRecords = useMemo(
     () => trainingRecords
-      .filter(record => record.status === 'draft' && (isAdmin || record.instructorId === user?.id))
+      .filter(record => record.status === 'draft' && (canViewAllInstructorRecords || record.instructorId === user?.id))
       .sort((a, b) => b.date.getTime() - a.date.getTime()),
-    [isAdmin, trainingRecords, user?.id]
+    [canViewAllInstructorRecords, trainingRecords, user?.id]
   );
   const draftRecordsByStudent = useMemo(() => {
     const map = new Map<string, typeof draftRecords>();
@@ -657,15 +806,15 @@ export const OutstandingRecordsTab: React.FC = () => {
       const isInstructorCandidate = candidate?.roles?.some(role => role === 'instructor' || role === 'senior_instructor')
         || candidate?.role === 'instructor'
         || candidate?.role === 'senior_instructor';
-      return !isInstructorCandidate;
+      return !isInstructorCandidate || isCfi;
     }),
-    [outstandingLogs, user?.id, users]
+    [isCfi, outstandingLogs, user?.id, users]
   );
   const visibleOutstandingLogs = queueView === 'dismissed'
     ? []
-    : isAdmin && queueView === 'others'
+    : canViewAllInstructorRecords && queueView === 'others'
       ? otherInstructorOutstandingLogs
-      : isAdmin
+      : canViewAllInstructorRecords
         ? myOutstandingLogs
         : myOutstandingLogs;
   const visibleDismissedLogs = queueView === 'dismissed'
@@ -681,7 +830,6 @@ export const OutstandingRecordsTab: React.FC = () => {
   const activeIsInstructorCompliance = Boolean(
     activeCandidate
     && isCfi
-    && activeLog?.instructor_id === user?.id
     && (
       activeCandidate.role === 'instructor'
       || activeCandidate.role === 'senior_instructor'
@@ -742,6 +890,19 @@ export const OutstandingRecordsTab: React.FC = () => {
         trainingRecordId,
         instructorId: job.recordData.instructorId,
         assessments: job.matrixAssessments,
+      });
+    }
+
+    if (
+      trainingRecordId
+      && ((job.deficiencyChanges?.newDeficiencies.length ?? 0) > 0
+        || (job.deficiencyChanges?.resolvedDeficiencyIds.length ?? 0) > 0)
+    ) {
+      await applyTrainingDeficiencyChanges({
+        trainingRecordId,
+        newDeficiencies: job.deficiencyChanges?.newDeficiencies,
+        resolvedDeficiencyIds: job.deficiencyChanges?.resolvedDeficiencyIds,
+        resolutionNote: job.deficiencyChanges?.resolutionNote,
       });
     }
 
@@ -816,6 +977,7 @@ export const OutstandingRecordsTab: React.FC = () => {
   }, [clearDraft, refetch, submitQueuedJob]);
 
   function openLog(log: OutstandingFlightLog, draftRecord?: typeof trainingRecords[number]) {
+    toast.remove();
     setActiveLog(log);
     setDraftSession(null);
     setActiveDraftRecord(draftRecord ?? null);
@@ -849,7 +1011,14 @@ export const OutstandingRecordsTab: React.FC = () => {
       try {
         const parsed = JSON.parse(savedDraft) as { form?: RecordFormState; step?: Step; savedAt?: string };
         setRecordEntryType('lesson');
-        setForm(parsed.form || { ...emptyForm(), formalBriefing: trainingSettings.defaultFormalBriefing });
+        setForm({
+          ...emptyForm(),
+          formalBriefing: trainingSettings.defaultFormalBriefing,
+          ...(parsed.form ?? {}),
+          newDeficiencies: parsed.form?.newDeficiencies ?? [],
+          resolvedDeficiencyIds: parsed.form?.resolvedDeficiencyIds ?? [],
+          deficiencyResolutionNote: parsed.form?.deficiencyResolutionNote ?? '',
+        });
         setStep(parsed.step || (parsed.form?.lessonId ? 'form' : parsed.form?.courseId ? 'lesson' : 'course'));
         setProceedWithCarryForward(Boolean((parsed as { proceedWithCarryForward?: boolean }).proceedWithCarryForward));
         setDraftSavedAt(parsed.savedAt ? new Date(parsed.savedAt) : null);
@@ -861,9 +1030,9 @@ export const OutstandingRecordsTab: React.FC = () => {
         setProceedWithCarryForward(false);
       }
     } else {
-      setRecordEntryType(null);
+      setRecordEntryType(isCfi ? null : 'lesson');
       setForm({ ...emptyForm(), formalBriefing: trainingSettings.defaultFormalBriefing });
-      setStep('action');
+      setStep(isCfi ? 'action' : 'course');
       setProceedWithCarryForward(false);
       setDraftSavedAt(null);
     }
@@ -878,6 +1047,7 @@ export const OutstandingRecordsTab: React.FC = () => {
       return;
     }
 
+    toast.remove();
     const sessionId = record?.id ? `draft-record:${record.id}` : `draft-session:${Date.now()}`;
     const startedAt = record?.date?.toISOString() || new Date().toISOString();
     setDraftSession({
@@ -905,7 +1075,7 @@ export const OutstandingRecordsTab: React.FC = () => {
       aircraft_type: aircraft?.type || record?.aircraftType || undefined,
     });
     setActiveDraftRecord(record ?? null);
-    setRecordEntryType(record?.isFlightReview ? 'review_test' : 'lesson');
+    setRecordEntryType(record ? (record.isFlightReview ? 'review_test' : 'lesson') : (isCfi ? null : 'lesson'));
     setActiveReviewRecordId(null);
     setForm(record ? {
       ...emptyForm(),
@@ -921,7 +1091,7 @@ export const OutstandingRecordsTab: React.FC = () => {
       flightReviewResult: record.flightReviewResult || 'not_assessed',
       flightReviewNotes: record.flightReviewNotes || '',
     } : { ...emptyForm(), formalBriefing: trainingSettings.defaultFormalBriefing });
-    setStep(record?.lessonId ? 'form' : record?.courseId ? 'lesson' : 'course');
+    setStep(record ? (record.lessonId ? 'form' : record.courseId ? 'lesson' : 'course') : (isCfi ? 'action' : 'course'));
     setProceedWithCarryForward(false);
     setCommentCleanupOriginal(null);
     setDraftSavedAt(record ? record.date : null);
@@ -937,6 +1107,8 @@ export const OutstandingRecordsTab: React.FC = () => {
     setForm({ ...emptyForm(), formalBriefing: trainingSettings.defaultFormalBriefing });
     setCommentCleanupOriginal(null);
     setProceedWithCarryForward(false);
+    setDeficiencyDraft('');
+    onPopupClose?.();
   }
 
   function toggleExpand(id: string) {
@@ -958,7 +1130,16 @@ export const OutstandingRecordsTab: React.FC = () => {
   }
 
   function handleSelectCourse(courseId: string) {
-    setForm(f => ({ ...f, courseId, lessonId: '', criteriaGrades: {}, matrixGrades: {} }));
+    setForm(f => ({
+      ...f,
+      courseId,
+      lessonId: '',
+      criteriaGrades: {},
+      matrixGrades: {},
+      newDeficiencies: [],
+      resolvedDeficiencyIds: [],
+      deficiencyResolutionNote: '',
+    }));
     setCommentCleanupOriginal(null);
     setProceedWithCarryForward(false);
     setStep('lesson');
@@ -1029,6 +1210,8 @@ export const OutstandingRecordsTab: React.FC = () => {
       flightReviewResult: 'not_assessed',
       flightReviewNotes: '',
     }));
+    setDeficiencyStage(getDefaultTrainingDeficiencyStage(course, lesson));
+    setDeficiencyDraft('');
     setCommentCleanupOriginal(null);
     setProceedWithCarryForward(false);
     setStep('form');
@@ -1055,8 +1238,19 @@ export const OutstandingRecordsTab: React.FC = () => {
     }
   }
 
+  function handleChangeRecordType() {
+    setActiveReviewRecordId(null);
+    setRecordEntryType(null);
+    setStep('action');
+  }
+
   function handleOpenRecommendedLesson() {
     if (!recommendedLesson) return;
+    if (recommendedLessonBlockingDeficiencies.length > 0) {
+      const gateLabel = getTrainingDeficiencyGate(recommendedLesson.lesson) === 'pre_solo' ? 'solo' : 'pilot test';
+      toast.error(`Resolve ${recommendedLessonBlockingDeficiencies.length} open ${gateLabel} ${recommendedLessonBlockingDeficiencies.length === 1 ? 'deficiency' : 'deficiencies'} before proceeding`);
+      return;
+    }
     setRecordEntryType('lesson');
     handleSelectLesson(recommendedLesson.lesson.id, recommendedLesson.course.id);
   }
@@ -1181,6 +1375,45 @@ export const OutstandingRecordsTab: React.FC = () => {
     setCommentCleanupOriginal(null);
   }
 
+  function handleAddDeficiency() {
+    const description = deficiencyDraft.trim();
+    if (description.length < 3) {
+      toast.error('Describe the deficiency before adding it');
+      return;
+    }
+
+    setForm(current => ({
+      ...current,
+      newDeficiencies: [
+        ...(current.newDeficiencies ?? []),
+        {
+          clientReference: crypto.randomUUID(),
+          stage: deficiencyStage,
+          description,
+        },
+      ],
+    }));
+    setDeficiencyDraft('');
+  }
+
+  function handleToggleDeficiencyResolved(deficiencyId: string) {
+    setForm(current => {
+      const selected = new Set(current.resolvedDeficiencyIds ?? []);
+      if (selected.has(deficiencyId)) selected.delete(deficiencyId);
+      else selected.add(deficiencyId);
+      return { ...current, resolvedDeficiencyIds: Array.from(selected) };
+    });
+  }
+
+  function handleRemoveNewDeficiency(clientReference: string) {
+    setForm(current => ({
+      ...current,
+      newDeficiencies: (current.newDeficiencies ?? []).filter(
+        deficiency => deficiency.clientReference !== clientReference,
+      ),
+    }));
+  }
+
   useEffect(() => {
     if (!selectedLesson || activeMatrixRequirements.length === 0) return;
     setForm(current => {
@@ -1219,6 +1452,39 @@ export const OutstandingRecordsTab: React.FC = () => {
       void syncPendingSubmits();
     }
   }, [isOnline, pendingSubmits.length, syncPendingSubmits]);
+
+  useEffect(() => {
+    setPopupRequestHandled(false);
+    setPopupRequestMissing(false);
+  }, [requestedFlightLogId]);
+
+  useEffect(() => {
+    if (!popupOnly || loading || popupRequestHandled) return;
+    const requestedLog = requestedFlightLogId
+      ? outstandingLogs.find(log => log.id === requestedFlightLogId)
+      : outstandingLogs.find(log => log.instructor_id === user?.id) ?? outstandingLogs[0];
+
+    setPopupRequestHandled(true);
+    if (requestedLog) {
+      openLog(requestedLog);
+    } else {
+      setPopupRequestMissing(true);
+    }
+  }, [loading, outstandingLogs, popupOnly, popupRequestHandled, requestedFlightLogId, user?.id]);
+
+  useEffect(() => {
+    if (!activeLog || typeof window === 'undefined') return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closePanel();
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [activeLog]);
 
   useEffect(() => {
     if (!activeLog || !user || step === 'action' || typeof window === 'undefined') return;
@@ -1297,6 +1563,11 @@ export const OutstandingRecordsTab: React.FC = () => {
       shouldMarkRecorded: trainingSettings.autoMarkFlightLogRecorded,
       shouldNotifyStudent: selectedCourseRequiresAck && trainingSettings.autoNotifyStudentOnSubmit,
       requiresAck: selectedCourseRequiresAck,
+      deficiencyChanges: {
+        newDeficiencies: form.newDeficiencies ?? [],
+        resolvedDeficiencyIds: form.resolvedDeficiencyIds ?? [],
+        resolutionNote: form.deficiencyResolutionNote,
+      },
     };
   };
 
@@ -1312,6 +1583,15 @@ export const OutstandingRecordsTab: React.FC = () => {
     }
     if (trainingSettings.requireBriefingCommentsWhenFormal && form.formalBriefing && !form.briefingComments.trim()) {
       toast.error('Briefing comments are required when a formal briefing is selected');
+      return;
+    }
+    if (deficienciesLoading || deficienciesError) {
+      toast.error('Wait for the instructor-only deficiencies to load before submitting');
+      return;
+    }
+    if (selectedLessonBlockingDeficiencies.length > 0) {
+      const gateLabel = selectedLessonDeficiencyGate === 'pre_solo' ? 'solo' : 'pilot test';
+      toast.error(`This ${gateLabel} lesson is blocked by ${selectedLessonBlockingDeficiencies.length} open ${selectedLessonBlockingDeficiencies.length === 1 ? 'deficiency' : 'deficiencies'}. Mark them fixed in an earlier lesson first.`);
       return;
     }
     if (
@@ -1388,10 +1668,19 @@ export const OutstandingRecordsTab: React.FC = () => {
 
     setSubmitting(true);
     try {
+      let savedDraftId = activeDraftRecord?.id;
       if (activeDraftRecord?.id) {
         await updateTrainingRecord(activeDraftRecord.id, draftPayload);
       } else {
-        await addTrainingRecord(draftPayload);
+        const createdDraft = await addTrainingRecord(draftPayload);
+        savedDraftId = createdDraft?.id;
+      }
+      if (savedDraftId && (form.newDeficiencies?.length ?? 0) > 0) {
+        await applyTrainingDeficiencyChanges({
+          trainingRecordId: savedDraftId,
+          newDeficiencies: form.newDeficiencies,
+        });
+        await refetchDeficiencies();
       }
       toast.success('Training record draft saved. Attach it to the logged flight when you are back.');
       closePanel();
@@ -1407,8 +1696,18 @@ export const OutstandingRecordsTab: React.FC = () => {
   }
 
   if (loading) {
+    if (popupOnly) {
+      return (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Loading outstanding record">
+          <div className="flex items-center gap-3 rounded-2xl bg-white px-6 py-5 text-sm font-semibold text-slate-700 shadow-2xl dark:bg-[#171a21] dark:text-slate-100">
+            <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+            Loading outstanding record...
+          </div>
+        </div>
+      );
+    }
     return (
-      <div className="p-6 space-y-3">
+      <div className="space-y-3 p-3 sm:p-6">
         {[1, 2, 3].map(i => (
           <div key={i} className="bg-white rounded-xl border border-gray-200 p-5 animate-pulse">
             <div className="h-4 bg-gray-200 rounded w-1/3 mb-3" />
@@ -1419,9 +1718,22 @@ export const OutstandingRecordsTab: React.FC = () => {
     );
   }
 
+  if (popupOnly && popupRequestMissing) {
+    return (
+      <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Outstanding record unavailable">
+        <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-2xl dark:border-[#363b45] dark:bg-[#171a21]">
+          <CheckCircle className="mx-auto h-10 w-10 text-emerald-500" />
+          <h2 className="mt-3 text-lg font-bold text-slate-950 dark:text-white">Record no longer outstanding</h2>
+          <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">It may already have been completed, dismissed, or reassigned.</p>
+          <button type="button" onClick={onPopupClose} className="mt-5 min-h-11 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700">Close</button>
+        </div>
+      </div>
+    );
+  }
+
   const queueButtons = [
     { id: 'mine' as const, label: 'Assigned to me', icon: AlertCircle },
-    ...(isAdmin ? [{ id: 'others' as const, label: 'Other instructors', icon: BookOpen }] : []),
+    ...(canViewAllInstructorRecords ? [{ id: 'others' as const, label: 'Other instructors', icon: BookOpen }] : []),
     { id: 'dismissed' as const, label: 'No record needed', icon: Undo2 },
   ];
   const recordTypeOptions = [
@@ -1445,7 +1757,7 @@ export const OutstandingRecordsTab: React.FC = () => {
     }] : []),
   ];
 
-  const renderRecordTypeSelector = (compact = false) => (
+  const renderRecordTypeSelector = (compact = false) => !isCfi || compact ? null : (
     <div className={`grid min-w-0 gap-2 ${recordTypeOptions.length === 3 ? 'md:grid-cols-3' : 'sm:grid-cols-2'}`}>
       {recordTypeOptions.map(option => {
         const Icon = option.icon;
@@ -1476,8 +1788,8 @@ export const OutstandingRecordsTab: React.FC = () => {
   );
 
   return (
-    <div className="flex h-full min-w-0 flex-col gap-4 p-3 sm:p-6">
-      <header className="overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-950 via-blue-950 to-slate-900 text-white shadow-sm dark:border-blue-400/20">
+    <div className={popupOnly ? 'contents' : 'flex h-full min-w-0 flex-col gap-4 p-3 sm:p-6'}>
+      <header className={`${popupOnly ? 'hidden' : ''} overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-950 via-blue-950 to-slate-900 text-white shadow-sm dark:border-blue-400/20`}>
         <div className="flex min-w-0 flex-col gap-4 px-4 py-4 sm:px-5">
           <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-center gap-3">
@@ -1495,7 +1807,7 @@ export const OutstandingRecordsTab: React.FC = () => {
 
             <button
               type="button"
-              onClick={() => setShowDraftComposer(value => !value)}
+              onClick={toggleDraftComposer}
               aria-pressed={showDraftComposer}
               className={`inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition sm:w-auto ${
                 showDraftComposer
@@ -1509,7 +1821,7 @@ export const OutstandingRecordsTab: React.FC = () => {
           </div>
 
           <div className={`grid min-w-0 gap-2 rounded-2xl bg-white/8 p-1.5 ring-1 ring-white/10 sm:grid-cols-2 ${
-            isAdmin ? 'xl:grid-cols-3' : 'xl:grid-cols-2'
+            canViewAllInstructorRecords ? 'xl:grid-cols-3' : 'xl:grid-cols-2'
           }`}>
             {queueButtons.map(item => {
               const Icon = item.icon;
@@ -1534,9 +1846,9 @@ export const OutstandingRecordsTab: React.FC = () => {
         </div>
       </header>
 
-      <div className={`grid min-h-0 min-w-0 gap-4 lg:gap-6 ${activeLog ? 'lg:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)]' : 'grid-cols-1'}`}>
+      <div className={`grid min-h-0 min-w-0 gap-4 lg:gap-6 ${popupOnly ? 'contents' : 'grid-cols-1'}`}>
       {/* Left: list of outstanding flights */}
-      <div className={`flex min-w-0 flex-col gap-4 ${activeLog ? 'order-2 lg:order-1' : 'w-full'}`}>
+      <div className={`${popupOnly ? 'hidden' : 'flex'} min-w-0 flex-col gap-4 w-full`}>
         {showDraftComposer && (
         <div className="rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-4 shadow-sm dark:border-blue-400/25 dark:from-blue-950/25 dark:to-[#171a21]">
           <div className="flex items-start gap-3">
@@ -1551,16 +1863,35 @@ export const OutstandingRecordsTab: React.FC = () => {
             </div>
           </div>
           <div className="mt-3">
-            <select
+            <SearchableSelect
               value={draftStudentId}
-              onChange={event => setDraftStudentId(event.target.value)}
+              onChange={event => {
+                draftStudentChangedRef.current = true;
+                setDraftStudentId(event.target.value);
+                setDraftStudentPrefillStatus('idle');
+              }}
               className="w-full min-w-0 rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-blue-400/30 dark:bg-[#111827] dark:text-gray-100"
             >
               <option value="">Select student/pilot</option>
               {studentOptions.map(member => (
                 <option key={member.id} value={member.id}>{member.name}</option>
               ))}
-            </select>
+            </SearchableSelect>
+            {draftStudentPrefillStatus === 'loading' && (
+              <p className="mt-1.5 text-xs text-blue-700 dark:text-blue-200">Finding your current or next booked student...</p>
+            )}
+            {draftStudentPrefillStatus === 'current' && (
+              <p className="mt-1.5 text-xs text-emerald-700 dark:text-emerald-300">Prefilled from your current booking. You can still select another student.</p>
+            )}
+            {draftStudentPrefillStatus === 'next' && (
+              <p className="mt-1.5 text-xs text-emerald-700 dark:text-emerald-300">Prefilled from your next booking. You can still select another student.</p>
+            )}
+            {draftStudentPrefillStatus === 'none' && (
+              <p className="mt-1.5 text-xs text-blue-700 dark:text-blue-200">No current or upcoming booked student was found. Select a student manually.</p>
+            )}
+            {draftStudentPrefillStatus === 'unavailable' && (
+              <p className="mt-1.5 text-xs text-amber-700 dark:text-amber-300">Booking details could not be checked. Select a student manually.</p>
+            )}
           </div>
           <button
             type="button"
@@ -1569,7 +1900,7 @@ export const OutstandingRecordsTab: React.FC = () => {
             disabled={!draftStudentId}
           >
             <BookOpen className="h-4 w-4" />
-            Start Draft Record
+            Choose Draft Type
           </button>
           {draftRecords.length > 0 && (
             <div className="mt-3 space-y-2">
@@ -1628,10 +1959,10 @@ export const OutstandingRecordsTab: React.FC = () => {
           <div className="bg-white rounded-xl border border-gray-200 p-8 text-center dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-12">
             <CheckCircle className="h-14 w-14 text-emerald-400 mx-auto mb-3" />
             <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-1">
-              {isAdmin && queueView === 'others' ? 'No other instructor records waiting' : 'All caught up'}
+              {canViewAllInstructorRecords && queueView === 'others' ? 'No other instructor records waiting' : 'All caught up'}
             </h3>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              {isAdmin && queueView === 'others'
+              {canViewAllInstructorRecords && queueView === 'others'
                 ? 'There are no outstanding records assigned to other instructors.'
                 : 'No outstanding training records assigned to this queue.'}
             </p>
@@ -1687,7 +2018,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                           </span>
                           {isInstructorCandidate && isCfi && (
                             <span className="rounded-full bg-cyan-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-cyan-900 dark:bg-cyan-950/50 dark:text-cyan-200">
-                              CFI compliance
+                              CFI/DCFI compliance
                             </span>
                           )}
                         </div>
@@ -1823,7 +2154,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                           name={log.student_name ?? 'Unknown Student'}
                           className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100"
                         />
-                        {isAdmin && (
+                        {canViewAllInstructorRecords && (
                           <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
                             isMine
                               ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-200'
@@ -1855,7 +2186,13 @@ export const OutstandingRecordsTab: React.FC = () => {
 
       {/* Active record workspace */}
       {activeLog && !recordEntryType && (
-        <section className="order-1 min-w-0 lg:order-2">
+        <section
+          className="fixed inset-0 z-[110] space-y-3 overflow-y-auto bg-slate-950/65 p-2 backdrop-blur-sm sm:p-4 lg:p-6 [&>*]:mx-auto [&>*]:w-full [&>*]:max-w-6xl"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Choose outstanding record type"
+          onMouseDown={event => { if (event.target === event.currentTarget) closePanel(); }}
+        >
           <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
             <div className="flex items-start justify-between gap-4 border-b border-gray-200 bg-gray-50 px-4 py-4 dark:border-[#2c2f36] dark:bg-[#11141a] sm:px-6">
               <div className="min-w-0">
@@ -1884,7 +2221,7 @@ export const OutstandingRecordsTab: React.FC = () => {
               </div>
               {renderRecordTypeSelector()}
 
-              <div className="border-t border-gray-200 pt-6 dark:border-[#2c2f36]">
+              <div className="hidden border-t border-gray-200 pt-6 dark:border-[#2c2f36]">
                 {enrolmentsLoading ? (
                   <div className="flex min-h-28 items-center justify-center gap-3 rounded-xl bg-gray-50 text-sm text-gray-600 dark:bg-[#11141a] dark:text-gray-300">
                     <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
@@ -1930,8 +2267,16 @@ export const OutstandingRecordsTab: React.FC = () => {
       )}
 
       {activeLog && recordEntryType === 'instructor_review' && activeIsInstructorCompliance && activeCandidate && user && (
-        <div className="order-1 min-w-0 space-y-3 lg:order-2">
-          {renderRecordTypeSelector(true)}
+        <div
+          className="fixed inset-0 z-[110] space-y-3 overflow-y-auto bg-slate-950/65 p-2 backdrop-blur-sm sm:p-4 lg:p-6 [&>*]:mx-auto [&>*]:w-full [&>*]:max-w-6xl"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Instructor review record"
+          onMouseDown={event => { if (event.target === event.currentTarget) closePanel(); }}
+        >
+          <button type="button" onClick={handleChangeRecordType} className="inline-flex min-h-10 max-w-max items-center gap-2 rounded-xl border border-white/20 bg-slate-950/80 px-3 py-2 text-xs font-semibold text-white shadow-lg hover:bg-slate-900">
+            <RotateCcw className="h-3.5 w-3.5" /> Change record type
+          </button>
           <InstructorComplianceRecordForm
             flightLog={activeLog}
             candidate={activeCandidate}
@@ -1944,9 +2289,17 @@ export const OutstandingRecordsTab: React.FC = () => {
           />
         </div>
       )}
-      {activeLog && recordEntryType === 'review_test' && (
-        <section className="order-1 min-w-0 space-y-3 lg:order-2">
-          {renderRecordTypeSelector(true)}
+      {activeLog && recordEntryType === 'review_test' && !activeReviewRecord && (
+        <section
+          className="fixed inset-0 z-[110] space-y-3 overflow-y-auto bg-slate-950/65 p-2 backdrop-blur-sm sm:p-4 lg:p-6 [&>*]:mx-auto [&>*]:w-full [&>*]:max-w-6xl"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Review or test record"
+          onMouseDown={event => { if (event.target === event.currentTarget) closePanel(); }}
+        >
+          <button type="button" onClick={handleChangeRecordType} className="inline-flex min-h-10 max-w-max items-center gap-2 rounded-xl border border-white/20 bg-slate-950/80 px-3 py-2 text-xs font-semibold text-white shadow-lg hover:bg-slate-900">
+            <RotateCcw className="h-3.5 w-3.5" /> Change record type
+          </button>
           <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
             <div className="flex items-start justify-between gap-3 border-b border-gray-200 bg-gray-50 px-4 py-4 dark:border-[#2c2f36] dark:bg-[#11141a] sm:px-6">
               <div className="min-w-0">
@@ -2026,8 +2379,13 @@ export const OutstandingRecordsTab: React.FC = () => {
         </section>
       )}
       {activeLog && recordEntryType === 'lesson' && (
-        <div className="order-1 min-w-0 lg:order-2">
-          <div className="mb-3">{renderRecordTypeSelector(true)}</div>
+        <div
+          className="fixed inset-0 z-[110] overflow-y-auto bg-slate-950/65 p-2 backdrop-blur-sm sm:p-4 lg:p-6 [&>*]:mx-auto [&>*]:w-full [&>*]:max-w-6xl"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Lesson training record"
+          onMouseDown={event => { if (event.target === event.currentTarget) closePanel(); }}
+        >
           <div className="min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
             {/* Panel header */}
             <div className="flex items-start justify-between gap-3 border-b border-gray-200 bg-gray-50 px-4 py-4 dark:border-[#2c2f36] dark:bg-[#11141a] sm:px-6">
@@ -2040,12 +2398,21 @@ export const OutstandingRecordsTab: React.FC = () => {
                   {' '}&middot; {isDraftSession ? 'Started' : 'Flight'} {format(new Date(activeLog.start_time), 'd MMM yyyy')}
                 </p>
               </div>
-              <button
-                onClick={closePanel}
-                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-200 transition-colors"
-              >
-                <XCircle className="h-5 w-5" />
-              </button>
+              <div className="flex shrink-0 items-center gap-1">
+                {isCfi && (
+                  <button type="button" onClick={handleChangeRecordType} className="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50 dark:text-blue-200 dark:hover:bg-blue-950/30">
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Change type</span>
+                  </button>
+                )}
+                <button
+                  onClick={closePanel}
+                  aria-label="Close training record"
+                  className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-200 transition-colors"
+                >
+                  <XCircle className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
             {/* Step progress */}
@@ -2108,15 +2475,26 @@ export const OutstandingRecordsTab: React.FC = () => {
                     <button
                       type="button"
                       onClick={handleOpenRecommendedLesson}
-                      className="mb-5 flex w-full items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-left transition hover:border-emerald-400 hover:bg-emerald-100 dark:border-emerald-400/25 dark:bg-emerald-950/20 dark:hover:bg-emerald-950/35"
+                      className={`mb-5 flex w-full items-center gap-3 rounded-xl border p-4 text-left transition ${
+                        recommendedLessonBlockingDeficiencies.length > 0
+                          ? 'border-red-200 bg-red-50 hover:border-red-300 dark:border-red-400/25 dark:bg-red-950/20'
+                          : 'border-emerald-200 bg-emerald-50 hover:border-emerald-400 hover:bg-emerald-100 dark:border-emerald-400/25 dark:bg-emerald-950/20 dark:hover:bg-emerald-950/35'
+                      }`}
                     >
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white"><Target className="h-5 w-5" /></span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-xs font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Recommended next lesson</span>
-                        <span className="mt-0.5 block truncate text-sm font-bold text-emerald-950 dark:text-emerald-100">{recommendedLesson.lesson.name || recommendedLesson.lesson.sequenceTitle}</span>
-                        <span className="block truncate text-xs text-emerald-800 dark:text-emerald-200">{recommendedLesson.course.title}</span>
+                      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white ${recommendedLessonBlockingDeficiencies.length > 0 ? 'bg-red-600' : 'bg-emerald-600'}`}>
+                        {recommendedLessonBlockingDeficiencies.length > 0 ? <ShieldAlert className="h-5 w-5" /> : <Target className="h-5 w-5" />}
                       </span>
-                      <ArrowRight className="h-5 w-5 shrink-0 text-emerald-600" />
+                      <span className="min-w-0 flex-1">
+                        <span className={`block text-xs font-bold uppercase tracking-wide ${recommendedLessonBlockingDeficiencies.length > 0 ? 'text-red-700 dark:text-red-300' : 'text-emerald-700 dark:text-emerald-300'}`}>
+                          {recommendedLessonBlockingDeficiencies.length > 0 ? 'Recommended lesson blocked' : 'Recommended next lesson'}
+                        </span>
+                        <span className={`mt-0.5 block truncate text-sm font-bold ${recommendedLessonBlockingDeficiencies.length > 0 ? 'text-red-950 dark:text-red-100' : 'text-emerald-950 dark:text-emerald-100'}`}>{recommendedLesson.lesson.name || recommendedLesson.lesson.sequenceTitle}</span>
+                        <span className={`block truncate text-xs ${recommendedLessonBlockingDeficiencies.length > 0 ? 'text-red-800 dark:text-red-200' : 'text-emerald-800 dark:text-emerald-200'}`}>
+                          {recommendedLesson.course.title}
+                          {recommendedLessonBlockingDeficiencies.length > 0 ? ` · resolve ${recommendedLessonBlockingDeficiencies.length} ${recommendedLessonBlockingDeficiencies.length === 1 ? 'deficiency' : 'deficiencies'} first` : ''}
+                        </span>
+                      </span>
+                      <ArrowRight className={`h-5 w-5 shrink-0 ${recommendedLessonBlockingDeficiencies.length > 0 ? 'text-red-600' : 'text-emerald-600'}`} />
                     </button>
                   )}
                   {coursesLoading ? (
@@ -2146,6 +2524,11 @@ export const OutstandingRecordsTab: React.FC = () => {
                             <p className="text-xs text-gray-500 mt-0.5">
                               {course.category} &middot; {course.lessons.length} lessons
                               {activeEnrolledCourseIds.has(course.id) && <span className="ml-2 font-semibold text-emerald-600 dark:text-emerald-300">Enrolled</span>}
+                              {(openDeficienciesByCourse.get(course.id)?.length ?? 0) > 0 && (
+                                <span className="ml-2 font-semibold text-amber-700 dark:text-amber-300">
+                                  {openDeficienciesByCourse.get(course.id)?.length} open {openDeficienciesByCourse.get(course.id)?.length === 1 ? 'deficiency' : 'deficiencies'}
+                                </span>
+                              )}
                             </p>
                           </div>
                           <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-blue-400 mt-1 shrink-0 transition-colors" />
@@ -2168,7 +2551,12 @@ export const OutstandingRecordsTab: React.FC = () => {
                   <p className="text-sm font-medium text-gray-700 mb-1">Which lesson was covered?</p>
                   <p className="text-xs text-gray-400 mb-4">{selectedCourse.title}</p>
                   <div className="space-y-2">
-                    {selectedCourse.lessons.map((lesson, idx) => (
+                    {selectedCourse.lessons.map((lesson, idx) => {
+                      const gate = getTrainingDeficiencyGate(lesson);
+                      const blockingCount = gate
+                        ? selectedCourseOpenDeficiencies.filter(deficiency => deficiency.stage === gate).length
+                        : 0;
+                      return (
                       <button
                         key={lesson.id}
                         onClick={() => handleSelectLesson(lesson.id)}
@@ -2180,10 +2568,16 @@ export const OutstandingRecordsTab: React.FC = () => {
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-gray-900 text-sm break-words">{lesson.name || lesson.sequenceTitle || `Lesson ${idx + 1}`}</p>
                           {lesson.objective && <p className="text-xs text-gray-400 mt-0.5 truncate">{lesson.objective}</p>}
+                          {blockingCount > 0 && (
+                            <p className="mt-1 text-xs font-semibold text-red-700 dark:text-red-300">
+                              Blocked by {blockingCount} open {gate === 'pre_solo' ? 'pre-solo' : 'pre-test'} {blockingCount === 1 ? 'deficiency' : 'deficiencies'}
+                            </p>
+                          )}
                         </div>
                         <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-blue-400 shrink-0 transition-colors" />
                       </button>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -2327,6 +2721,153 @@ export const OutstandingRecordsTab: React.FC = () => {
                       Use Grammar for light fixes, or Rewrite for a clearer version without adding facts.
                     </p>
                   </div>
+
+                  {/* Instructor-only structured deficiencies */}
+                  <section className="overflow-hidden rounded-2xl border border-amber-200 bg-amber-50/70 dark:border-amber-400/25 dark:bg-amber-950/15">
+                    <div className="flex items-start gap-3 border-b border-amber-200 px-4 py-4 dark:border-amber-400/20 sm:px-5">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-600 text-white">
+                        <ShieldAlert className="h-5 w-5" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="text-sm font-bold text-amber-950 dark:text-amber-100">Training deficiencies</h4>
+                          <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white dark:bg-slate-100 dark:text-slate-900">Instructor only</span>
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-amber-800 dark:text-amber-200">
+                          Track each issue separately. Students continue to see the lesson comments and grades, but never this section.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4 p-4 sm:p-5">
+                      {selectedLessonBlockingDeficiencies.length > 0 && (
+                        <div className="rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-400/30 dark:bg-red-950/30 dark:text-red-100">
+                          <p className="font-bold">This {selectedLessonDeficiencyGate === 'pre_solo' ? 'solo lesson' : 'pilot test'} cannot be submitted yet.</p>
+                          <p className="mt-1 text-xs leading-5 text-red-800 dark:text-red-200">
+                            {selectedLessonBlockingDeficiencies.length} open {selectedLessonBlockingDeficiencies.length === 1 ? 'deficiency must' : 'deficiencies must'} be marked fixed in an earlier lesson record first.
+                          </p>
+                        </div>
+                      )}
+
+                      {deficienciesLoading ? (
+                        <div className="flex items-center gap-2 rounded-xl bg-white/80 p-3 text-sm text-amber-800 dark:bg-[#111827] dark:text-amber-200">
+                          <Loader2 className="h-4 w-4 animate-spin" /> Loading open deficiencies...
+                        </div>
+                      ) : deficienciesError ? (
+                        <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-400/30 dark:bg-red-950/30 dark:text-red-200">
+                          Deficiencies could not be loaded. Do not submit until the connection is restored.
+                        </div>
+                      ) : selectedCourseOpenDeficiencies.length > 0 ? (
+                        <div className="space-y-2">
+                          <p className="text-xs font-bold uppercase tracking-wide text-amber-800 dark:text-amber-200">Open items — tick only those fixed during this lesson</p>
+                          {selectedCourseOpenDeficiencies.map(deficiency => {
+                            const checked = (form.resolvedDeficiencyIds ?? []).includes(deficiency.id);
+                            const sourceLesson = selectedCourse.lessons.find(lesson => lesson.id === deficiency.sourceLessonId);
+                            return (
+                              <label
+                                key={deficiency.id}
+                                className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${
+                                  checked
+                                    ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-400/30 dark:bg-emerald-950/25'
+                                    : 'border-amber-200 bg-white hover:border-amber-300 dark:border-amber-400/20 dark:bg-[#111827]'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => handleToggleDeficiencyResolved(deficiency.id)}
+                                  className="mt-1 h-5 w-5 rounded border-amber-300 text-emerald-600 focus:ring-emerald-500"
+                                />
+                                <span className="min-w-0 flex-1">
+                                  <span className={`block text-sm font-semibold leading-5 ${checked ? 'text-emerald-950 line-through decoration-emerald-500/60 dark:text-emerald-100' : 'text-slate-900 dark:text-slate-100'}`}>
+                                    {deficiency.description}
+                                  </span>
+                                  <span className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+                                    <span className="font-semibold">Must be fixed before {deficiency.stage === 'pre_solo' ? 'solo' : 'pilot test'}</span>
+                                    {sourceLesson && <span>Raised in {sourceLesson.name || sourceLesson.sequenceTitle}</span>}
+                                  </span>
+                                </span>
+                                <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${checked ? 'bg-emerald-600 text-white' : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-200'}`}>
+                                  {checked ? 'Fixed' : 'Open'}
+                                </span>
+                              </label>
+                            );
+                          })}
+                          {(form.resolvedDeficiencyIds?.length ?? 0) > 0 && (
+                            <label className="block pt-1">
+                              <span className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-200">How the selected items were fixed (optional)</span>
+                              <textarea
+                                rows={2}
+                                value={form.deficiencyResolutionNote ?? ''}
+                                onChange={event => setForm(current => ({ ...current, deficiencyResolutionNote: event.target.value }))}
+                                placeholder="Brief evidence or corrective action..."
+                                className="w-full resize-none rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-amber-400/25 dark:bg-[#111827] dark:text-slate-100"
+                              />
+                            </label>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-800 dark:border-emerald-400/25 dark:bg-emerald-950/25 dark:text-emerald-200">
+                          <CheckCircle className="h-4 w-4" /> No open deficiencies for this course.
+                        </div>
+                      )}
+
+                      {(form.newDeficiencies?.length ?? 0) > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-xs font-bold uppercase tracking-wide text-amber-800 dark:text-amber-200">New items from this lesson</p>
+                          {form.newDeficiencies.map(deficiency => (
+                            <div key={deficiency.clientReference} className="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 p-3 dark:border-blue-400/25 dark:bg-blue-950/20">
+                              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-blue-600 dark:text-blue-300" />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-semibold text-blue-950 dark:text-blue-100">{deficiency.description}</p>
+                                <p className="mt-1 text-[11px] font-semibold text-blue-700 dark:text-blue-200">Before {deficiency.stage === 'pre_solo' ? 'solo' : 'pilot test'}</p>
+                              </div>
+                              <button type="button" onClick={() => handleRemoveNewDeficiency(deficiency.clientReference)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-red-500 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/30" aria-label="Remove new deficiency">
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="rounded-xl border border-dashed border-amber-300 bg-white/70 p-3 dark:border-amber-400/30 dark:bg-[#111827] sm:p-4">
+                        <label className="block text-xs font-bold uppercase tracking-wide text-amber-900 dark:text-amber-100">Add a deficiency requiring attention</label>
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          {([
+                            { value: 'pre_solo' as const, label: 'Before solo' },
+                            { value: 'pre_test' as const, label: 'Before pilot test' },
+                          ]).map(option => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => setDeficiencyStage(option.value)}
+                              className={`min-h-10 rounded-xl border px-3 py-2 text-xs font-semibold transition ${
+                                deficiencyStage === option.value
+                                  ? 'border-amber-500 bg-amber-100 text-amber-950 dark:bg-amber-950/50 dark:text-amber-100'
+                                  : 'border-slate-200 bg-white text-slate-600 hover:border-amber-300 dark:border-[#363b45] dark:bg-[#171a21] dark:text-slate-300'
+                              }`}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                        <textarea
+                          rows={3}
+                          maxLength={2000}
+                          value={deficiencyDraft}
+                          onChange={event => setDeficiencyDraft(event.target.value)}
+                          placeholder="One specific issue, observable standard, or corrective action required..."
+                          className="mt-3 w-full resize-none rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-amber-400/25 dark:bg-[#0f172a] dark:text-slate-100 dark:placeholder:text-slate-500"
+                        />
+                        <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <p className="text-[11px] leading-4 text-amber-700 dark:text-amber-200">Add one issue at a time so each can be marked fixed independently.</p>
+                          <button type="button" onClick={handleAddDeficiency} disabled={deficiencyDraft.trim().length < 3} className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50">
+                            <Plus className="h-4 w-4" /> Add deficiency
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
 
                   {/* CASA Matrix Assessment */}
                   {matrixAssessmentLoading && (
@@ -2629,7 +3170,9 @@ export const OutstandingRecordsTab: React.FC = () => {
                   )}
 
                   <div className={`rounded-lg border px-4 py-3 text-sm ${
-                    consecutivePassReadiness.blocked || twoOccasionReadiness.blocked
+                    nextLessonBlockingDeficiencies.length > 0
+                      ? 'border-red-200 bg-red-50'
+                    : consecutivePassReadiness.blocked || twoOccasionReadiness.blocked
                       ? 'border-indigo-200 bg-indigo-50'
                       : lessonPassed
                       ? 'border-emerald-200 bg-emerald-50'
@@ -2638,7 +3181,9 @@ export const OutstandingRecordsTab: React.FC = () => {
                         : 'border-amber-200 bg-amber-50'
                   }`}>
                     <p className={`font-semibold ${
-                      consecutivePassReadiness.blocked || twoOccasionReadiness.blocked
+                      nextLessonBlockingDeficiencies.length > 0
+                        ? 'text-red-800'
+                      : consecutivePassReadiness.blocked || twoOccasionReadiness.blocked
                         ? 'text-indigo-800'
                         : lessonPassed
                         ? 'text-emerald-800'
@@ -2646,7 +3191,9 @@ export const OutstandingRecordsTab: React.FC = () => {
                           ? 'text-blue-800'
                           : 'text-amber-800'
                     }`}>
-                      {consecutivePassReadiness.blocked
+                      {nextLessonBlockingDeficiencies.length > 0
+                        ? `Next ${nextLessonDeficiencyGate === 'pre_solo' ? 'solo lesson' : 'pilot test'} blocked by open deficiencies`
+                      : consecutivePassReadiness.blocked
                         ? 'Consecutive pass required before next lesson'
                         : twoOccasionReadiness.blocked
                         ? `Two-occasion rule: not ready to recommend ${twoOccasionReadiness.targetLessonName}`
@@ -2657,7 +3204,9 @@ export const OutstandingRecordsTab: React.FC = () => {
                             : 'Lesson not passed yet'}
                     </p>
                     <p className={`mt-1 text-xs ${
-                      consecutivePassReadiness.blocked || twoOccasionReadiness.blocked
+                      nextLessonBlockingDeficiencies.length > 0
+                        ? 'text-red-700'
+                      : consecutivePassReadiness.blocked || twoOccasionReadiness.blocked
                         ? 'text-indigo-700'
                         : lessonPassed
                         ? 'text-emerald-700'
@@ -2667,6 +3216,11 @@ export const OutstandingRecordsTab: React.FC = () => {
                     }`}>
                       Next lesson on record: {nextLessonForRecord || 'Not set'}
                     </p>
+                    {nextLessonBlockingDeficiencies.length > 0 && (
+                      <p className="mt-2 text-xs text-red-700">
+                        Resolve {nextLessonBlockingDeficiencies.length} {nextLessonDeficiencyGate === 'pre_solo' ? 'pre-solo' : 'pre-test'} {nextLessonBlockingDeficiencies.length === 1 ? 'deficiency' : 'deficiencies'} before proceeding.
+                      </p>
+                    )}
                     {consecutivePassReadiness.blocked && (
                       <p className="mt-2 text-xs text-indigo-700">
                         Needs 2 consecutive passes for: {consecutivePassReadiness.missing.slice(0, 4).map(item => item.name).join(', ')}
@@ -2701,7 +3255,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                         </label>
                         <label className="block">
                           <span className="block text-xs font-medium text-orange-800 mb-1">Result</span>
-                          <select
+                          <SearchableSelect
                             value={form.flightReviewResult}
                             onChange={event => setForm(f => ({ ...f, flightReviewResult: event.target.value as RecordFormState['flightReviewResult'] }))}
                             className="w-full px-3 py-2 text-sm border border-orange-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
@@ -2709,7 +3263,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                             <option value="not_assessed">Not assessed</option>
                             <option value="pass">Pass</option>
                             <option value="fail">Further training required</option>
-                          </select>
+                          </SearchableSelect>
                         </label>
                         <label className="block sm:col-span-2">
                           <span className="block text-xs font-medium text-orange-800 mb-1">
@@ -2753,7 +3307,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                       )}
                       <button
                         onClick={isDraftSession ? handleSaveDraftRecord : handleSubmit}
-                        disabled={submitting || (!isDraftSession && trainingSettings.requireFlightComments && !form.flightComments.trim())}
+                        disabled={submitting || (!isDraftSession && (deficienciesLoading || Boolean(deficienciesError) || (trainingSettings.requireFlightComments && !form.flightComments.trim())))}
                         className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {submitting ? (
@@ -2793,6 +3347,15 @@ export const OutstandingRecordsTab: React.FC = () => {
           reviewerName={user.name || 'Reviewer'}
           currentUserId={user.id}
           flightComments={flightReviews.flightCommentsByRecord.get(activeReviewRecord.id) || form.flightComments}
+          endorsementOptions={trainingSettings.endorsementTypes}
+          linkedFlight={!isDraftSession ? {
+            id: activeLog.id,
+            aircraftId: activeLog.aircraft_id || undefined,
+            aircraftType: activeLog.aircraft_type || undefined,
+            registration: activeLog.aircraft_registration || undefined,
+            reviewDate: format(new Date(activeLog.start_time), 'yyyy-MM-dd'),
+            flightMinutes: Math.max(0, Math.round(((activeLog.dual_time ?? 0) + (activeLog.solo_time ?? 0)) * 60)),
+          } : undefined}
           onClose={() => setActiveReviewRecordId(null)}
           onUpdateRecord={async (id, input) => {
             const updateInput = !isDraftSession && !activeReviewRecord.flightLogId

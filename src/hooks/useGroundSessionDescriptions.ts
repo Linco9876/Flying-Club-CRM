@@ -28,9 +28,11 @@ type GroundSessionDescriptionDraft = GroundSessionDescriptionOption | string | n
 export const useGroundSessionDescriptions = () => {
   const [options, setOptions] = useState<GroundSessionDescriptionOption[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchOptions = async () => {
     try {
+      setLoading(true);
       const [
         { data, error },
         { data: rateData, error: rateError },
@@ -54,8 +56,11 @@ export const useGroundSessionDescriptions = () => {
         ratesByDescription.set(rate.descriptionOptionId, current);
       }
       setOptions((data || []).map(row => mapRow(row, ratesByDescription.get(row.id) || [])));
-    } catch (error) {
-      console.error('Error loading ground session description options:', error);
+      setError(null);
+    } catch (caught) {
+      console.error('Error loading ground session description options:', caught);
+      setOptions([]);
+      setError(caught instanceof Error ? caught.message : 'Ground session descriptions could not be loaded');
       toast.error('Failed to load ground session descriptions');
     } finally {
       setLoading(false);
@@ -67,6 +72,7 @@ export const useGroundSessionDescriptions = () => {
   }, []);
 
   const saveOptions = async (nextOptions: GroundSessionDescriptionDraft[]) => {
+    if (error) throw new Error('Ground session descriptions must load successfully before they can be changed.');
     try {
       const activeOptions = options.filter(option => option.active);
       const cleaned = nextOptions
@@ -171,6 +177,7 @@ export const useGroundSessionDescriptions = () => {
   return {
     options,
     loading,
+    error,
     saveOptions,
     refetch: fetchOptions,
   };

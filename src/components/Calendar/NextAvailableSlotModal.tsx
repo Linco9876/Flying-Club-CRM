@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React from 'react';
 import { format } from 'date-fns';
 import { Clock, Loader2, MapPin, Plane, Search, User, X } from 'lucide-react';
@@ -131,35 +132,35 @@ export const NextAvailableSlotModal: React.FC<NextAvailableSlotModalProps> = ({
             </label>
             <label className="text-xs font-bold uppercase tracking-wide text-gray-600 dark:text-gray-300">
               Booking length
-              <select value={durationMinutes} onChange={(event) => setDurationMinutes(Number(event.target.value))} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-normal text-gray-950 dark:border-[#4a505c] dark:bg-[#11141a] dark:text-white">
+              <SearchableSelect value={durationMinutes} onChange={(event) => setDurationMinutes(Number(event.target.value))} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-normal text-gray-950 dark:border-[#4a505c] dark:bg-[#11141a] dark:text-white">
                 {[30, 45, 60, 90, 120, 150, 180, 240].map((minutes) => (
                   <option key={minutes} value={minutes}>{minutes < 60 ? `${minutes} minutes` : `${minutes / 60} hours`}</option>
                 ))}
-              </select>
+              </SearchableSelect>
             </label>
             <label className="text-xs font-bold uppercase tracking-wide text-gray-600 dark:text-gray-300">
               <Plane className="mr-1 inline h-3.5 w-3.5" />
               Aircraft
-              <select value={aircraftId} onChange={(event) => setAircraftId(event.target.value)} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-normal text-gray-950 dark:border-[#4a505c] dark:bg-[#11141a] dark:text-white">
+              <SearchableSelect value={aircraftId} onChange={(event) => setAircraftId(event.target.value)} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-normal text-gray-950 dark:border-[#4a505c] dark:bg-[#11141a] dark:text-white">
                 <option value="">Any serviceable aircraft</option>
                 {aircraft.map((item) => <option key={item.id} value={item.id}>{item.registration} — {[item.make, item.model].filter(Boolean).join(' ')}</option>)}
-              </select>
+              </SearchableSelect>
             </label>
             <label className="text-xs font-bold uppercase tracking-wide text-gray-600 dark:text-gray-300">
               <User className="mr-1 inline h-3.5 w-3.5" />
               Instructor
-              <select value={instructorId} onChange={(event) => setInstructorId(event.target.value)} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-normal text-gray-950 dark:border-[#4a505c] dark:bg-[#11141a] dark:text-white">
+              <SearchableSelect value={instructorId} onChange={(event) => setInstructorId(event.target.value)} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-normal text-gray-950 dark:border-[#4a505c] dark:bg-[#11141a] dark:text-white">
                 <option value="">Any rostered instructor</option>
                 {instructors.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
+              </SearchableSelect>
             </label>
             {locations.length > 1 && (
               <label className="text-xs font-bold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                 <MapPin className="mr-1 inline h-3.5 w-3.5" />
                 Location
-                <select value={locationId} onChange={(event) => setLocationId(event.target.value)} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-normal text-gray-950 dark:border-[#4a505c] dark:bg-[#11141a] dark:text-white">
+                <SearchableSelect value={locationId} onChange={(event) => setLocationId(event.target.value)} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-normal text-gray-950 dark:border-[#4a505c] dark:bg-[#11141a] dark:text-white">
                   {locations.map((location) => <option key={location.id} value={location.id}>{location.name}{location.isPrimary ? ' (primary)' : ''}</option>)}
-                </select>
+                </SearchableSelect>
               </label>
             )}
           </div>

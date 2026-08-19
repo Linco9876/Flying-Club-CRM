@@ -29,7 +29,7 @@ test('students and pilots cannot access uploaded exam sheets', () => {
 });
 
 test('authorised instructional staff retain exam-sheet metadata access', () => {
-  for (const role of ['admin', 'instructor', 'senior_instructor'] as const) {
+  for (const role of ['admin', 'cfi', 'instructor', 'senior_instructor'] as const) {
     const user = userWithRoles(role);
     assert.equal(canAccessUploadedExamSheets(user), true);
     assert.match(examResultColumnsForViewer(user), /storage_path/);
