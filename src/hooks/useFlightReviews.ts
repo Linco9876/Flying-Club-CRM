@@ -27,12 +27,14 @@ export type FlightReviewAttachmentCategory =
 export interface FlightReviewAssessmentDetails {
   applicantMembershipNumber?: string;
   applicantMembershipExpiry?: string;
+  examinerMembershipNumber?: string;
   totalFlightHours?: number;
   dualFlightHours?: number;
   commandFlightHours?: number;
   raausFlightHours?: number;
   certificateGroup?: string;
-  endorsementsSought?: string;
+  /** Arrays are written by the RPC multi-select; strings remain readable for older records. */
+  endorsementsSought?: string[] | string;
 }
 
 export interface FlightReviewTemplate {

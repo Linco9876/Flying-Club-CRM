@@ -127,6 +127,32 @@ export interface NotificationSettings {
   quiet_hours_end: string;
 }
 
+const defaultNotificationSettings: Omit<NotificationSettings, 'id'> = {
+  email_notifications_enabled: true,
+  sms_notifications_enabled: false,
+  in_app_notifications_enabled: true,
+  booking_confirmation_enabled: true,
+  booking_reminder_24h_enabled: true,
+  booking_reminder_2h_enabled: true,
+  booking_change_notification_enabled: true,
+  cancellation_notification_enabled: true,
+  waitlist_notification_enabled: true,
+  instructor_absence_notification_enabled: true,
+  maintenance_alert_enabled: true,
+  maintenance_due_alert_days: 14,
+  maintenance_due_alert_hours: 10,
+  defect_report_notification_enabled: true,
+  safety_report_notification_enabled: true,
+  approval_request_notification_enabled: true,
+  currency_expiry_alert_days: 30,
+  overdue_flight_record_alert_hours: 24,
+  daily_ops_digest_enabled: false,
+  daily_ops_digest_time: '07:00',
+  quiet_hours_enabled: false,
+  quiet_hours_start: '20:00',
+  quiet_hours_end: '07:00',
+};
+
 export interface UserPreferences {
   id?: string;
   user_id: string;
@@ -237,6 +263,7 @@ export const usePortalUxSettings = () => {
   }, []);
 
   const updateSettings = async (updates: Partial<PortalUxSettings>) => {
+    if (error) throw new Error('Portal & UX settings must load successfully before they can be changed.');
     const { data: userData } = await supabase.auth.getUser();
     const payload = {
       ...defaultPortalUxSettings,
@@ -249,11 +276,11 @@ export const usePortalUxSettings = () => {
     const query = settings?.id
       ? supabase.from('portal_ux_settings').update(payload).eq('id', settings.id)
       : supabase.from('portal_ux_settings').insert(payload);
-    const { error } = await query;
+    const { error: saveError } = await query;
 
-    if (error) {
+    if (saveError) {
       toast.error('Failed to save Portal & UX settings');
-      throw error;
+      throw saveError;
     }
 
     await fetchSettings();
@@ -284,6 +311,7 @@ export const useOrganisationSettings = () => {
 
       if (error) throw error;
       setSettings(data);
+      setError(null);
     } catch (err: any) {
       setError(err.message);
       toast.error('Failed to load organisation settings');
@@ -331,6 +359,7 @@ export const useOrganisationSettings = () => {
   };
 
   const updateSettings = async (updates: Partial<OrganisationSettings>, logoFile?: File | null) => {
+    if (error) throw new Error('Organisation settings must load successfully before they can be changed.');
     try {
       const { data: userData } = await supabase.auth.getUser();
 
@@ -392,6 +421,7 @@ export const useCalendarSettings = () => {
 
       if (error) throw error;
       setSettings(data);
+      setError(null);
     } catch (err: any) {
       setError(err.message);
       toast.error('Failed to load calendar settings');
@@ -408,6 +438,7 @@ export const useCalendarSettings = () => {
   }, []);
 
   const updateSettings = async (updates: Partial<CalendarSettings>) => {
+    if (error) throw new Error('Calendar settings must load successfully before they can be changed.');
     try {
       const { data: userData } = await supabase.auth.getUser();
       const payload = {
@@ -507,6 +538,7 @@ export const useBookingRulesSettings = () => {
   }, []);
 
   const updateSettings = async (updates: Partial<BookingRulesSettings>) => {
+    if (error) throw new Error('Booking rules must load successfully before they can be changed.');
     try {
       const { data: userData } = await supabase.auth.getUser();
       const payload = {
@@ -560,32 +592,10 @@ export const useNotificationSettings = () => {
   const [settings, setSettings] = useState<NotificationSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const defaultNotificationSettings: Omit<NotificationSettings, 'id'> = {
-    email_notifications_enabled: true,
-    sms_notifications_enabled: false,
-    in_app_notifications_enabled: true,
-    booking_confirmation_enabled: true,
-    booking_reminder_24h_enabled: true,
-    booking_reminder_2h_enabled: true,
-    booking_change_notification_enabled: true,
-    cancellation_notification_enabled: true,
-    waitlist_notification_enabled: true,
-    instructor_absence_notification_enabled: true,
-    maintenance_alert_enabled: true,
-    maintenance_due_alert_days: 14,
-    maintenance_due_alert_hours: 10,
-    defect_report_notification_enabled: true,
-    safety_report_notification_enabled: true,
-    approval_request_notification_enabled: true,
-    currency_expiry_alert_days: 30,
-    overdue_flight_record_alert_hours: 24,
-    daily_ops_digest_enabled: false,
-    daily_ops_digest_time: '07:00',
-    quiet_hours_enabled: false,
-    quiet_hours_start: '20:00',
-    quiet_hours_end: '07:00',
-  };
+  const resolvedSettings = useMemo(
+    () => settings ?? ({ id: '', ...defaultNotificationSettings } as NotificationSettings),
+    [settings]
+  );
 
   const fetchSettings = async () => {
     try {
@@ -596,6 +606,7 @@ export const useNotificationSettings = () => {
 
       if (error) throw error;
       setSettings(data ? { ...defaultNotificationSettings, ...data } : null);
+      setError(null);
     } catch (err: any) {
       setError(err.message);
       toast.error('Failed to load notification settings');
@@ -609,6 +620,7 @@ export const useNotificationSettings = () => {
   }, []);
 
   const updateSettings = async (updates: Partial<NotificationSettings>) => {
+    if (error) throw new Error('Notification settings must load successfully before they can be changed.');
     try {
       const { data: userData } = await supabase.auth.getUser();
       const payload = {
@@ -644,7 +656,7 @@ export const useNotificationSettings = () => {
   };
 
   return {
-    settings: settings ?? ({ id: '', ...defaultNotificationSettings } as NotificationSettings),
+    settings: resolvedSettings,
     loading,
     error,
     updateSettings,

@@ -1,7 +1,8 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { getAuthorizedSettingsSections } from '../../utils/rbac';
+import { canEditSettingsSection, getAuthorizedSettingsSections } from '../../utils/rbac';
 import { parseSettingsDeepLink } from '../../utils/settingsDeepLink';
 import { 
   Search, 
@@ -27,6 +28,7 @@ import {
 import { PortalSectionLoader } from '../Layout/PortalSectionLoader';
 import toast from 'react-hot-toast';
 import { usePageLoadState } from '../../context/PageLoadContext';
+import { requireSettingsHandler } from '../../utils/settingsSaveContract';
 
 const OrganisationSettings = lazy(() => import('./OrganisationSettings').then(module => ({ default: module.OrganisationSettings })));
 const CalendarSettings = lazy(() => import('./CalendarSettings').then(module => ({ default: module.CalendarSettings })));
@@ -152,22 +154,31 @@ export const SettingsDashboard: React.FC = () => {
     user?.role,
   ]);
 
-  // Ensure the active section is available to the user
+  // Ensure the active section is authorized. Search filtering must never discard
+  // an in-progress form just because its navigation item is temporarily hidden.
   useEffect(() => {
-    if (filteredSections.length > 0 && !filteredSections.find(s => s.id === activeSection)) {
-      setActiveSection(filteredSections[0].id);
+    if (sections.length > 0 && !sections.find(s => s.id === activeSection)) {
+      setActiveSection(sections[0].id);
     }
-  }, [activeSection, filteredSections]);
+  }, [activeSection, sections]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const preventAccidentalExit = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', preventAccidentalExit);
+    return () => window.removeEventListener('beforeunload', preventAccidentalExit);
+  }, [hasUnsavedChanges]);
 
   const handleFormChange = useCallback(() => setHasUnsavedChanges(true), []);
 
   const handleSave = async () => {
     setIsLoading(true);
     try {
-      const saveFunction = (window as any)[`__${activeSection.replace(/-/g, '')}SettingsSave`];
-      if (saveFunction) {
-        await saveFunction();
-      }
+      const saveFunction = requireSettingsHandler(window as unknown as Record<string, unknown>, activeSection, 'save');
+      await saveFunction();
       setHasUnsavedChanges(false);
     } catch (error) {
       console.error('Error saving settings:', error);
@@ -177,13 +188,19 @@ export const SettingsDashboard: React.FC = () => {
     }
   };
 
-  const handleCancel = () => {
-    const cancelFunction = (window as any)[`__${activeSection.replace(/-/g, '')}SettingsCancel`];
-    if (cancelFunction) {
-      cancelFunction();
+  const handleCancel = async () => {
+    setIsLoading(true);
+    try {
+      const cancelFunction = requireSettingsHandler(window as unknown as Record<string, unknown>, activeSection, 'cancel');
+      await cancelFunction();
+      setHasUnsavedChanges(false);
+      toast('Changes discarded');
+    } catch (error) {
+      console.error('Error discarding settings:', error);
+      toast.error(getErrorMessage(error, 'Failed to discard changes'));
+    } finally {
+      setIsLoading(false);
     }
-    setHasUnsavedChanges(false);
-    toast('Changes discarded');
   };
 
   const handleSectionChange = (sectionId: string) => {
@@ -201,6 +218,7 @@ export const SettingsDashboard: React.FC = () => {
   };
 
   const activeComponent = sections.find(s => s.id === activeSection)?.component;
+  const activeSectionDefinition = sections.find(s => s.id === activeSection);
   const ActiveComponent = activeComponent || OrganisationSettings;
 
   usePageLoadState(
@@ -209,27 +227,42 @@ export const SettingsDashboard: React.FC = () => {
     'Saving or preparing the selected settings section...'
   );
 
-  const canEdit = (sectionId: string) => {
-    const roles = user?.roles && user.roles.length > 0 ? user.roles : user?.role ? [user.role] : [];
-    if (roles.includes('admin')) return true;
-    if ((roles.includes('senior_instructor') || roles.includes('instructor')) && sectionId === 'roster') return true;
-    if (
-      (roles.includes('senior_instructor') || roles.includes('instructor') || roles.includes('student') || roles.includes('pilot')) &&
-      sectionId.startsWith('account-')
-    ) return true;
-    return false;
-  };
+  const canEdit = useCallback(
+    (sectionId: string) => canEditSettingsSection(user, sectionId),
+    [user],
+  );
 
   return (
     <div className="p-3 sm:p-6">
       <div className="mb-4 sm:mb-6">
         <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">Settings</h1>
-        <p className="text-sm text-gray-600 sm:text-base">Configure system preferences and organizational settings</p>
+        <p className="text-sm text-gray-600 sm:text-base">Configure system preferences and organisational settings</p>
+      </div>
+
+      <div className="mobile-settings-switcher sticky z-30 mb-4 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-lg shadow-slate-900/5 backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900/95 lg:hidden">
+        <label htmlFor="mobile-settings-section" className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+          <span className="text-blue-600 dark:text-blue-300">{activeSectionDefinition?.icon}</span>
+          Settings section
+        </label>
+        <SearchableSelect
+          id="mobile-settings-section"
+          value={activeSection}
+          onChange={event => handleSectionChange(event.target.value)}
+          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base font-semibold text-slate-900 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+          aria-label="Choose settings section"
+        >
+          {Object.entries(groupedSections).map(([category, group]) => (
+            <optgroup key={category} label={category}>
+              {group.map(section => <option key={section.id} value={section.id}>{section.label}{canEdit(section.id) ? '' : ' (read-only)'}</option>)}
+            </optgroup>
+          ))}
+        </SearchableSelect>
+        <p className="mt-2 truncate text-xs text-slate-500 dark:text-slate-400">Viewing {activeSectionDefinition?.label || 'settings'}</p>
       </div>
 
       <div className="flex min-h-0 min-w-0 flex-col gap-4 lg:h-[calc(100vh-200px)] lg:flex-row lg:gap-6">
         {/* Left Sidebar */}
-        <div className="flex max-h-[42vh] w-full flex-col rounded-lg border border-gray-200 bg-white shadow-md lg:max-h-none lg:w-80">
+        <div className={`hidden max-h-[42vh] w-full flex-col rounded-lg border border-gray-200 bg-white shadow-md lg:flex lg:max-h-none lg:w-80 ${requestedSettings.focus ? 'order-2 lg:order-1' : ''}`}>
           {/* Search */}
           <div className="p-4 border-b border-gray-200">
             <div className="relative">
@@ -283,7 +316,7 @@ export const SettingsDashboard: React.FC = () => {
 
         {/* Right Content Pane */}
         <div
-          className="flex min-h-[60vh] min-w-0 flex-1 flex-col rounded-lg border border-gray-200 bg-white shadow-md"
+          className={`flex min-h-[60vh] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm lg:rounded-lg lg:shadow-md ${requestedSettings.focus ? 'order-1 lg:order-2' : ''}`}
           data-active-settings-section={activeSection}
           data-active-settings-focus={requestedSettings.focus || undefined}
         >
@@ -306,7 +339,7 @@ export const SettingsDashboard: React.FC = () => {
 
           {/* Save/Cancel Bar */}
           {hasUnsavedChanges && (
-            <div className="border-t border-gray-200 bg-gray-50 px-6 py-4">
+            <div className="mobile-settings-save-bar sticky z-20 border-t border-gray-200 bg-gray-50/95 px-4 py-3 backdrop-blur sm:px-6 sm:py-4">
               <div className="flex min-h-[4rem] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm text-gray-600">You have unsaved changes</p>
                 <div className="flex flex-col gap-2 sm:flex-row sm:space-x-3">

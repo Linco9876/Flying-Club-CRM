@@ -1,9 +1,11 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useState, useEffect } from 'react';
 import { Wrench, Plus, Trash2, Loader2 } from 'lucide-react';
 import { useMaintenanceSettings } from '../../hooks/useMaintenanceSettings';
 import toast from 'react-hot-toast';
 import { validateMaintenanceThresholds } from '../../utils/maintenanceRules';
 import { useLatestEffect } from '../../hooks/useLatestEffect';
+import { SettingsLoadError } from './SettingsLoadError';
 
 interface MaintenanceSettingsProps {
   canEdit: boolean;
@@ -19,7 +21,8 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
     createTemplate,
     updateTemplate,
     deleteTemplate,
-    updateSettings
+    updateSettings,
+    refetch,
   } = useMaintenanceSettings();
 
   const [formData, setFormData] = useState(settings);
@@ -161,12 +164,13 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
       });
       if (validationError) {
         toast.error(validationError);
-        return;
+        throw new Error(validationError);
       }
       await updateSettings(formData);
       setHasChanges(false);
     } catch (error) {
       console.error('Error saving settings:', error);
+      throw error;
     }
   };
 
@@ -193,11 +197,7 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
   }
 
   if (error) {
-    return (
-      <div role="alert" className="m-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-        Maintenance settings could not be loaded: {error}
-      </div>
-    );
+    return <SettingsLoadError section="Maintenance" error={error} onRetry={refetch} />;
   }
 
   return (
@@ -299,7 +299,7 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
             <div className="max-w-md">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Default Defect View</label>
-                <select
+                <SearchableSelect
                   value={formData?.defaultDefectFilter ?? 'open'}
                   onChange={(e) => handleInputChange('defaultDefectFilter', e.target.value)}
                   disabled={!canEdit}
@@ -310,7 +310,7 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
                   <option value="mel">MEL defects</option>
                   <option value="deferred">Deferred defects</option>
                   <option value="fixed">Fixed defects</option>
-                </select>
+                </SearchableSelect>
                 <p className="text-xs text-gray-500 mt-1">Initial filter shown on the maintenance board</p>
               </div>
             </div>
@@ -391,7 +391,7 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
-                    <select
+                    <SearchableSelect
                       value={templateEditValues[`${template.id}-type`] ?? template.type}
                       onChange={(e) => {
                         void handleMilestoneTypeChange(
@@ -405,7 +405,7 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
                       <option value="hours">Hours</option>
                       <option value="calendar">Calendar</option>
                       <option value="both">Both</option>
-                    </select>
+                    </SearchableSelect>
                   </div>
 
                   {(selectedType === 'hours' || selectedType === 'both') && (

@@ -1,10 +1,12 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useMemo, useState } from 'react';
-import { AlertTriangle, Check, Loader2, Mail, X, Clock, Plane, User, CreditCard, Repeat2, MapPin } from 'lucide-react';
+import { AlertTriangle, Check, ChevronDown, Loader2, Mail, Plus, X, Clock, Plane, User, CreditCard, Repeat2, MapPin } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
 import { useStudents } from '../../hooks/useStudents';
 import { useFlightLogs } from '../../hooks/useFlightLogs';
+import { useExternalLogbook } from '../../hooks/useExternalLogbook';
 import { useSafetySettings } from '../../hooks/useSafetySettings';
 import { useBookingFieldSettings } from '../../hooks/useBookingFieldSettings';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
@@ -18,6 +20,14 @@ import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 import { useFinancialProviders } from '../../context/financialProviderState';
 import { shouldCaptureFinancialDetails } from '../../utils/financialProviderPresentation';
+import { bookingDefaultTimes } from '../../utils/bookingDefaults';
+import { isPaymentTypeAvailable } from '../../utils/paymentMethodAvailability';
+import {
+  CasualContactSearchResult,
+  bookingPurposeNeedsFormalProfile,
+  mapCasualContactSearchRow,
+  normaliseGuestBookingPurpose,
+} from '../../utils/casualContacts';
 
 interface BookingFormProps {
   isOpen: boolean;
@@ -44,6 +54,8 @@ interface BookingFormProps {
     guestEmail?: string;
     guestPhone?: string;
     trialFlightVoucherId?: string;
+    casualContactId?: string;
+    bookingPurpose?: Booking['bookingPurpose'];
     location?: string;
     locationId?: string;
   };
@@ -70,28 +82,44 @@ interface PublicInstructorOption {
 
 const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, booking, isEdit, isKioskMode = false, prefilledData }) => {
   const { user } = useAuth();
-  const { aircraft, loading: aircraftLoading } = useAircraft({ participateInPageLoad: false });
-  const { users, getInstructors, loading: usersLoading } = useUsers();
-  const { students, loading: studentsLoading } = useStudents({ participateInPageLoad: false });
-  const { flightLogs, loading: flightLogsLoading } = useFlightLogs(undefined, { participateInPageLoad: false });
-  const { settings: safetySettings } = useSafetySettings({ participateInPageLoad: false });
-  const { settings: bookingFieldSettings, isFieldRequired, isFieldVisible } = useBookingFieldSettings();
-  const { flightTypes, paymentMethods } = useBillingSettings();
-  const { capabilities: financialProviders, loading: financialProvidersLoading } = useFinancialProviders();
+  const { aircraft, loading: aircraftLoading, error: aircraftError } = useAircraft({ participateInPageLoad: false });
+  const { users, getInstructors, loading: usersLoading, error: usersError } = useUsers();
+  const { students, loading: studentsLoading, error: studentsError } = useStudents({ participateInPageLoad: false });
+  const { flightLogs, loading: flightLogsLoading, error: flightLogsError } = useFlightLogs(undefined, { participateInPageLoad: false });
+  const {
+    baselines: logbookBaselines,
+    entries: externalLogbookEntries,
+    loading: externalLogbookLoading,
+    error: externalLogbookError,
+  } = useExternalLogbook();
+  const { settings: safetySettings, loading: safetySettingsLoading, error: safetySettingsError } = useSafetySettings({ participateInPageLoad: false });
+  const { settings: bookingFieldSettings, isFieldRequired, isFieldVisible, loading: bookingFieldsLoading, error: bookingFieldsError } = useBookingFieldSettings();
+  const { flightTypes, paymentMethods, loading: billingSettingsLoading, error: billingSettingsError } = useBillingSettings();
+  const {
+    capabilities: financialProviders,
+    loading: financialProvidersLoading,
+    error: financialProvidersError,
+  } = useFinancialProviders();
   const financialCaptureEnabled = shouldCaptureFinancialDetails(financialProviders);
   const {
     activeLocations,
     primaryLocation,
     loading: locationsLoading,
+    error: locationsError,
   } = useOrganisationLocations();
-  const { settings: portalSettings } = usePortalUxSettings();
-  const { settings: bookingRules } = useBookingRulesSettings();
-  const { settings: organisationSettings } = useOrganisationSettings();
+  const { settings: portalSettings, loading: portalSettingsLoading, error: portalSettingsError } = usePortalUxSettings();
+  const { settings: bookingRules, loading: bookingRulesLoading, error: bookingRulesError } = useBookingRulesSettings();
+  const { settings: organisationSettings, loading: organisationSettingsLoading, error: organisationSettingsError } = useOrganisationSettings();
   const isCopiedBooking = Boolean(prefilledData?.copiedFromBookingId && !isEdit);
   const isVoucherBookingEdit = Boolean(isEdit && booking?.trialFlightVoucherId);
   const buildInitialFormData = React.useCallback(() => {
     const today = format(new Date(), 'yyyy-MM-dd');
     const defaultLocation = primaryLocation || activeLocations[0];
+    const defaultTimes = bookingDefaultTimes({
+      bookingDayStart: organisationSettings?.booking_day_start,
+      bookingDayEnd: organisationSettings?.booking_day_end,
+      slotLengthMinutes: organisationSettings?.default_slot_length,
+    });
 
     if (booking) {
       const matchedLocation = activeLocations.find((location) =>
@@ -115,6 +143,8 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
         guestEmail: booking.guestEmail || '',
         guestPhone: booking.guestPhone || '',
         trialFlightVoucherId: booking.trialFlightVoucherId || '',
+        casualContactId: booking.casualContactId || '',
+        bookingPurpose: booking.bookingPurpose || (booking.isGuestBooking ? 'casual_flight' : 'standard'),
         locationId: matchedLocation?.id || defaultLocation?.id || '',
         location: matchedLocation?.name || booking.location || defaultLocation?.name || 'Bendigo Airport',
       };
@@ -129,8 +159,8 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       studentId: prefilledData?.studentId || (isKioskMode ? '' : user?.id) || '',
       date: prefilledData?.date || today,
       endDate: prefilledData?.endDate || prefilledData?.date || today,
-      startTime: normalizeToQuarterHour(prefilledData?.startTime) || '09:00',
-      endTime: normalizeToQuarterHour(prefilledData?.endTime) || '11:00',
+      startTime: normalizeToQuarterHour(prefilledData?.startTime) || defaultTimes.startTime,
+      endTime: normalizeToQuarterHour(prefilledData?.endTime) || defaultTimes.endTime,
       aircraftId: prefilledData?.aircraftId || '',
       instructorId: prefilledData?.instructorId || '',
       paymentType: prefilledData?.paymentType || '',
@@ -141,6 +171,8 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       guestEmail: prefilledData?.guestEmail || '',
       guestPhone: prefilledData?.guestPhone || '',
       trialFlightVoucherId: prefilledData?.trialFlightVoucherId || '',
+      casualContactId: prefilledData?.casualContactId || '',
+      bookingPurpose: prefilledData?.bookingPurpose || (prefilledData?.isGuestBooking ? 'casual_flight' : 'standard'),
       locationId: matchedPrefillLocation?.id || defaultLocation?.id || '',
       location: matchedPrefillLocation?.name || prefilledData?.location || defaultLocation?.name || 'Bendigo Airport',
     };
@@ -163,18 +195,27 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     prefilledData?.guestEmail,
     prefilledData?.guestPhone,
     prefilledData?.trialFlightVoucherId,
+    prefilledData?.casualContactId,
+    prefilledData?.bookingPurpose,
     prefilledData?.location,
     prefilledData?.locationId,
     primaryLocation,
     isKioskMode,
+    organisationSettings?.booking_day_end,
+    organisationSettings?.booking_day_start,
+    organisationSettings?.default_slot_length,
     user?.id,
   ]);
 
   const [formData, setFormData] = useState(buildInitialFormData);
   const [guestVoucherOptions, setGuestVoucherOptions] = useState<GuestVoucherOption[]>([]);
   const [guestVoucherSearch, setGuestVoucherSearch] = useState('');
+  const [casualContactSearch, setCasualContactSearch] = useState('');
+  const [casualContactResults, setCasualContactResults] = useState<CasualContactSearchResult[]>([]);
+  const [loadingCasualContacts, setLoadingCasualContacts] = useState(false);
   const [pilotSearch, setPilotSearch] = useState('');
   const [showPilotDropdown, setShowPilotDropdown] = useState(false);
+  const [showSpecialBookingOptions, setShowSpecialBookingOptions] = useState(false);
   const [loadingGuestVouchers, setLoadingGuestVouchers] = useState(false);
   const [publicInstructors, setPublicInstructors] = useState<PublicInstructorOption[]>([]);
   type RecurrenceFrequency = 'daily' | 'weekly' | 'monthly';
@@ -234,16 +275,124 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   }));
   const userRole = user?.role || 'student';
   const isAdminUser = Boolean(user?.role === 'admin' || user?.roles?.includes('admin'));
-  const isStaffUser = Boolean(isAdminUser || user?.role === 'instructor' || user?.role === 'senior_instructor' || user?.roles?.some(role => ['instructor', 'senior_instructor'].includes(role)));
+  const isStaffUser = Boolean(isAdminUser || user?.role === 'cfi' || user?.role === 'instructor' || user?.role === 'senior_instructor' || user?.roles?.some(role => ['cfi', 'instructor', 'senior_instructor'].includes(role)));
   const canCreateGuestBooking = isStaffUser;
   const isGroundSessionBooking = formData.bookingKind === 'ground';
   const displayUserRoles = user?.roles && user.roles.length > 0 ? user.roles : [userRole];
-  const isStudentOnlyUser = displayUserRoles.includes('student') && !displayUserRoles.some(role => ['pilot', 'instructor', 'senior_instructor', 'admin'].includes(role));
+  const isStudentOnlyUser = displayUserRoles.includes('student') && !displayUserRoles.some(role => ['pilot', 'cfi', 'instructor', 'senior_instructor', 'admin'].includes(role));
   const isLimitedCalendarUser = displayUserRoles.some(role => role === 'student' || role === 'pilot')
-    && !displayUserRoles.some(role => ['admin', 'instructor', 'senior_instructor'].includes(role));
-  const isLoading = aircraftLoading || usersLoading || studentsLoading || flightLogsLoading || locationsLoading || financialProvidersLoading;
+    && !displayUserRoles.some(role => ['admin', 'cfi', 'instructor', 'senior_instructor'].includes(role));
+  const isLoading = aircraftLoading || usersLoading || studentsLoading || flightLogsLoading || externalLogbookLoading || locationsLoading
+    || financialProvidersLoading || safetySettingsLoading || bookingFieldsLoading || billingSettingsLoading
+    || portalSettingsLoading || bookingRulesLoading || organisationSettingsLoading;
+  const bookingDataError = aircraftError || usersError || studentsError || flightLogsError || externalLogbookError
+    || safetySettingsError || bookingFieldsError || billingSettingsError || locationsError
+    || portalSettingsError || bookingRulesError || organisationSettingsError;
   const showModalLoader = isLoading || isSubmitting;
   const selectedGuestVoucher = guestVoucherOptions.find(option => option.id === formData.trialFlightVoucherId);
+  const effectiveBookingPurpose = formData.isGuestBooking
+    ? normaliseGuestBookingPurpose(formData.bookingPurpose, Boolean(formData.trialFlightVoucherId))
+    : formData.bookingPurpose || 'standard';
+  const specialBookingPurposeLabel = effectiveBookingPurpose === 'trial_flight'
+    ? 'Trial introductory flight'
+    : effectiveBookingPurpose === 'external_flight_review'
+      ? 'External flight review'
+      : effectiveBookingPurpose === 'external_flight_test'
+        ? 'External flight test'
+        : '';
+  const showSelectedSpecialPurpose = Boolean(
+    specialBookingPurposeLabel
+    && (!formData.isGuestBooking || !formData.trialFlightVoucherId)
+  );
+  const specialBookingOptions: Array<{ value: NonNullable<Booking['bookingPurpose']>; label: string; description: string }> = formData.isGuestBooking
+    ? [{
+        value: 'trial_flight',
+        label: 'Trial introductory flight',
+        description: 'Use for a trial flight that does not have a linked voucher.',
+      }]
+    : [
+        {
+          value: 'external_flight_review',
+          label: 'External flight review',
+          description: 'A formal review for a pilot with a portal profile.',
+        },
+        {
+          value: 'external_flight_test',
+          label: 'External flight test',
+          description: 'A formal test for a pilot with a portal profile.',
+        },
+      ];
+  const resetBookingPurpose = () => {
+    setFormData(prev => ({
+      ...prev,
+      bookingPurpose: prev.isGuestBooking ? 'casual_flight' : 'standard',
+    }));
+    setShowSpecialBookingOptions(false);
+  };
+  const specialBookingControl = !formData.trialFlightVoucherId && !isGroundSessionBooking ? (
+    <div className="pt-0.5">
+      {showSelectedSpecialPurpose ? (
+        <div className="inline-flex max-w-full items-center rounded-full border border-blue-200 bg-blue-50 text-xs font-medium text-blue-800">
+          <button
+            type="button"
+            onClick={() => setShowSpecialBookingOptions(prev => !prev)}
+            className="inline-flex min-h-8 min-w-0 items-center gap-1 rounded-l-full py-1 pl-2.5 pr-1.5 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+            aria-expanded={showSpecialBookingOptions}
+            aria-label={`Change booking purpose: ${specialBookingPurposeLabel}`}
+          >
+            <span className="truncate">{specialBookingPurposeLabel}</span>
+            <ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform ${showSpecialBookingOptions ? 'rotate-180' : ''}`} />
+          </button>
+          <button
+            type="button"
+            onClick={resetBookingPurpose}
+            className="flex min-h-8 min-w-8 items-center justify-center rounded-r-full border-l border-blue-200 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+            aria-label={`Remove ${specialBookingPurposeLabel} purpose`}
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setShowSpecialBookingOptions(prev => !prev)}
+          className="inline-flex min-h-8 items-center gap-1 rounded-md px-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+          aria-expanded={showSpecialBookingOptions}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Special booking
+          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showSpecialBookingOptions ? 'rotate-180' : ''}`} />
+        </button>
+      )}
+      {showSpecialBookingOptions && (
+        <div className="mt-1.5 space-y-1 rounded-lg border border-gray-200 bg-gray-50 p-1.5" role="group" aria-label="Special booking purpose">
+          {specialBookingOptions.map(option => {
+            const selected = effectiveBookingPurpose === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => {
+                  setFormData(prev => ({ ...prev, bookingPurpose: option.value }));
+                  setShowSpecialBookingOptions(false);
+                }}
+                className={`flex min-h-11 w-full items-center justify-between gap-2 rounded-md px-2.5 py-2 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  selected ? 'bg-blue-100 text-blue-900' : 'bg-white text-gray-800 hover:bg-blue-50'
+                }`}
+                aria-pressed={selected}
+              >
+                <span className="min-w-0">
+                  <span className="block text-xs font-semibold">{option.label}</span>
+                  <span className="block text-[11px] leading-4 text-gray-500">{option.description}</span>
+                </span>
+                {selected && <Check className="h-4 w-4 shrink-0 text-blue-700" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  ) : null;
   const voucherScheduleChanged = Boolean(
     isVoucherBookingEdit && booking && (
       formData.date !== format(new Date(booking.startTime), 'yyyy-MM-dd') ||
@@ -294,7 +443,9 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     return guestEligibleAircraftIds.includes(item.id);
   });
   const availableFlightTypes = flightTypes.filter((flightType) =>
-    flightType.active && (!formData.isGuestBooking || !isPrepaidLikeFlightType(flightType.name))
+    flightType.active
+    && isPaymentTypeAvailable(flightType, paymentMethods, financialProviders)
+    && (!formData.isGuestBooking || !isPrepaidLikeFlightType(flightType.name))
   );
 
   const filteredGuestVoucherOptions = guestVoucherOptions.filter((option) => {
@@ -383,12 +534,54 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     setEndorsementWarningState(null);
     setMembershipWarningState(null);
     setGuestVoucherSearch('');
+    setCasualContactSearch('');
+    setCasualContactResults([]);
     setPilotSearch(initialData.isGuestBooking || !initialPilot ? '' : getPilotSearchLabel(initialPilot));
     setShowPilotDropdown(false);
+    setShowSpecialBookingOptions(false);
     setRecurrence(buildDefaultRecurrence());
     setIsSubmitting(false);
     setSendVoucherUpdateEmail(null);
   }, [buildDefaultRecurrence, buildInitialFormData, isOpen, users]);
+
+  React.useEffect(() => {
+    if (!isOpen || !canCreateGuestBooking || !formData.isGuestBooking) {
+      setCasualContactResults([]);
+      setLoadingCasualContacts(false);
+      return;
+    }
+    const query = casualContactSearch.trim();
+    if (query.length < 2) {
+      setCasualContactResults([]);
+      setLoadingCasualContacts(false);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setLoadingCasualContacts(true);
+      const { data, error } = await supabase.rpc('search_casual_contacts', {
+        p_query: query,
+        p_limit: 8,
+      });
+      if (cancelled) return;
+      setLoadingCasualContacts(false);
+      if (error) {
+        // Old deployments can still create a new guest while the migration rolls out.
+        if (!/search_casual_contacts/i.test(error.message || '')) {
+          console.error('Failed to search casual contacts:', error);
+        }
+        setCasualContactResults([]);
+        return;
+      }
+      setCasualContactResults((data || []).map((row: Record<string, unknown>) => mapCasualContactSearchRow(row)));
+    }, 180);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [canCreateGuestBooking, casualContactSearch, formData.isGuestBooking, isOpen]);
 
   React.useEffect(() => {
     if (!isOpen || !canCreateGuestBooking || !formData.isGuestBooking) {
@@ -491,6 +684,8 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       guestEmail: '',
       guestPhone: '',
       trialFlightVoucherId: '',
+      casualContactId: '',
+      bookingPurpose: 'standard',
       aircraftId: '',
     }));
   }, [formData.aircraftId, formData.isGuestBooking, formData.trialFlightVoucherId, isGroundSessionBooking]);
@@ -517,6 +712,15 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     const userRole = user?.role || 'student';
     const effectiveGroundSession = formData.bookingKind === 'ground' || (!formData.aircraftId && !formData.trialFlightVoucherId);
 
+    if (financialProvidersError) {
+      toast.error('Financial service status could not be confirmed. Try again before saving the booking.');
+      return;
+    }
+    if (bookingDataError) {
+      toast.error('Booking rules or operational data could not be loaded. Try again before saving the booking.');
+      return;
+    }
+
     if (formData.isGuestBooking) {
       if (effectiveGroundSession) {
         toast.error('Ground sessions are for members only');
@@ -536,6 +740,10 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       }
       if (!formData.trialFlightVoucherId && !formData.guestPhone.trim()) {
         toast.error('Guest phone number is required');
+        return;
+      }
+      if (bookingPurposeNeedsFormalProfile(formData.bookingPurpose)) {
+        toast.error('Flight reviews and tests require a real portal profile. Select or create the person as a member first.');
         return;
       }
     } else if (isFieldRequired('pilot', userRole) && !formData.studentId) {
@@ -584,6 +792,14 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     }
     if (financialCaptureEnabled && isFieldRequired('paymentType', userRole) && !formData.trialFlightVoucherId && !formData.flightTypeId) {
       toast.error('Payment Type is required');
+      return;
+    }
+    if (
+      financialCaptureEnabled
+      && formData.flightTypeId
+      && !availableFlightTypes.some(type => type.id === formData.flightTypeId)
+    ) {
+      toast.error('The selected Payment Type needs a financial provider that is not connected. Select another Payment Type.');
       return;
     }
     if (
@@ -814,7 +1030,10 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     const selectedPerson = students.find((student) => student.id === data.studentId);
     if (selectedPerson) {
       const compliance = buildSafetyComplianceSummary(selectedPerson, safetySettings, flightLogs, {
-        hasInstructor: Boolean(data.instructorId)
+        hasInstructor: Boolean(data.instructorId),
+        baselines: logbookBaselines,
+        externalEntries: externalLogbookEntries,
+        timeZone: organisationSettings?.timezone,
       });
       const concerns = compliance.concerns;
 
@@ -922,23 +1141,36 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
 
         <form onSubmit={handleSubmit} className="overflow-y-auto flex-1">
           <div className="p-4 space-y-3">
-          {!isLoading && isFieldVisible('pilot', userRole) && (user?.role === 'admin' || user?.role === 'instructor' || user?.role === 'senior_instructor') && (
+          {!isLoading && (financialProvidersError || bookingDataError) && (
+            <div className="flex gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              {financialProvidersError
+                ? 'Financial service status could not be confirmed. This booking cannot be saved until the status is available.'
+                : 'Booking rules or operational data could not be loaded. This booking cannot be saved until they are available.'}
+            </div>
+          )}
+          {!isLoading && isFieldVisible('pilot', userRole) && (isStaffUser) && (
             <div>
               {canCreateGuestBooking && !isVoucherBookingEdit && (
                 <>
                 <div className="mb-2 grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => setFormData(prev => ({
-                      ...prev,
-                      isGuestBooking: false,
-                      guestName: '',
-                      guestEmail: '',
-                      guestPhone: '',
-                      trialFlightVoucherId: '',
-                      paymentType: '',
-                      flightTypeId: '',
-                    }))}
+                    onClick={() => {
+                      setShowSpecialBookingOptions(false);
+                      setFormData(prev => ({
+                        ...prev,
+                        isGuestBooking: false,
+                        guestName: '',
+                        guestEmail: '',
+                        guestPhone: '',
+                        trialFlightVoucherId: '',
+                        casualContactId: '',
+                        bookingPurpose: 'standard',
+                        paymentType: '',
+                        flightTypeId: '',
+                      }));
+                    }}
                     className={`rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
                       !formData.isGuestBooking
                         ? 'border-blue-600 bg-blue-50 text-blue-700'
@@ -946,17 +1178,22 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                     }`}
                     disabled={isGroundSessionBooking}
                   >
-                    Member booking
+                    Member
                   </button>
                   <button
                     type="button"
-                    onClick={() => setFormData(prev => ({
-                      ...prev,
-                      isGuestBooking: true,
-                      studentId: '',
-                      paymentType: '',
-                      flightTypeId: '',
-                    }))}
+                    onClick={() => {
+                      setShowSpecialBookingOptions(false);
+                      setFormData(prev => ({
+                        ...prev,
+                        isGuestBooking: true,
+                        studentId: '',
+                        casualContactId: '',
+                        bookingPurpose: 'casual_flight',
+                        paymentType: '',
+                        flightTypeId: '',
+                      }));
+                    }}
                     className={`rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
                       formData.isGuestBooking
                         ? 'border-blue-600 bg-blue-50 text-blue-700'
@@ -964,7 +1201,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                     }`}
                     disabled={isGroundSessionBooking}
                   >
-                    Guest / casual
+                    Visitor
                   </button>
                 </div>
                 </>
@@ -972,10 +1209,83 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
 
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 <User className="h-3.5 w-3.5 inline mr-1" />
-                {formData.isGuestBooking ? 'Guest booking contact' : 'Pilot'} {isFieldRequired('pilot', userRole) && !formData.isGuestBooking && <span className="text-red-500">*</span>}
+                {formData.isGuestBooking ? 'Visitor details' : 'Pilot'} {isFieldRequired('pilot', userRole) && !formData.isGuestBooking && <span className="text-red-500">*</span>}
               </label>
               {formData.isGuestBooking ? (
                 <div className="space-y-2">
+                  {specialBookingControl}
+
+                  {!isVoucherBookingEdit && (
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-600">
+                        Find returning visitor <span className="text-gray-400">(optional)</span>
+                      </label>
+                      <input
+                        type="search"
+                        value={casualContactSearch}
+                        onChange={(event) => setCasualContactSearch(event.target.value)}
+                        className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Start typing name, email or phone"
+                        autoComplete="off"
+                      />
+                      {casualContactSearch.trim().length >= 2 && (
+                        <div className="mt-1 max-h-44 overflow-y-auto rounded-md border border-gray-200 bg-white shadow-sm">
+                          {loadingCasualContacts ? (
+                            <p className="px-2.5 py-2 text-xs text-gray-500">Searching visitor history...</p>
+                          ) : casualContactResults.length > 0 ? (
+                            casualContactResults.map(contact => (
+                              <button
+                                key={contact.id}
+                                type="button"
+                                onClick={() => {
+                                  if (contact.promotedToUserId) {
+                                    setShowSpecialBookingOptions(false);
+                                    setFormData(prev => ({
+                                      ...prev,
+                                      isGuestBooking: false,
+                                      studentId: contact.promotedToUserId || '',
+                                      casualContactId: contact.id,
+                                      bookingPurpose: 'standard',
+                                    }));
+                                    const matchedUser = users.find(item => item.id === contact.promotedToUserId);
+                                    setPilotSearch(matchedUser ? getPilotSearchLabel(matchedUser) : contact.name);
+                                    setCasualContactSearch('');
+                                    toast.success('This visitor already has a portal profile. Switched to a member booking.');
+                                    return;
+                                  }
+                                  setFormData(prev => ({
+                                    ...prev,
+                                    casualContactId: contact.id,
+                                    guestName: contact.name,
+                                    guestEmail: contact.email,
+                                    guestPhone: contact.phone || '',
+                                  }));
+                                  setCasualContactSearch(contact.name);
+                                  setCasualContactResults([]);
+                                }}
+                                className="block w-full px-2.5 py-2 text-left text-xs hover:bg-blue-50 focus:bg-blue-50 focus:outline-none"
+                              >
+                                <span className="block font-semibold text-gray-900">{contact.name}</span>
+                                <span className="block truncate text-gray-500">
+                                  {contact.email}{contact.phone ? ` · ${contact.phone}` : ''}
+                                </span>
+                                <span className="block text-blue-700">
+                                  {contact.promotedToUserId
+                                    ? 'Portal profile available'
+                                    : `${contact.bookingCount} previous ${contact.bookingCount === 1 ? 'visit' : 'visits'}${contact.lastBookingAt ? ` · last ${new Date(contact.lastBookingAt).toLocaleDateString('en-AU')}` : ''}`}
+                                </span>
+                              </button>
+                            ))
+                          ) : (
+                            <p className="px-2.5 py-2 text-xs text-gray-500">No returning visitor found. A new casual contact will be saved.</p>
+                          )}
+                        </div>
+                      )}
+                      {formData.casualContactId && formData.isGuestBooking && (
+                        <p className="mt-1 text-xs font-medium text-emerald-700">Linked to this visitor's previous history.</p>
+                      )}
+                    </div>
+                  )}
                   <div>
                     <label className="mb-1 block text-xs font-medium text-gray-600">
                       {isVoucherBookingEdit ? 'Linked trial flight voucher' : <>Link unused gift voucher <span className="text-gray-400">(optional)</span></>}
@@ -998,6 +1308,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                       value={guestVoucherSearch}
                       onChange={(event) => {
                         setGuestVoucherSearch(event.target.value);
+                        setShowSpecialBookingOptions(false);
                         setFormData(prev => ({
                           ...prev,
                           trialFlightVoucherId: '',
@@ -1023,9 +1334,12 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                               type="button"
                               onClick={() => {
                                 setGuestVoucherSearch(`${option.code} - ${option.displayName}`);
+                                setShowSpecialBookingOptions(false);
                                 setFormData(prev => ({
                                   ...prev,
                                   trialFlightVoucherId: option.id,
+                                  casualContactId: '',
+                                  bookingPurpose: 'trial_flight',
                                   guestName: option.displayName || prev.guestName,
                                   guestEmail: option.displayEmail || prev.guestEmail,
                                   guestPhone: prev.guestPhone || option.displayPhone || '',
@@ -1056,7 +1370,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                   <input
                     type="text"
                     value={formData.guestName}
-                    onChange={(e) => setFormData(prev => ({ ...prev, guestName: e.target.value }))}
+                    onChange={(e) => setFormData(prev => ({ ...prev, guestName: e.target.value, casualContactId: '' }))}
                     className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Guest name"
                   />
@@ -1064,20 +1378,20 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                     <input
                       type="email"
                       value={formData.guestEmail}
-                      onChange={(e) => setFormData(prev => ({ ...prev, guestEmail: e.target.value }))}
+                      onChange={(e) => setFormData(prev => ({ ...prev, guestEmail: e.target.value, casualContactId: '' }))}
                       className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                       placeholder="Guest email"
                     />
                     <input
                       type="tel"
                       value={formData.guestPhone}
-                      onChange={(e) => setFormData(prev => ({ ...prev, guestPhone: e.target.value }))}
+                      onChange={(e) => setFormData(prev => ({ ...prev, guestPhone: e.target.value, casualContactId: '' }))}
                       className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                       placeholder="Guest phone"
                     />
                   </div>
                   <p className="text-xs text-gray-500">
-                    This guest stays attached to this booking only. They do not get a normal portal account unless you convert them later.
+                    Contact details are saved for return visits, but no login or invitation is created. Each booking keeps the details used on that day.
                   </p>
                 </div>
               ) : (
@@ -1135,6 +1449,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                       Select a member from the suggestions so the booking links to their profile.
                     </p>
                   )}
+                  {specialBookingControl}
                 </div>
               )}
             </div>
@@ -1160,7 +1475,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                   <Clock className="h-3.5 w-3.5 inline mr-1" />
                   Start Time {isFieldRequired('startTime', userRole) && <span className="text-red-500">*</span>}
                 </label>
-                <select
+                <SearchableSelect
                   value={formData.startTime}
                   onChange={(e) => setFormData(prev => ({ ...prev, startTime: e.target.value }))}
                   className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1170,7 +1485,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                   {timeOptions.map((option) => (
                     <option key={option} value={option}>{option}</option>
                   ))}
-                </select>
+                </SearchableSelect>
               </div>
             </div>
           )}
@@ -1194,7 +1509,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 End Time {isFieldRequired('endTime', userRole) && <span className="text-red-500">*</span>}
               </label>
-              <select
+              <SearchableSelect
                 value={formData.endTime}
                 onChange={(e) => setFormData(prev => ({ ...prev, endTime: e.target.value }))}
                 className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1204,7 +1519,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                 {timeOptions.map((option) => (
                   <option key={option} value={option}>{option}</option>
                 ))}
-              </select>
+              </SearchableSelect>
             </div>
           </div>
           )}
@@ -1216,7 +1531,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                 <Plane className="h-3.5 w-3.5 inline mr-1" />
                 Aircraft <span className="text-gray-400">(optional for ground sessions)</span>
               </label>
-              <select
+              <SearchableSelect
                 value={formData.aircraftId}
                 onChange={(e) => setFormData(prev => ({ ...prev, aircraftId: e.target.value }))}
                 className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1227,7 +1542,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                     {a.registration} — {a.make} {a.model}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
             </div>
 
             {shouldShowInstructorField && (
@@ -1235,7 +1550,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 Instructor {(isFieldRequired('instructor', userRole) || isStudentOnlyUser || Boolean(formData.trialFlightVoucherId)) ? <span className="text-red-500">*</span> : <span className="text-gray-400">(optional)</span>}
               </label>
-              <select
+              <SearchableSelect
                 value={formData.instructorId}
                 onChange={(e) => setFormData(prev => ({ ...prev, instructorId: e.target.value }))}
                 className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1247,7 +1562,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                     {instructor.name}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
             </div>
             )}
           </div>
@@ -1258,7 +1573,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 Instructor <span className="text-red-500">*</span>
               </label>
-              <select
+              <SearchableSelect
                 value={formData.instructorId}
                 onChange={(e) => setFormData(prev => ({ ...prev, instructorId: e.target.value }))}
                 className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1270,7 +1585,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                     {instructor.name}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
               <p className="mt-1 text-xs text-gray-500">
                 {financialCaptureEnabled
                   ? 'Ground sessions are scheduled against the instructor only. The selected Payment Type will pre-fill the ground-session log; its description and Payment Method can be confirmed when logging.'
@@ -1285,7 +1600,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
               <CreditCard className="h-3.5 w-3.5 inline mr-1" />
               Payment Type {isFieldRequired('paymentType', userRole) && <span className="text-red-500">*</span>}
             </label>
-            <select
+            <SearchableSelect
               value={formData.flightTypeId}
               onChange={(e) => {
                 const selectedFlightTypeId = e.target.value;
@@ -1302,7 +1617,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
               {availableFlightTypes.map(ft => (
                 <option key={ft.id} value={ft.id}>{ft.name}</option>
               ))}
-            </select>
+            </SearchableSelect>
           </div>
           )}
 
@@ -1336,7 +1651,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                 {bookingFieldSettings.find((setting) => setting.fieldName === 'location')?.label || 'Location'}
                 {isFieldRequired('location', userRole) && <span className="text-red-500"> *</span>}
               </label>
-              <select
+              <SearchableSelect
                 value={formData.locationId}
                 onChange={(event) => {
                   const selected = activeLocations.find((location) => location.id === event.target.value);
@@ -1355,7 +1670,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                     {location.name}{location.isPrimary ? ' (primary)' : ''}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
               <p className="mt-1 text-[11px] text-gray-500">
                 Instructor roster and supervision coverage are checked at this location.
               </p>
@@ -1437,7 +1752,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
             )}
             <button
               type="submit"
-              disabled={isSubmitting || isLoading || (isVoucherBookingEdit && sendVoucherUpdateEmail === null)}
+              disabled={isSubmitting || isLoading || Boolean(financialProvidersError) || Boolean(bookingDataError) || (isVoucherBookingEdit && sendVoucherUpdateEmail === null)}
               className="px-4 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isSubmitting
@@ -1479,7 +1794,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                       }))}
                       className="rounded-lg border border-gray-300 px-3 py-3 text-lg font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
-                    <select
+                    <SearchableSelect
                       value={recurrence.frequency}
                       onChange={(event) => setRecurrence(prev => ({ ...prev, frequency: event.target.value as RecurrenceFrequency }))}
                       className="rounded-lg border border-gray-300 px-3 py-3 text-lg font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1487,7 +1802,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                       <option value="daily">day</option>
                       <option value="weekly">week</option>
                       <option value="monthly">month</option>
-                    </select>
+                    </SearchableSelect>
                   </div>
                 </section>
 
@@ -1642,7 +1957,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
             </div>
             <div>
               <h3 className="text-base font-semibold text-gray-900">
-                {safetyWarningState.blocking ? 'Booking requires an instructor' : 'Safety acknowledgement required'}
+                {safetyWarningState.blocking ? 'Booking blocked by safety rules' : 'Safety acknowledgement required'}
               </h3>
               <p className="mt-1 text-sm text-gray-600">
                 <StudentFileLink studentId={formData.studentId} name={safetyWarningState.pilotName} /> has safety or currency items that need attention before this booking.
@@ -1662,13 +1977,13 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
               <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-950">
                 <p>{safetySettings.recencyWarningMessage}</p>
                 <p className="mt-2 text-xs font-semibold text-blue-800">
-                  Recorded solo/PIC hours in this system: {safetyWarningState.picHours.toFixed(1)}
+                  Recorded total PIC hours: {safetyWarningState.picHours.toFixed(1)}
                 </p>
               </div>
             )}
             {safetyWarningState.blocking && (
               <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-800">
-                BFR is lapsed. This person cannot book an aircraft without an instructor. Add an instructor to continue.
+                Resolve the blocked compliance item before creating this booking. A lapsed BFR can be addressed by adding an instructor; expired medical or RAAus membership records must be renewed or corrected.
               </p>
             )}
           </div>

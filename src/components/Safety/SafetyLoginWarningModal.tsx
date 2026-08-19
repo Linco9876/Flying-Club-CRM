@@ -4,7 +4,9 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useStudents } from '../../hooks/useStudents';
 import { useFlightLogs } from '../../hooks/useFlightLogs';
+import { useExternalLogbook } from '../../hooks/useExternalLogbook';
 import { useSafetySettings } from '../../hooks/useSafetySettings';
+import { useOrganisationSettings } from '../../hooks/useSettings';
 import {
   buildSafetyComplianceSummary,
   type SafetyComplianceSummary,
@@ -26,7 +28,14 @@ export const SafetyLoginWarningModal: React.FC = () => {
   const navigate = useNavigate();
   const { students, loading: studentsLoading, error: studentsError } = useStudents();
   const { flightLogs, loading: flightLogsLoading, error: flightLogsError } = useFlightLogs(user?.id);
+  const {
+    baselines: logbookBaselines,
+    entries: externalLogbookEntries,
+    loading: externalLogbookLoading,
+    error: externalLogbookError,
+  } = useExternalLogbook(user?.id);
   const { settings, loading: safetySettingsLoading } = useSafetySettings();
+  const { settings: organisationSettings, loading: organisationSettingsLoading } = useOrganisationSettings();
   const [dismissedUserId, setDismissedUserId] = React.useState<string | null>(null);
   const [displayedWarning, setDisplayedWarning] = React.useState<{
     userId: string;
@@ -36,9 +45,14 @@ export const SafetyLoginWarningModal: React.FC = () => {
   const student = user ? students.find((candidate) => candidate.id === user.id) : null;
   const candidateSummary = React.useMemo(
     () => student
-      ? buildSafetyComplianceSummary(student, settings, flightLogs, { perspective: 'firstPerson' })
+      ? buildSafetyComplianceSummary(student, settings, flightLogs, {
+          perspective: 'firstPerson',
+          baselines: logbookBaselines,
+          externalEntries: externalLogbookEntries,
+          timeZone: organisationSettings?.timezone,
+        })
       : null,
-    [flightLogs, settings, student]
+    [externalLogbookEntries, flightLogs, logbookBaselines, organisationSettings?.timezone, settings, student]
   );
   const storageKey = user ? `safety-login-warning-dismissed:${user.id}` : '';
   const dismissed = Boolean(
@@ -46,9 +60,12 @@ export const SafetyLoginWarningModal: React.FC = () => {
   );
   const dataReady = !studentsLoading
     && !flightLogsLoading
+    && !externalLogbookLoading
     && !safetySettingsLoading
+    && !organisationSettingsLoading
     && !studentsError
-    && !flightLogsError;
+    && !flightLogsError
+    && !externalLogbookError;
 
   React.useEffect(() => {
     if (!user || !candidateSummary || !shouldOpenSafetyWarning({
@@ -119,7 +136,7 @@ export const SafetyLoginWarningModal: React.FC = () => {
             <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-950">
               <p>{settings.recencyWarningMessage}</p>
               <p className="mt-2 text-xs font-semibold text-blue-800">
-                Recorded solo/PIC hours in this system: {(summary?.picHours ?? 0).toFixed(1)}
+                Recorded total PIC hours: {(summary?.picHours ?? 0).toFixed(1)}
               </p>
             </div>
           )}

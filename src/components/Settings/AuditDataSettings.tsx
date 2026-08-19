@@ -1,9 +1,11 @@
-﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { SearchableSelect } from '../common/SearchableSelect';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Database, Download, FileJson, Loader2, RefreshCw, Search, Table } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { StudentFileLink } from '../Students/StudentFileLink';
+import { SettingsLoadError } from './SettingsLoadError';
 
 interface AuditDataSettingsProps {
   canEdit: boolean;
@@ -88,6 +90,8 @@ const sensitiveExportFields: Record<string, string[]> = {
     'medical_expiry',
     'licence_expiry',
     'last_flight_review',
+    'last_raaus_bfr_date',
+    'last_casa_afr_date',
   ],
   student_documents: ['file_path', 'filename', 'file_type', 'file_size'],
   safety_reports: ['reporter_name', 'reporter_email', 'reporter_phone', 'involved_persons', 'witnesses', 'attachments'],
@@ -167,6 +171,8 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
   const [tableSummaries, setTableSummaries] = useState<TableSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [sourceErrors, setSourceErrors] = useState<string[]>([]);
   const [exporting, setExporting] = useState(false);
   const [showSensitiveConfirm, setShowSensitiveConfirm] = useState(false);
   const [sensitiveConfirmText, setSensitiveConfirmText] = useState('');
@@ -178,6 +184,7 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
 
   const loadAuditData = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [summaryResults, adminAuditResult, maintenanceResult, trainingResult, usersResult] = await Promise.all([
         Promise.all(exportTables.map(async table => {
@@ -213,6 +220,14 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
       ]);
 
       setTableSummaries(summaryResults);
+
+      const nextSourceErrors = [
+        adminAuditResult.error && `Admin audit: ${adminAuditResult.error.message}`,
+        maintenanceResult.error && `Maintenance audit: ${maintenanceResult.error.message}`,
+        trainingResult.error && `Training audit: ${trainingResult.error.message}`,
+        usersResult.error && `User names: ${usersResult.error.message}`,
+      ].filter((message): message is string => Boolean(message));
+      setSourceErrors(nextSourceErrors);
 
       const userMap = new Map<string, string>();
       if (!usersResult.error) {
@@ -267,6 +282,10 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
       }
     } catch (err) {
       console.error('Failed to load audit data:', err);
+      setAuditLog([]);
+      setTableSummaries([]);
+      setSourceErrors([]);
+      setLoadError(err instanceof Error ? err.message : 'Audit data could not be loaded');
       toast.error('Failed to load audit data');
     } finally {
       setLoading(false);
@@ -304,6 +323,10 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
   const unavailableTables = tableSummaries.filter(summary => summary.error);
   const totalRows = availableTables.reduce((total, summary) => total + (summary.count || 0), 0);
   const canExportSensitive = sensitiveConfirmChecked && sensitiveConfirmText.trim().toUpperCase() === 'EXPORT PRIVATE DATA';
+
+  if (!loading && loadError) {
+    return <SettingsLoadError section="Audit & Data" error={loadError} onRetry={loadAuditData} />;
+  }
 
   const recordExportAudit = async (exportType: 'sanitized' | 'sensitive', rowCounts: Record<string, number | string>) => {
     const timestamp = new Date();
@@ -463,6 +486,16 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
           Refresh
         </button>
       </div>
+
+      {sourceErrors.length > 0 && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-950" role="alert">
+          <p className="font-semibold">Some audit sources are unavailable</p>
+          <ul className="mt-1 list-disc space-y-1 pl-5 text-sm">
+            {sourceErrors.map(message => <li key={message}>{message}</li>)}
+          </ul>
+          <p className="mt-2 text-xs">Displayed counts and events exclude these sources. Refresh to try again.</p>
+        </div>
+      )}
 
       <section className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-3">
         <div className="rounded-lg border border-gray-200 bg-white p-4">
@@ -653,17 +686,17 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Action</label>
-              <select value={actionFilter} onChange={event => setActionFilter(event.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <SearchableSelect value={actionFilter} onChange={event => setActionFilter(event.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                 <option value="">All actions</option>
                 {actionOptions.map(action => <option key={action} value={action}>{action}</option>)}
-              </select>
+              </SearchableSelect>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Source</label>
-              <select value={sourceFilter} onChange={event => setSourceFilter(event.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <SearchableSelect value={sourceFilter} onChange={event => setSourceFilter(event.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                 <option value="">All sources</option>
                 {sourceOptions.map(source => <option key={source} value={source}>{source}</option>)}
-              </select>
+              </SearchableSelect>
             </div>
           </div>
           <div className="mt-4 text-sm text-gray-600">Showing {filteredAuditLog.length} entries</div>

@@ -1,5 +1,5 @@
 // Role-Based Access Control utilities
-import { User, UserRole } from '../types';
+import type { User, UserRole } from '../types';
 
 export type Action =
   | 'view-dashboard'
@@ -291,4 +291,20 @@ export const getAuthorizedSettingsSections = (user: User | null) => {
   return allSections.filter(section =>
     section.roles.some(role => effectiveRoles.includes(role))
   );
+};
+
+/**
+ * Central edit policy for settings. Some operational panels are intentionally
+ * visible to instructors as reference material while remaining admin-managed.
+ */
+export const canEditSettingsSection = (user: User | null, sectionId: string): boolean => {
+  const roles = getUserRoles(user);
+
+  if (roles.includes('admin')) return true;
+  if (sectionId.startsWith('account-')) return can(user, 'edit-personal-settings', 'own');
+  if (sectionId === 'roster') {
+    return roles.includes('senior_instructor') || roles.includes('instructor');
+  }
+
+  return false;
 };

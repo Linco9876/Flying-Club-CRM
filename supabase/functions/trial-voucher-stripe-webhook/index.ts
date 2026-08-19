@@ -11,6 +11,7 @@ import {
   stripeModeColumns,
   testModeSubject,
 } from "../_shared/stripeMode.ts";
+import { brandPortalEmailHtml } from "../_shared/emailBranding.ts";
 
 type SupabaseAdminClient = any;
 
@@ -2269,7 +2270,7 @@ const sendBookNowConfirmationEmail = async ({
       sender: { email: senderEmail, name: senderName },
       to: [{ email: to, name: toName || to }],
       subject,
-      htmlContent: html,
+      htmlContent: await brandPortalEmailHtml(html),
       textContent: [
         `Hi ${toName || "there"},`,
         "",
@@ -2363,7 +2364,7 @@ const sendBookNowAbandonedEmail = async ({ voucher }: { voucher: any }) => {
           : "live",
         "Complete your Bendigo Flying Club trial flight booking",
       ),
-      htmlContent: html,
+      htmlContent: await brandPortalEmailHtml(html),
       textContent: [
         `Hi ${voucher.purchaser_name || "there"},`,
         "",

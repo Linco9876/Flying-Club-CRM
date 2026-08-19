@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Linking, Platform, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { type AppColours, useAppTheme } from '../theme';
 import { ACCOUNT_DELETION_URL, PRIVACY_URL, SUPPORT_URL } from '../config';
@@ -49,56 +50,73 @@ export const LoginScreen = () => {
     }
   };
 
+  const loginFields = (
+    <>
+      <Text style={styles.label}>Email</Text>
+      <TextInput
+        accessibilityLabel="Email address"
+        autoCapitalize="none"
+        autoComplete="email"
+        keyboardType="email-address"
+        value={email}
+        onChangeText={value => {
+          emailRef.current = value;
+          setEmail(value);
+          if (errorMessage) setErrorMessage(undefined);
+        }}
+        placeholder="you@example.com"
+        placeholderTextColor={colours.placeholder}
+        style={styles.input}
+      />
+      <Text style={[styles.label, styles.passwordLabel]}>Password</Text>
+      <TextInput
+        accessibilityLabel="Password"
+        autoCapitalize="none"
+        autoComplete="current-password"
+        secureTextEntry
+        value={password}
+        onChangeText={value => {
+          passwordRef.current = value;
+          setPassword(value);
+          if (errorMessage) setErrorMessage(undefined);
+        }}
+        placeholder="Your password"
+        placeholderTextColor={colours.placeholder}
+        style={styles.input}
+        onSubmitEditing={() => void login()}
+      />
+      {errorMessage ? (
+        <View style={styles.error} accessibilityLiveRegion="polite">
+          <Text style={styles.errorText}>{errorMessage}</Text>
+        </View>
+      ) : null}
+      <View style={styles.buttonGap}>
+        <PrimaryButton loading={loading} onPress={() => void login()}>Sign in</PrimaryButton>
+      </View>
+    </>
+  );
+
   return (
     <SafeAreaView role="main" style={styles.safe}>
-      <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.safe} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <View style={styles.brandMark}><Text style={styles.plane}>✈</Text></View>
         <Text style={styles.eyebrow}>BENDIGO FLYING CLUB</Text>
         <Text style={styles.title}>Duty Clock</Text>
         <Text style={styles.subtitle}>A quick clock-in for instructors.</Text>
 
         <View style={styles.card}>
-          <Text style={styles.label}>Email</Text>
-          <TextInput
-            accessibilityLabel="Email address"
-            autoCapitalize="none"
-            autoComplete="email"
-            keyboardType="email-address"
-            value={email}
-            onChangeText={value => {
-              emailRef.current = value;
-              setEmail(value);
-              if (errorMessage) setErrorMessage(undefined);
-            }}
-            placeholder="you@example.com"
-            placeholderTextColor={colours.placeholder}
-            style={styles.input}
-          />
-          <Text style={[styles.label, styles.passwordLabel]}>Password</Text>
-          <TextInput
-            accessibilityLabel="Password"
-            autoCapitalize="none"
-            autoComplete="current-password"
-            secureTextEntry
-            value={password}
-            onChangeText={value => {
-              passwordRef.current = value;
-              setPassword(value);
-              if (errorMessage) setErrorMessage(undefined);
-            }}
-            placeholder="Your password"
-            placeholderTextColor={colours.placeholder}
-            style={styles.input}
-            onSubmitEditing={() => void login()}
-          />
-          {errorMessage ? (
-            <View style={styles.error} accessibilityLiveRegion="polite">
-              <Text style={styles.errorText}>{errorMessage}</Text>
-            </View>
-          ) : null}
-          <View style={styles.buttonGap}>
-            <PrimaryButton loading={loading} onPress={() => void login()}>Sign in</PrimaryButton>
-          </View>
+          {Platform.OS === 'web' ? (
+            <form
+              onSubmit={event => {
+                event.preventDefault();
+                void login();
+              }}
+              style={{ display: 'contents' }}
+            >
+              {loginFields}
+            </form>
+          ) : loginFields}
         </View>
         <Text style={styles.help}>Use the same account as the Flight Management System.</Text>
         <InstallPwaButton />
@@ -128,6 +146,7 @@ export const LoginScreen = () => {
             <Text style={styles.link}>Account deletion</Text>
           </Pressable>
         </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -135,7 +154,7 @@ export const LoginScreen = () => {
 
 const createStyles = (colours: AppColours) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colours.background },
-  container: { flex: 1, justifyContent: 'center', padding: 24 },
+  container: { flexGrow: 1, justifyContent: 'center', padding: 24, paddingBottom: 34 },
   brandMark: { width: 64, height: 64, borderRadius: 20, backgroundColor: colours.navy, alignItems: 'center', justifyContent: 'center', marginBottom: 18 },
   plane: { color: '#fff', fontSize: 30 },
   eyebrow: { color: colours.blue, fontSize: 12, fontWeight: '900', letterSpacing: 2 },

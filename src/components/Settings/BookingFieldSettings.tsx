@@ -4,6 +4,7 @@ import { useBookingFieldSettings } from '../../hooks/useBookingFieldSettings';
 import { useOrganisationLocations } from '../../hooks/useOrganisationLocations';
 import { useLatestEffect } from '../../hooks/useLatestEffect';
 import toast from 'react-hot-toast';
+import { SettingsLoadError } from './SettingsLoadError';
 
 interface BookingFieldSettingsProps {
   canEdit: boolean;
@@ -12,8 +13,13 @@ interface BookingFieldSettingsProps {
 }
 
 export const BookingFieldSettings: React.FC<BookingFieldSettingsProps> = ({ canEdit, onFormChange, embedded = false }) => {
-  const { settings, loading, updateSetting } = useBookingFieldSettings();
-  const { activeLocations, loading: locationsLoading } = useOrganisationLocations();
+  const { settings, loading, error, updateSettings, refetch } = useBookingFieldSettings();
+  const {
+    activeLocations,
+    loading: locationsLoading,
+    error: locationsError,
+    refetch: refetchLocations,
+  } = useOrganisationLocations();
   const [hasChanges, setHasChanges] = useState(false);
   const [localSettings, setLocalSettings] = useState(settings);
 
@@ -25,7 +31,9 @@ export const BookingFieldSettings: React.FC<BookingFieldSettingsProps> = ({ canE
     if (!canEdit) return;
     setLocalSettings(prev =>
       prev.map(s =>
-        s.id === id ? { ...s, isRequired: !s.isRequired } : s
+        s.id === id
+          ? { ...s, isRequired: !s.isRequired, isVisible: !s.isRequired ? true : s.isVisible }
+          : s
       )
     );
     setHasChanges(true);
@@ -36,7 +44,9 @@ export const BookingFieldSettings: React.FC<BookingFieldSettingsProps> = ({ canE
     if (!canEdit) return;
     setLocalSettings(prev =>
       prev.map(s =>
-        s.id === id ? { ...s, isVisible: !s.isVisible } : s
+        s.id === id
+          ? { ...s, isVisible: !s.isVisible, isRequired: s.isVisible ? false : s.isRequired }
+          : s
       )
     );
     setHasChanges(true);
@@ -48,9 +58,13 @@ export const BookingFieldSettings: React.FC<BookingFieldSettingsProps> = ({ canE
     setLocalSettings(prev =>
       prev.map(s => {
         if (s.id === id) {
-          const roles = s.appliesToRoles.includes(role)
-            ? s.appliesToRoles.filter(r => r !== role)
-            : [...s.appliesToRoles, role];
+          const affectedRoles = role === 'instructor'
+            ? ['instructor', 'senior_instructor', 'cfi']
+            : [role];
+          const roleGroupEnabled = affectedRoles.every(item => s.appliesToRoles.includes(item));
+          const roles = roleGroupEnabled
+            ? s.appliesToRoles.filter(item => !affectedRoles.includes(item))
+            : Array.from(new Set([...s.appliesToRoles, ...affectedRoles]));
           return { ...s, appliesToRoles: roles };
         }
         return s;
@@ -62,24 +76,20 @@ export const BookingFieldSettings: React.FC<BookingFieldSettingsProps> = ({ canE
 
   const handleSaveChanges = async () => {
     try {
-      for (const setting of localSettings) {
-        const original = settings.find(s => s.id === setting.id);
-        if (original && (
+      const changedSettings = localSettings.filter(setting => {
+        const original = settings.find(saved => saved.id === setting.id);
+        return original && (
           original.isRequired !== setting.isRequired ||
           original.isVisible !== setting.isVisible ||
           JSON.stringify(original.appliesToRoles) !== JSON.stringify(setting.appliesToRoles)
-        )) {
-          await updateSetting(setting.id, {
-            isRequired: setting.isRequired,
-            isVisible: setting.isVisible,
-            appliesToRoles: setting.appliesToRoles
-          }, false);
-        }
-      }
+        );
+      });
+      if (changedSettings.length > 0) await updateSettings(changedSettings, false);
       setHasChanges(false);
       if (!embedded) toast.success('Settings saved successfully');
-    } catch (_error) {
+    } catch (error) {
       toast.error('Failed to save settings');
+      throw error;
     }
   };
 
@@ -103,6 +113,15 @@ export const BookingFieldSettings: React.FC<BookingFieldSettingsProps> = ({ canE
       <div className="p-6 flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
       </div>
+    );
+  }
+  if (error || locationsError) {
+    return (
+      <SettingsLoadError
+        section="Booking form fields"
+        error={error || locationsError || 'Booking form fields could not be loaded'}
+        onRetry={async () => { await Promise.all([refetch(), refetchLocations()]); }}
+      />
     );
   }
 
@@ -173,16 +192,24 @@ export const BookingFieldSettings: React.FC<BookingFieldSettingsProps> = ({ canE
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex items-center space-x-4">
-                    {['admin', 'instructor', 'student', 'pilot'].map(role => (
+                    {[
+                      { role: 'admin', label: 'Admin' },
+                      { role: 'instructor', label: 'Instructor (includes Senior and CFI)' },
+                      { role: 'student', label: 'Student' },
+                      { role: 'pilot', label: 'Pilot' },
+                    ].map(({ role, label }) => (
                       <label key={role} className="inline-flex items-center cursor-pointer">
                         <input
                           type="checkbox"
-                          checked={setting.appliesToRoles.includes(role)}
+                          checked={(role === 'instructor'
+                            ? ['instructor', 'senior_instructor', 'cfi']
+                            : [role]
+                          ).every(item => setting.appliesToRoles.includes(item))}
                           onChange={() => handleToggleRole(setting.id, role)}
                           disabled={!canEdit}
                           className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
                         />
-                        <span className="ml-2 text-sm text-gray-700 capitalize">{role}</span>
+                        <span className="ml-2 text-sm text-gray-700">{label}</span>
                       </label>
                     ))}
                   </div>

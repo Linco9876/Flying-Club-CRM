@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useState } from 'react';
 import { Building2, Lock, Pencil, Plane, Plus, Trash2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -8,6 +9,8 @@ import {
   useResourceSettings,
 } from '../../hooks/useResourceSettings';
 import { useLatestEffect } from '../../hooks/useLatestEffect';
+import { SettingsLoadError } from './SettingsLoadError';
+import { getResourceSettingsValidationError, getRoomValidationError } from '../../utils/resourceSettingsRules';
 
 interface ResourcesSettingsProps {
   canEdit: boolean;
@@ -29,10 +32,12 @@ export const ResourcesSettings: React.FC<ResourcesSettingsProps> = ({ canEdit, o
     documentTypes: savedDocumentTypes,
     rooms,
     loading,
+    error,
     saveSettings,
     addRoom,
     updateRoom,
     deleteRoom,
+    refetch,
   } = useResourceSettings();
   const [aircraftFields, setAircraftFields] = useState<ResourceAircraftField[]>([]);
   const [documentTypes, setDocumentTypes] = useState<ResourceDocumentType[]>([]);
@@ -49,6 +54,8 @@ export const ResourcesSettings: React.FC<ResourcesSettingsProps> = ({ canEdit, o
 
   useLatestEffect(() => {
     (window as any).__resourcesSettingsSave = async () => {
+      const validationError = getResourceSettingsValidationError(aircraftFields, documentTypes);
+      if (validationError) throw new Error(validationError);
       await saveSettings(aircraftFields, documentTypes);
     };
     (window as any).__resourcesSettingsCancel = resetDrafts;
@@ -103,12 +110,20 @@ export const ResourcesSettings: React.FC<ResourcesSettingsProps> = ({ canEdit, o
   const handleRoomSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     try {
-      if (editingRoomId) await updateRoom(editingRoomId, roomDraft);
-      else await addRoom(roomDraft);
+      const validationError = getRoomValidationError(roomDraft);
+      if (validationError) throw new Error(validationError);
+      const cleanRoom = {
+        ...roomDraft,
+        name: roomDraft.name.trim(),
+        location: roomDraft.location.trim(),
+        description: roomDraft.description.trim(),
+      };
+      if (editingRoomId) await updateRoom(editingRoomId, cleanRoom);
+      else await addRoom(cleanRoom);
       closeRoomForm();
-    } catch (error) {
-      console.error('Failed to save room:', error);
-      toast.error('Failed to save room');
+    } catch (caught) {
+      console.error('Failed to save room:', caught);
+      toast.error(caught instanceof Error ? caught.message : 'Failed to save room');
     }
   };
 
@@ -123,6 +138,7 @@ export const ResourcesSettings: React.FC<ResourcesSettingsProps> = ({ canEdit, o
   };
 
   if (loading) return <div className="p-6 text-gray-500">Loading resources...</div>;
+  if (error) return <SettingsLoadError section="Resources" error={error} onRetry={refetch} />;
 
   return (
     <div className="p-6 space-y-8">
@@ -131,7 +147,7 @@ export const ResourcesSettings: React.FC<ResourcesSettingsProps> = ({ canEdit, o
           <Plane className="h-5 w-5 mr-2" />
           Resources (Aircraft & Rooms)
         </h2>
-        <p className="text-gray-600">Configure aircraft records, required documents, and club rooms</p>
+        <p className="text-gray-600">Configure aircraft records and documents, plus the club's room directory.</p>
       </div>
 
       <section>
@@ -209,7 +225,7 @@ export const ResourcesSettings: React.FC<ResourcesSettingsProps> = ({ canEdit, o
             <h3 className="text-lg font-medium text-gray-900 flex items-center gap-2">
               <Building2 className="h-5 w-5" /> Rooms
             </h3>
-            <p className="text-sm text-gray-600 mt-1">Manage club facilities and briefing rooms</p>
+            <p className="text-sm text-gray-600 mt-1">Reference directory for club facilities and briefing rooms. Room calendar booking is not currently available.</p>
           </div>
           {canEdit && (
             <button onClick={() => openRoomForm()} className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700">
@@ -228,11 +244,11 @@ export const ResourcesSettings: React.FC<ResourcesSettingsProps> = ({ canEdit, o
               <input required value={roomDraft.name} onChange={e => setRoomDraft(room => ({ ...room, name: e.target.value }))} placeholder="Room name" className="px-3 py-2 border border-gray-300 rounded-md" />
               <input value={roomDraft.location} onChange={e => setRoomDraft(room => ({ ...room, location: e.target.value }))} placeholder="Location" className="px-3 py-2 border border-gray-300 rounded-md" />
               <input type="number" min="1" required value={roomDraft.capacity} onChange={e => setRoomDraft(room => ({ ...room, capacity: Number(e.target.value) }))} placeholder="Capacity" className="px-3 py-2 border border-gray-300 rounded-md" />
-              <select value={roomDraft.status} onChange={e => setRoomDraft(room => ({ ...room, status: e.target.value as RoomResource['status'] }))} className="px-3 py-2 border border-gray-300 rounded-md">
+              <SearchableSelect value={roomDraft.status} onChange={e => setRoomDraft(room => ({ ...room, status: e.target.value as RoomResource['status'] }))} className="px-3 py-2 border border-gray-300 rounded-md">
                 <option value="available">Available</option>
                 <option value="unavailable">Unavailable</option>
                 <option value="maintenance">Maintenance</option>
-              </select>
+              </SearchableSelect>
               <input value={roomDraft.description} onChange={e => setRoomDraft(room => ({ ...room, description: e.target.value }))} placeholder="Description" className="md:col-span-2 px-3 py-2 border border-gray-300 rounded-md" />
             </div>
             <div className="flex justify-end gap-2">

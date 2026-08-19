@@ -52,21 +52,31 @@ export const useResourceSettings = () => {
   const [documentTypes, setDocumentTypes] = useState(DEFAULT_DOCUMENT_TYPES);
   const [rooms, setRooms] = useState<RoomResource[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchSettings = useCallback(async () => {
-    const [{ data: settings }, { data: roomRows }] = await Promise.all([
-      supabase.from('resource_settings').select('*').limit(1).maybeSingle(),
-      supabase.from('rooms').select('*').order('name'),
-    ]);
+    setLoading(true);
+    try {
+      const [settingsResult, roomsResult] = await Promise.all([
+        supabase.from('resource_settings').select('*').limit(1).maybeSingle(),
+        supabase.from('rooms').select('*').order('name'),
+      ]);
+      if (settingsResult.error) throw settingsResult.error;
+      if (roomsResult.error) throw roomsResult.error;
+      const settings = settingsResult.data;
+      const roomRows = roomsResult.data;
 
-    if (settings) {
-      setSettingsId(settings.id);
-      setAircraftFields(settings.aircraft_fields || DEFAULT_AIRCRAFT_FIELDS);
-      setDocumentTypes(settings.aircraft_document_types || DEFAULT_DOCUMENT_TYPES);
-    }
+      if (settings) {
+        setSettingsId(settings.id);
+        setAircraftFields(settings.aircraft_fields || DEFAULT_AIRCRAFT_FIELDS);
+        setDocumentTypes(settings.aircraft_document_types || DEFAULT_DOCUMENT_TYPES);
+      } else {
+        setSettingsId(null);
+        setAircraftFields(DEFAULT_AIRCRAFT_FIELDS);
+        setDocumentTypes(DEFAULT_DOCUMENT_TYPES);
+      }
 
-    if (roomRows) {
-      setRooms(roomRows.map(room => ({
+      setRooms((roomRows || []).map(room => ({
         id: room.id,
         name: room.name,
         location: room.location,
@@ -75,8 +85,14 @@ export const useResourceSettings = () => {
         status: room.status,
         isBookable: room.is_bookable,
       })));
+      setError(null);
+    } catch (caught) {
+      console.error('Failed to load resource settings:', caught);
+      setError(caught instanceof Error ? caught.message : 'Resource settings could not be loaded');
+      toast.error('Failed to load resource settings');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -87,6 +103,7 @@ export const useResourceSettings = () => {
   }, [fetchSettings]);
 
   const saveSettings = async (fields: ResourceAircraftField[], docs: ResourceDocumentType[]) => {
+    if (error) throw new Error('Resource settings must load successfully before they can be changed.');
     const payload = {
       aircraft_fields: fields,
       aircraft_document_types: docs,
@@ -95,14 +112,15 @@ export const useResourceSettings = () => {
     const query = settingsId
       ? supabase.from('resource_settings').update(payload).eq('id', settingsId)
       : supabase.from('resource_settings').insert(payload);
-    const { error } = await query;
-    if (error) throw error;
+    const { error: saveError } = await query;
+    if (saveError) throw saveError;
     window.dispatchEvent(new Event('resource-settings-updated'));
     toast.success('Resource settings saved');
   };
 
   const addRoom = async (room: Omit<RoomResource, 'id'>) => {
-    const { error } = await supabase.from('rooms').insert({
+    if (error) throw new Error('Resource settings must load successfully before rooms can be changed.');
+    const { error: roomError } = await supabase.from('rooms').insert({
       name: room.name,
       location: room.location,
       description: room.description,
@@ -110,13 +128,14 @@ export const useResourceSettings = () => {
       status: room.status,
       is_bookable: room.isBookable,
     });
-    if (error) throw error;
+    if (roomError) throw roomError;
     await fetchSettings();
     toast.success('Room added');
   };
 
   const updateRoom = async (id: string, room: Omit<RoomResource, 'id'>) => {
-    const { error } = await supabase.from('rooms').update({
+    if (error) throw new Error('Resource settings must load successfully before rooms can be changed.');
+    const { error: roomError } = await supabase.from('rooms').update({
       name: room.name,
       location: room.location,
       description: room.description,
@@ -125,17 +144,18 @@ export const useResourceSettings = () => {
       is_bookable: room.isBookable,
       updated_at: new Date().toISOString(),
     }).eq('id', id);
-    if (error) throw error;
+    if (roomError) throw roomError;
     await fetchSettings();
     toast.success('Room updated');
   };
 
   const deleteRoom = async (id: string) => {
-    const { error } = await supabase.from('rooms').delete().eq('id', id);
-    if (error) throw error;
+    if (error) throw new Error('Resource settings must load successfully before rooms can be changed.');
+    const { error: roomError } = await supabase.from('rooms').delete().eq('id', id);
+    if (roomError) throw roomError;
     await fetchSettings();
     toast.success('Room removed');
   };
 
-  return { aircraftFields, documentTypes, rooms, loading, saveSettings, addRoom, updateRoom, deleteRoom };
+  return { aircraftFields, documentTypes, rooms, loading, error, saveSettings, addRoom, updateRoom, deleteRoom, refetch: fetchSettings };
 };

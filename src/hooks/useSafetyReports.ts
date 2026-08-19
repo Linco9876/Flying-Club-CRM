@@ -5,6 +5,7 @@ import { useSafetySettings } from './useSafetySettings';
 import toast from 'react-hot-toast';
 import { usePageLoadState } from '../context/PageLoadContext';
 import { useLatestEffect } from './useLatestEffect';
+import { normaliseSafetyOccurrenceTimestamp } from '../utils/safetyReportDateTime';
 
 export type SafetyReportType = 'incident' | 'hazard' | 'risk_assessment' | 'near_miss' | 'accident';
 export type SafetyReportSeverity = 'low' | 'medium' | 'high' | 'critical';
@@ -47,6 +48,7 @@ export interface CreateSafetyReportData {
   description: string;
   location?: string;
   occurrenceAt?: string;
+  occurrenceTimeZone?: string;
   aircraftId?: string;
   phaseOfFlight?: string;
   witnesses?: string;
@@ -68,6 +70,7 @@ export const useSafetyReports = (options?: UseSafetyReportsOptions) => {
   const enabled = options?.enabled ?? true;
   const [reports, setReports] = useState<SafetyReport[]>([]);
   const [loading, setLoading] = useState(enabled);
+  const [error, setError] = useState<string | null>(null);
   const participateInPageLoad = options?.participateInPageLoad ?? true;
   const { settings, categories } = useSafetySettings({
     enabled,
@@ -126,8 +129,11 @@ export const useSafetyReports = (options?: UseSafetyReportsOptions) => {
       }));
 
       setReports(mappedReports);
-    } catch (error) {
-      console.error('Error fetching safety reports:', error);
+      setError(null);
+    } catch (caught) {
+      console.error('Error fetching safety reports:', caught);
+      setReports([]);
+      setError(caught instanceof Error ? caught.message : 'Safety reports could not be loaded');
       toast.error('Failed to load safety reports');
     } finally {
       setLoading(false);
@@ -138,6 +144,7 @@ export const useSafetyReports = (options?: UseSafetyReportsOptions) => {
     if (!enabled) {
       setReports([]);
       setLoading(false);
+      setError(null);
       return;
     }
     fetchReports();
@@ -157,7 +164,10 @@ export const useSafetyReports = (options?: UseSafetyReportsOptions) => {
       title: report.title,
       description: report.description,
       location: report.location || null,
-      occurrence_at: report.occurrenceAt || null,
+      occurrence_at: normaliseSafetyOccurrenceTimestamp(
+        report.occurrenceAt,
+        report.occurrenceTimeZone,
+      ) || null,
       aircraft_id: report.aircraftId || null,
       phase_of_flight: report.phaseOfFlight || null,
       witnesses: report.witnesses || null,
@@ -188,5 +198,5 @@ export const useSafetyReports = (options?: UseSafetyReportsOptions) => {
     toast.success('Safety report updated');
   };
 
-  return { reports, loading, createReport, updateStatus, refetch: fetchReports };
+  return { reports, loading, error, createReport, updateStatus, refetch: fetchReports };
 };

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
+import { bookingFieldAppliesToRole } from '../utils/bookingFieldAccess';
 
 export interface BookingFieldSetting {
   id: string;
@@ -50,6 +51,7 @@ export const useBookingFieldSettings = () => {
   };
 
   const updateSetting = async (id: string, updates: Partial<BookingFieldSetting>, notify = true) => {
+    if (error) throw new Error('Booking form settings must load successfully before they can be changed.');
     try {
       const updateData: any = {};
       if (updates.isRequired !== undefined) updateData.is_required = updates.isRequired;
@@ -76,10 +78,40 @@ export const useBookingFieldSettings = () => {
     }
   };
 
+  const updateSettings = async (nextSettings: BookingFieldSetting[], notify = true) => {
+    if (error) throw new Error('Booking form settings must load successfully before they can be changed.');
+
+    const payload = nextSettings.map(setting => ({
+      id: setting.id,
+      field_name: setting.fieldName,
+      label: setting.label.trim(),
+      is_required: setting.isVisible ? setting.isRequired : false,
+      is_visible: setting.isVisible,
+      applies_to_roles: setting.appliesToRoles,
+      display_order: setting.displayOrder,
+      help_text: setting.helpText?.trim() || null,
+      updated_at: new Date().toISOString(),
+    }));
+
+    const { error: updateError } = await supabase
+      .from('booking_field_settings')
+      .upsert(payload, { onConflict: 'id' });
+
+    if (updateError) {
+      console.error('Error updating booking form settings:', updateError);
+      toast.error('Failed to update settings');
+      throw updateError;
+    }
+
+    await fetchSettings();
+    window.dispatchEvent(new Event('booking-field-settings-updated'));
+    if (notify) toast.success('Settings updated successfully');
+  };
+
   const isFieldRequired = (fieldName: string, userRole: string): boolean => {
     const setting = settings.find(s => s.fieldName === fieldName);
     if (!setting || !setting.isVisible) return false;
-    if (!setting.appliesToRoles.includes(userRole)) return false;
+    if (!bookingFieldAppliesToRole(setting.appliesToRoles, userRole)) return false;
     return setting.isRequired;
   };
 
@@ -87,7 +119,7 @@ export const useBookingFieldSettings = () => {
     const setting = settings.find(s => s.fieldName === fieldName);
     if (!setting) return true;
     if (!setting.isVisible) return false;
-    return setting.appliesToRoles.includes(userRole);
+    return bookingFieldAppliesToRole(setting.appliesToRoles, userRole);
   };
 
   useEffect(() => {
@@ -102,6 +134,7 @@ export const useBookingFieldSettings = () => {
     loading,
     error,
     updateSetting,
+    updateSettings,
     isFieldRequired,
     isFieldVisible,
     refetch: fetchSettings

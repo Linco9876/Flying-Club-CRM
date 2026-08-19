@@ -83,7 +83,7 @@ export const TrainingWorkspacePage: React.FC = () => {
     <div className="space-y-5">
       <nav
         aria-label="Training workspace"
-        className="grid gap-2 rounded-xl border border-gray-200 bg-white p-2 shadow-sm dark:border-[#2c3440] dark:bg-[#171a21] sm:grid-cols-2 lg:grid-cols-3"
+        className="no-scrollbar mx-3 mt-3 flex gap-2 overflow-x-auto rounded-xl border border-gray-200 bg-white p-2 shadow-sm dark:border-[#2c3440] dark:bg-[#171a21] sm:mx-6 sm:mt-6 sm:grid sm:grid-cols-2 lg:grid-cols-3"
       >
         {tabs.map((tab) => {
           const Icon = tab.icon;
@@ -93,7 +93,7 @@ export const TrainingWorkspacePage: React.FC = () => {
               key={tab.id}
               type="button"
               onClick={() => selectWorkspace(tab.id)}
-              className={`flex min-h-12 items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-bold transition ${
+              className={`flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-bold transition sm:shrink ${
                 selected
                   ? "bg-blue-600 text-white shadow-sm"
                   : "text-gray-600 hover:bg-gray-100 hover:text-gray-950 dark:text-gray-300 dark:hover:bg-[#232832] dark:hover:text-white"

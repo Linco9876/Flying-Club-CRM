@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Plane, User, EyeOff, Eye, GripVertical, ChevronDown, Settings2 } from 'lucide-react';
+import { Plane, User, EyeOff, Eye, GripVertical, ChevronDown, ChevronUp, Settings2 } from 'lucide-react';
 
 export interface ManagedResource {
   id: string;
@@ -79,6 +79,20 @@ export const ResourceManagerPanel: React.FC<ResourceManagerPanelProps> = ({
     setDragOverId(null);
   };
 
+  const moveResource = (id: string, direction: -1 | 1) => {
+    const visibleOrder = orderedIds.filter(resourceId =>
+      !hiddenIds.has(resourceId) && resources.some(resource => resource.id === resourceId),
+    );
+    const visibleIndex = visibleOrder.indexOf(id);
+    const targetId = visibleOrder[visibleIndex + direction];
+    if (!targetId) return;
+    const nextOrder = [...orderedIds];
+    const fromIndex = nextOrder.indexOf(id);
+    const targetIndex = nextOrder.indexOf(targetId);
+    [nextOrder[fromIndex], nextOrder[targetIndex]] = [nextOrder[targetIndex], nextOrder[fromIndex]];
+    onReorder(nextOrder);
+  };
+
   const hiddenCount = hiddenResources.length;
 
   return (
@@ -107,12 +121,12 @@ export const ResourceManagerPanel: React.FC<ResourceManagerPanelProps> = ({
           {/* backdrop */}
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
 
-          <div className="fixed left-4 right-4 top-48 z-40 max-h-[calc(100vh-13rem)] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-72 sm:max-h-none dark:border-[#363b45] dark:bg-[#171a21]">
+          <div className="resource-mobile-panel fixed inset-x-0 bottom-0 z-40 max-h-[75dvh] overflow-hidden rounded-t-3xl border border-gray-200 bg-white shadow-2xl sm:absolute sm:bottom-auto sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-72 sm:max-h-none sm:rounded-xl dark:border-[#363b45] dark:bg-[#171a21]" role="dialog" aria-modal="true" aria-label="Manage calendar resources">
             <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 dark:border-[#2c2f36] dark:bg-[#11141a]">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Manage Resources</p>
-                  <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">Drag to reorder, click eye to hide</p>
+                  <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">Use arrows on phones or drag on desktop. Tap the eye to hide.</p>
                 </div>
                 {hiddenCount > 0 && onShowAll && (
                   <button
@@ -131,7 +145,7 @@ export const ResourceManagerPanel: React.FC<ResourceManagerPanelProps> = ({
               {visibleResources.length === 0 && (
                 <p className="text-xs text-gray-400 text-center py-3">All resources are hidden</p>
               )}
-              {visibleResources.map(resource => (
+              {visibleResources.map((resource, index) => (
                 <div
                   key={resource.id}
                   draggable
@@ -158,10 +172,31 @@ export const ResourceManagerPanel: React.FC<ResourceManagerPanelProps> = ({
                   {resource.status && resource.status !== 'serviceable' && (
                     <span className="text-xs text-red-500 capitalize">{resource.status}</span>
                   )}
+                  <div className="flex sm:hidden">
+                    <button
+                      type="button"
+                      onClick={() => moveResource(resource.id, -1)}
+                      disabled={index === 0}
+                      className="flex h-11 w-11 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 disabled:opacity-30 dark:hover:bg-[#11141a]"
+                      aria-label={`Move ${resource.name} up`}
+                    >
+                      <ChevronUp className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveResource(resource.id, 1)}
+                      disabled={index === visibleResources.length - 1}
+                      className="flex h-11 w-11 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 disabled:opacity-30 dark:hover:bg-[#11141a]"
+                      aria-label={`Move ${resource.name} down`}
+                    >
+                      <ChevronDown className="h-4 w-4" />
+                    </button>
+                  </div>
                   <button
                     onClick={() => onHide(resource.id)}
-                    className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors dark:hover:bg-[#11141a] dark:hover:text-gray-100"
+                    className="flex h-11 w-11 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-[#11141a] dark:hover:text-gray-100"
                     title="Hide resource"
+                    aria-label={`Hide ${resource.name}`}
                   >
                     <EyeOff className="h-4 w-4" />
                   </button>
@@ -200,8 +235,9 @@ export const ResourceManagerPanel: React.FC<ResourceManagerPanelProps> = ({
                           <span className="flex-1 text-sm text-gray-400 truncate">{resource.name}</span>
                           <button
                             onClick={() => onShow(resource.id)}
-                            className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-600 transition-colors dark:hover:bg-[#171a21]"
+                            className="flex h-11 w-11 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-gray-100 hover:text-blue-600 dark:hover:bg-[#171a21]"
                             title="Show resource"
+                            aria-label={`Show ${resource.name}`}
                           >
                             <Eye className="h-4 w-4" />
                           </button>

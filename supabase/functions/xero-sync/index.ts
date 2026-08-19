@@ -1888,7 +1888,7 @@ const getFlightContactLabel = (flight: any) => {
   return clean(student?.name) || clean(student?.email) || "Member";
 };
 
-const syncGuestContact = async (ctx: any, flight: any) => {
+const syncGuestContact = async (adminClient: SupabaseAdminClient, ctx: any, flight: any) => {
   const booking = getFlightBooking(flight);
   if (!booking?.is_guest_booking) {
     throw new Error("This booking is not marked as a guest booking.");
@@ -1929,6 +1929,23 @@ const syncGuestContact = async (ctx: any, flight: any) => {
   const contact = result?.Contacts?.[0] || matches[0];
   contactId = clean(contact?.ContactID) || contactId;
   if (!contactId) throw new Error("Xero did not return a guest contact ID.");
+
+  if (booking?.casual_contact_id) {
+    const linkedAt = new Date().toISOString();
+    const { error: contactLinkError } = await adminClient
+      .from("casual_contacts")
+      .update({
+        xero_contact_id: contactId,
+        xero_contact_name: clean(contact?.Name) || guestName,
+        xero_contact_email: clean(contact?.EmailAddress) || guestEmail,
+        xero_contact_linked_at: linkedAt,
+        updated_at: linkedAt,
+      })
+      .eq("id", booking.casual_contact_id);
+    if (contactLinkError) {
+      console.warn("Guest Xero contact linkage could not be persisted", contactLinkError.message);
+    }
+  }
 
   return {
     linked: true,
@@ -2525,7 +2542,8 @@ const getFlightLog = async (
         is_guest_booking,
         guest_name,
         guest_email,
-        guest_phone
+        guest_phone,
+        casual_contact_id
       ),
       aircraft:aircraft_id(
         registration,
@@ -2682,7 +2700,7 @@ const createFlightReversalCreditNote = async ({
   }
 
   const contactResult = getFlightBooking(flight)?.is_guest_booking
-    ? await syncGuestContact(ctx, flight)
+    ? await syncGuestContact(adminClient, ctx, flight)
     : await syncMemberContact(adminClient, ctx, flight.student_id);
   if (!contactResult?.contactId) {
     throw new Error("Could not link this member to a Xero contact.");
@@ -3038,7 +3056,7 @@ const createOrUpdateFlightInvoice = async (
   }
 
   const contactResult = getFlightBooking(flight)?.is_guest_booking
-    ? await syncGuestContact(ctx, flight)
+    ? await syncGuestContact(adminClient, ctx, flight)
     : await syncMemberContact(adminClient, ctx, flight.student_id);
   if (!contactResult?.contactId) {
     throw new Error("Could not link this member to a Xero contact.");

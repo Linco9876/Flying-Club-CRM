@@ -7,6 +7,7 @@ import {
   organisationDocumentCode,
   organisationDocumentFileError,
 } from '../../utils/membershipDocumentRules';
+import { SettingsLoadError } from './SettingsLoadError';
 
 interface OrganisationDocumentsSettingsProps {
   canEdit: boolean;
@@ -138,6 +139,10 @@ export const OrganisationDocumentsSettings: React.FC<OrganisationDocumentsSettin
     }
   };
 
+  if (error) {
+    return <SettingsLoadError section="Organisation documents" error={error} onRetry={refetch} />;
+  }
+
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-100 pb-2">
@@ -155,7 +160,6 @@ export const OrganisationDocumentsSettings: React.FC<OrganisationDocumentsSettin
         )}
       </div>
 
-      {error && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div>}
       {loading ? (
         <div className="flex items-center gap-2 py-8 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Loading documents…</div>
       ) : (

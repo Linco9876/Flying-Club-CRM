@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
@@ -285,7 +286,7 @@ export const LearningCentreDashboard: React.FC = () => {
               />
             </label>
             {categories.length > 1 && (
-              <select
+              <SearchableSelect
                 aria-label="Filter programs by category"
                 value={categoryFilter}
                 onChange={event => setCategoryFilter(event.target.value)}
@@ -293,7 +294,7 @@ export const LearningCentreDashboard: React.FC = () => {
               >
                 <option value="all">All categories</option>
                 {categories.map(category => <option key={category} value={category}>{category}</option>)}
-              </select>
+              </SearchableSelect>
             )}
           </div>
           {visiblePrograms.map(program => {
@@ -421,7 +422,7 @@ export const LearningCentreDashboard: React.FC = () => {
                       <Field label="Cover photo URL"><input value={draftProgram.coverPhotoUrl || ''} onChange={event => updateDraft({ coverPhotoUrl: event.target.value })} className="input" placeholder="https://..." /></Field>
                     </div>
                     <Field label="Description"><textarea rows={5} value={draftProgram.description || ''} onChange={event => updateDraft({ description: event.target.value })} className="input" /></Field>
-                    <Field label="Status"><select value={draftProgram.status || 'draft'} onChange={event => updateDraft({ status: event.target.value as any })} className="input"><option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option></select></Field>
+                    <Field label="Status"><SearchableSelect value={draftProgram.status || 'draft'} onChange={event => updateDraft({ status: event.target.value as any })} className="input"><option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option></SearchableSelect></Field>
                   </BuilderPanel>
                 )}
 
@@ -430,7 +431,7 @@ export const LearningCentreDashboard: React.FC = () => {
                     <Segmented value={draftProgram.scheduleType || 'self_paced'} onChange={value => updateDraft({ scheduleType: value as any })} options={[['self_paced', 'Self paced'], ['scheduled', 'Scheduled']]} />
                     {draftProgram.scheduleType === 'self_paced' ? (
                       <div className="grid gap-4 md:grid-cols-3">
-                        <Field label="Time limit"><select value={draftProgram.selfPacedLimitType || 'none'} onChange={event => updateDraft({ selfPacedLimitType: event.target.value as any })} className="input"><option value="none">No time limit</option><option value="duration_days">Duration in days</option><option value="fixed_end">Scheduled end date</option></select></Field>
+                        <Field label="Time limit"><SearchableSelect value={draftProgram.selfPacedLimitType || 'none'} onChange={event => updateDraft({ selfPacedLimitType: event.target.value as any })} className="input"><option value="none">No time limit</option><option value="duration_days">Duration in days</option><option value="fixed_end">Scheduled end date</option></SearchableSelect></Field>
                         {draftProgram.selfPacedLimitType === 'duration_days' && <Field label="Duration days"><input type="number" value={draftProgram.durationDays || 30} onChange={event => updateDraft({ durationDays: Number(event.target.value) })} className="input" /></Field>}
                         {draftProgram.selfPacedLimitType === 'fixed_end' && <Field label="End date"><input type="datetime-local" value={(draftProgram.scheduledEndAt || '').slice(0, 16)} onChange={event => updateDraft({ scheduledEndAt: event.target.value })} className="input" /></Field>}
                       </div>
@@ -446,9 +447,9 @@ export const LearningCentreDashboard: React.FC = () => {
                 {builderTab === 'enrolment' && (
                   <BuilderPanel title="Enrolment & Payment" description="Decide who can join, whether approval is required, and participant limits.">
                     <div className="grid gap-4 md:grid-cols-2">
-                      <Field label="Payment"><select value={draftProgram.priceType || 'free'} onChange={event => updateDraft({ priceType: event.target.value as any })} className="input"><option value="free">Free</option><option value="paid">Pay to join</option></select></Field>
+                      <Field label="Payment"><SearchableSelect value={draftProgram.priceType || 'free'} onChange={event => updateDraft({ priceType: event.target.value as any })} className="input"><option value="free">Free</option><option value="paid">Pay to join</option></SearchableSelect></Field>
                       {draftProgram.priceType === 'paid' && <Field label="Price"><input type="number" value={(draftProgram.priceCents || 0) / 100} onChange={event => updateDraft({ priceCents: Math.round(Number(event.target.value) * 100) })} className="input" /></Field>}
-                      <Field label="Visibility"><select value={draftProgram.visibility || 'private'} onChange={event => updateDraft({ visibility: event.target.value as any })} className="input"><option value="public">Public - anyone can join</option><option value="private">Private - visible but requires approval</option><option value="secret">Secret - invited users only</option></select></Field>
+                      <Field label="Visibility"><SearchableSelect value={draftProgram.visibility || 'private'} onChange={event => updateDraft({ visibility: event.target.value as any })} className="input"><option value="public">Public - anyone can join</option><option value="private">Private - visible but requires approval</option><option value="secret">Secret - invited users only</option></SearchableSelect></Field>
                       <Field label="Participant limit"><input type="number" value={draftProgram.participantLimit || ''} onChange={event => updateDraft({ participantLimit: event.target.value ? Number(event.target.value) : null })} className="input" placeholder="Blank = unlimited" /></Field>
                     </div>
                     <Field label="Payment notes"><textarea rows={3} value={draftProgram.paymentNotes || ''} onChange={event => updateDraft({ paymentNotes: event.target.value })} className="input" /></Field>
@@ -472,7 +473,7 @@ export const LearningCentreDashboard: React.FC = () => {
                 {builderTab === 'settings' && (
                   <BuilderPanel title="Content Settings" description="Control how participants move through the program and complete video steps.">
                     <div className="grid gap-4 md:grid-cols-2">
-                      <Field label="Step order"><select value={draftProgram.stepOrderMode || 'in_order'} onChange={event => updateDraft({ stepOrderMode: event.target.value as any })} className="input"><option value="any_order">Any order</option><option value="in_order">In order</option></select></Field>
+                      <Field label="Step order"><SearchableSelect value={draftProgram.stepOrderMode || 'in_order'} onChange={event => updateDraft({ stepOrderMode: event.target.value as any })} className="input"><option value="any_order">Any order</option><option value="in_order">In order</option></SearchableSelect></Field>
                       <label className="flex items-center gap-3 rounded-xl border border-gray-200 p-4 text-sm font-semibold"><input type="checkbox" checked={draftProgram.futureStepsVisible ?? true} onChange={event => updateDraft({ futureStepsVisible: event.target.checked })} /> Show future steps</label>
                       <label className="flex items-center gap-3 rounded-xl border border-gray-200 p-4 text-sm font-semibold"><input type="checkbox" checked={draftProgram.videoWatchRequired ?? false} onChange={event => updateDraft({ videoWatchRequired: event.target.checked })} /> Require video watch percentage</label>
                       <Field label="Required video watch %"><input type="number" min={0} max={100} value={draftProgram.videoRequiredPercent || 90} onChange={event => updateDraft({ videoRequiredPercent: Number(event.target.value) })} className="input" /></Field>
@@ -521,18 +522,18 @@ export const LearningCentreDashboard: React.FC = () => {
                         const course = modules.find(module => module.id === link.trainingCourseId);
                         return (
                           <div key={link.id} className="grid gap-3 rounded-xl border border-gray-200 p-3 md:grid-cols-3">
-                            <select value={link.trainingCourseId} onChange={event => setDraftLinks(current => current.map(item => item.id === link.id ? { ...item, trainingCourseId: event.target.value, trainingLessonId: modules.find(m => m.id === event.target.value)?.lessons[0]?.id || null } : item))} className="input">
+                            <SearchableSelect value={link.trainingCourseId} onChange={event => setDraftLinks(current => current.map(item => item.id === link.id ? { ...item, trainingCourseId: event.target.value, trainingLessonId: modules.find(m => m.id === event.target.value)?.lessons[0]?.id || null } : item))} className="input">
                               {modules.map(module => <option key={module.id} value={module.id}>{module.title}</option>)}
-                            </select>
-                            <select value={link.trainingLessonId || ''} onChange={event => setDraftLinks(current => current.map(item => item.id === link.id ? { ...item, trainingLessonId: event.target.value || null } : item))} className="input">
+                            </SearchableSelect>
+                            <SearchableSelect value={link.trainingLessonId || ''} onChange={event => setDraftLinks(current => current.map(item => item.id === link.id ? { ...item, trainingLessonId: event.target.value || null } : item))} className="input">
                               <option value="">Whole course</option>
                               {course?.lessons.map(lesson => <option key={lesson.id} value={lesson.id}>{lesson.name}</option>)}
-                            </select>
-                            <select value={link.visibilityTiming} onChange={event => setDraftLinks(current => current.map(item => item.id === link.id ? { ...item, visibilityTiming: event.target.value as any } : item))} className="input">
+                            </SearchableSelect>
+                            <SearchableSelect value={link.visibilityTiming} onChange={event => setDraftLinks(current => current.map(item => item.id === link.id ? { ...item, visibilityTiming: event.target.value as any } : item))} className="input">
                               <option value="always">Always visible</option>
                               <option value="at_or_before_lesson">When up to this lesson</option>
                               <option value="after_lesson">After this lesson</option>
-                            </select>
+                            </SearchableSelect>
                           </div>
                         );
                       })}
@@ -639,7 +640,7 @@ const StepEditor = ({ step, sections, onChange }: { step: LearningStep; sections
     <div className="space-y-4 rounded-2xl border border-gray-200 p-4">
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="Step name"><input value={step.title} onChange={event => onChange({ title: event.target.value })} className="input" /></Field>
-        <Field label="Section"><select value={step.sectionId || ''} onChange={event => onChange({ sectionId: event.target.value || null })} className="input">{sections.map(section => <option key={section.id} value={section.id}>{section.title}</option>)}</select></Field>
+        <Field label="Section"><SearchableSelect value={step.sectionId || ''} onChange={event => onChange({ sectionId: event.target.value || null })} className="input">{sections.map(section => <option key={section.id} value={section.id}>{section.title}</option>)}</SearchableSelect></Field>
       </div>
       <Field label="Description"><textarea rows={3} value={step.description} onChange={event => onChange({ description: event.target.value })} className="input" /></Field>
       {step.stepType === 'video' && <Field label="Video URL"><input value={step.videoUrl || ''} onChange={event => onChange({ videoUrl: event.target.value })} className="input" placeholder="Paste YouTube, Vimeo or hosted video URL" /></Field>}
@@ -649,9 +650,9 @@ const StepEditor = ({ step, sections, onChange }: { step: LearningStep; sections
           {step.contentBlocks.map(block => (
             <div key={block.id} className="rounded-xl border border-gray-200 p-3">
               <div className="grid gap-3 md:grid-cols-[180px_minmax(0,1fr)]">
-                <select value={block.type} onChange={event => updateBlock(block.id, { type: event.target.value as any })} className="input">
+                <SearchableSelect value={block.type} onChange={event => updateBlock(block.id, { type: event.target.value as any })} className="input">
                   <option value="rich_text">Rich text</option><option value="divider">Divider</option><option value="button">Button</option><option value="table">Table</option><option value="video">Video</option><option value="image">Image</option><option value="gallery">Gallery</option><option value="gif">GIF</option><option value="file">File</option><option value="audio">Audio file</option>
-                </select>
+                </SearchableSelect>
                 <input value={block.title || ''} onChange={event => updateBlock(block.id, { title: event.target.value })} className="input" placeholder="Optional title" />
               </div>
               <textarea rows={4} value={block.text || ''} onChange={event => updateBlock(block.id, { text: event.target.value })} className="input mt-3" placeholder="Text, table notes or embed description" />
@@ -667,9 +668,9 @@ const StepEditor = ({ step, sections, onChange }: { step: LearningStep; sections
           {step.quizQuestions.map(question => (
             <div key={question.id} className="rounded-xl border border-gray-200 p-3">
               <div className="grid gap-3 md:grid-cols-[190px_minmax(0,1fr)]">
-                <select value={question.type} onChange={event => updateQuestion(question.id, { type: event.target.value as any })} className="input">
+                <SearchableSelect value={question.type} onChange={event => updateQuestion(question.id, { type: event.target.value as any })} className="input">
                   <option value="short_answer">Short answer</option><option value="long_answer">Long answer</option><option value="number">Number</option><option value="single_choice">Single choice</option><option value="multiple_choice">Multiple choice</option><option value="image_choice">Image choice</option><option value="file_upload">File upload</option><option value="heading">Heading</option><option value="text">Text</option>
-                </select>
+                </SearchableSelect>
                 <input value={question.prompt} onChange={event => updateQuestion(question.id, { prompt: event.target.value })} className="input" placeholder="Question, heading or text" />
               </div>
               <textarea rows={2} value={Array.isArray(question.correctAnswer) ? question.correctAnswer.join(', ') : String(question.correctAnswer ?? '')} onChange={event => updateQuestion(question.id, { correctAnswer: event.target.value })} className="input mt-3" placeholder="Correct answer" />

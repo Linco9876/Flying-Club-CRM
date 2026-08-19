@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useMemo, useState } from "react";
 import {
   CalendarClock,
@@ -22,6 +23,7 @@ import {
   type FlightReviewStatus,
 } from "../../hooks/useFlightReviews";
 import { useUsers } from "../../hooks/useUsers";
+import { useTrainingSettings } from "../../hooks/useTrainingSettings";
 import { hasAnyRole } from "../../utils/rbac";
 import { userCanConductReview } from "../../utils/reviewerRoleRules";
 import { FORMAL_REVIEW_FINDINGS_LABEL } from "../../utils/flightReviewFindings";
@@ -59,6 +61,7 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
 }) => {
   const { user } = useAuth();
   const { users } = useUsers();
+  const { settings: trainingSettings } = useTrainingSettings();
   const reviews = useFlightReviews({ candidateId: studentId });
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
@@ -188,9 +191,9 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
 
   const sortedRecords = useMemo(
     () =>
-      [...reviews.records].sort((a, b) =>
-        b.reviewDate.localeCompare(a.reviewDate),
-      ),
+      reviews.records
+        .filter((record) => record.status !== "cancelled")
+        .sort((a, b) => b.reviewDate.localeCompare(a.reviewDate)),
     [reviews.records],
   );
 
@@ -248,7 +251,7 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
         <div className="grid gap-4 p-5 sm:grid-cols-2">
           <label className="sm:col-span-2 text-sm font-medium text-gray-700 dark:text-gray-200">
             Review or test form
-            <select
+            <SearchableSelect
               value={startForm.templateId}
               onChange={(event) =>
                 setStartForm((current) => ({
@@ -267,7 +270,7 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
                     {template.title}
                   </option>
                 ))}
-            </select>
+            </SearchableSelect>
           </label>
           <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
             Review date
@@ -285,7 +288,7 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
           </label>
           <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
             Examiner source
-            <select
+            <SearchableSelect
               value={startForm.examinerMode}
               onChange={(event) =>
                 setStartForm((current) => ({
@@ -297,12 +300,12 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
             >
               <option value="internal">CRM reviewer</option>
               <option value="external">External examiner</option>
-            </select>
+            </SearchableSelect>
           </label>
           {startForm.examinerMode === "internal" ? (
             <label className="sm:col-span-2 text-sm font-medium text-gray-700 dark:text-gray-200">
               Authorised reviewer
-              <select
+              <SearchableSelect
                 value={startForm.reviewerUserId}
                 onChange={(event) =>
                   setStartForm((current) => ({
@@ -318,7 +321,7 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
                     {reviewer.name}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
               {selectedTemplate && eligibleReviewers.length === 0 && (
                 <span className="mt-1 block text-xs text-red-600">
                   No active user holds one of this form's authorised reviewer
@@ -791,6 +794,7 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
           }
           currentUserId={user.id}
           flightComments={reviews.flightCommentsByRecord.get(selectedRecord.id)}
+          endorsementOptions={trainingSettings.endorsementTypes}
           onClose={() => setSelectedRecordId(null)}
           onChangeForm={async () => {
             await reviews.updateReview(selectedRecord.id, {

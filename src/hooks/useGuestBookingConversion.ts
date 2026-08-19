@@ -34,12 +34,28 @@ const extractFunctionErrorMessage = async (error: unknown, fallback: string) => 
 };
 
 export const useGuestBookingConversion = () => {
-  const convertGuestBookingToMember = async (bookingId: string) => {
+  const convertGuestBookingToMember = async ({
+    bookingId,
+    targetUserId,
+    role = 'student',
+    linkAll = true,
+    sendInvitation = false,
+  }: {
+    bookingId: string;
+    targetUserId?: string;
+    role?: 'student' | 'pilot';
+    linkAll?: boolean;
+    sendInvitation?: boolean;
+  }) => {
     try {
       const redirectTo = `${window.location.origin}/`;
       const { data, error } = await supabase.functions.invoke('convert-guest-booking-to-member', {
         body: {
           bookingId,
+          targetUserId: targetUserId || null,
+          role,
+          linkAll,
+          sendInvitation,
           redirectTo,
         },
       });
@@ -49,15 +65,23 @@ export const useGuestBookingConversion = () => {
       }
 
       toast.success(
-        data?.action === 'created_new'
-          ? 'Guest converted into a new member account'
-          : 'Guest booking linked to an existing member account'
+        data?.action === 'created_profile'
+          ? sendInvitation
+            ? 'Portal profile created, history transferred and invitation sent'
+            : 'Portal profile created without an invitation and history transferred'
+          : 'Visitor history linked to the selected portal profile'
       );
       return data as {
         memberId: string;
         setupLink?: string | null;
         emailSent?: boolean;
         emailError?: string | null;
+        transferred?: {
+          bookingCount?: number;
+          flightLogCount?: number;
+          trainingRecordCount?: number;
+          reviewCount?: number;
+        };
       };
     } catch (error) {
       console.error('Error converting guest booking to member:', error);

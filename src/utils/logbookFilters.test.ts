@@ -65,6 +65,39 @@ test('logbook search includes pilots, crew, comments and registration', () => {
   }
 });
 
+test('flight mode uses the hours allocated for the viewed logbook', () => {
+  const instructorView = [{
+    ...entries[0],
+    hoursDual: 0,
+    hoursPic: 1.2,
+  }];
+
+  assert.equal(filterAndSortLogbookEntries(instructorView, {
+    ...DEFAULT_LOGBOOK_FILTERS,
+    flightMode: 'dual',
+  }).length, 0);
+  assert.equal(filterAndSortLogbookEntries(instructorView, {
+    ...DEFAULT_LOGBOOK_FILTERS,
+    flightMode: 'solo',
+  }).length, 1);
+});
+
+test('search includes lesson, booking description and personal notes', () => {
+  const contextualEntry = [{
+    ...entries[0],
+    lessonName: 'Stalls and recovery',
+    bookingDescription: 'Area training flight',
+    personalNote: 'Revise pre-stall checks',
+  }];
+
+  for (const search of ['stalls', 'area training', 'pre-stall']) {
+    assert.equal(filterAndSortLogbookEntries(contextualEntry, {
+      ...DEFAULT_LOGBOOK_FILTERS,
+      search,
+    }).length, 1);
+  }
+});
+
 test('logbook sorting supports date, duration and aircraft ordering', () => {
   assert.deepEqual(
     filterAndSortLogbookEntries(entries, DEFAULT_LOGBOOK_FILTERS).map(entry => entry.id),

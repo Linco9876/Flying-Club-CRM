@@ -29,9 +29,11 @@ const mapReason = (row: any): BookingCancellationReason => ({
 export const useBookingCancellationReasons = () => {
   const [reasons, setReasons] = useState<BookingCancellationReason[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const fetchReasons = useCallback(async () => {
     try {
+      setLoading(true);
       const { data, error } = await supabase
         .from('booking_cancellation_reasons')
         .select('*')
@@ -39,8 +41,11 @@ export const useBookingCancellationReasons = () => {
         .order('name');
       if (error) throw error;
       setReasons((data || []).map(mapReason));
-    } catch (error) {
-      console.error('Failed to load booking cancellation reasons:', error);
+      setLoadError(null);
+    } catch (caught) {
+      console.error('Failed to load booking cancellation reasons:', caught);
+      setReasons([]);
+      setLoadError(caught instanceof Error ? caught.message : 'Cancellation reasons could not be loaded');
       toast.error('Failed to load cancellation reasons');
     } finally {
       setLoading(false);
@@ -52,6 +57,7 @@ export const useBookingCancellationReasons = () => {
   }, [fetchReasons]);
 
   const createReason = async (input: BookingCancellationReasonInput) => {
+    if (loadError) throw new Error('Cancellation reasons must load successfully before they can be changed.');
     const { error } = await supabase.from('booking_cancellation_reasons').insert({
       name: input.name.trim(),
       description: input.description?.trim() || null,
@@ -67,6 +73,7 @@ export const useBookingCancellationReasons = () => {
   };
 
   const updateReason = async (id: string, input: BookingCancellationReasonInput) => {
+    if (loadError) throw new Error('Cancellation reasons must load successfully before they can be changed.');
     const { error } = await supabase
       .from('booking_cancellation_reasons')
       .update({
@@ -85,11 +92,12 @@ export const useBookingCancellationReasons = () => {
   };
 
   const deleteReason = async (id: string) => {
+    if (loadError) throw new Error('Cancellation reasons must load successfully before they can be changed.');
     const { error } = await supabase.from('booking_cancellation_reasons').delete().eq('id', id);
     if (error) throw error;
     await fetchReasons();
     toast.success('Cancellation reason removed');
   };
 
-  return { reasons, loading, createReason, updateReason, deleteReason, refetch: fetchReasons };
+  return { reasons, loading, error: loadError, createReason, updateReason, deleteReason, refetch: fetchReasons };
 };

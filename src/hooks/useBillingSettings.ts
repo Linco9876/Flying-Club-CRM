@@ -53,6 +53,7 @@ export const useBillingSettings = (options: UseBillingSettingsOptions = {}) => {
   const [flightTypes, setFlightTypes] = useState<FlightType[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useLatestEffect(() => {
     if (!enabled) {
@@ -88,6 +89,7 @@ export const useBillingSettings = (options: UseBillingSettingsOptions = {}) => {
       }
     } catch (error) {
       console.error('Error fetching payment types:', error);
+      setError(error instanceof Error ? error.message : 'Payment Types could not be loaded');
       toast.error('Failed to load Payment Types');
     }
   };
@@ -115,6 +117,7 @@ export const useBillingSettings = (options: UseBillingSettingsOptions = {}) => {
       }
     } catch (error) {
       console.error('Error fetching payment methods:', error);
+      setError(error instanceof Error ? error.message : 'Payment methods could not be loaded');
       toast.error('Failed to load payment methods');
     }
   };
@@ -281,6 +284,7 @@ export const useBillingSettings = (options: UseBillingSettingsOptions = {}) => {
   };
 
   const saveBillingSettings = async (nextFlightTypes: FlightType[], nextPaymentMethods: PaymentMethod[]) => {
+    if (error) throw new Error('Billing settings must load successfully before they can be changed.');
     try {
       const originalFlightTypeIds = new Set(flightTypes.map(item => item.id));
       const originalPaymentMethodIds = new Set(paymentMethods.map(item => item.id));
@@ -373,6 +377,7 @@ export const useBillingSettings = (options: UseBillingSettingsOptions = {}) => {
       return;
     }
     setLoading(true);
+    setError(null);
     if (paymentMethodsOnly) {
       await fetchPaymentMethods();
     } else {
@@ -385,6 +390,7 @@ export const useBillingSettings = (options: UseBillingSettingsOptions = {}) => {
     flightTypes,
     paymentMethods,
     loading,
+    error,
     addFlightType,
     updateFlightType,
     deleteFlightType,

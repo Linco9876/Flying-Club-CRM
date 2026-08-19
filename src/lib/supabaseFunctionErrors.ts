@@ -1,10 +1,12 @@
+import { getAuthErrorMessage } from '../utils/authErrorMessage';
+
 export const getSupabaseFunctionErrorMessage = async (error: any, fallback: string) => {
   const response = error?.context;
   if (response && typeof response.json === 'function') {
     try {
       const body = await (typeof response.clone === 'function' ? response.clone() : response).json();
-      if (typeof body?.error === 'string') return body.error;
-      if (typeof body?.message === 'string') return body.message;
+      const message = getAuthErrorMessage(body, '');
+      if (message) return message;
     } catch {
       // Fall through to text/message parsing below.
     }
@@ -16,10 +18,10 @@ export const getSupabaseFunctionErrorMessage = async (error: any, fallback: stri
       if (text) {
         try {
           const body = JSON.parse(text);
-          if (typeof body?.error === 'string') return body.error;
-          if (typeof body?.message === 'string') return body.message;
+          const message = getAuthErrorMessage(body, '');
+          if (message) return message;
         } catch {
-          return text;
+          return getAuthErrorMessage(text, fallback);
         }
       }
     } catch {
@@ -27,5 +29,5 @@ export const getSupabaseFunctionErrorMessage = async (error: any, fallback: stri
     }
   }
 
-  return error?.message || fallback;
+  return getAuthErrorMessage(error, fallback);
 };

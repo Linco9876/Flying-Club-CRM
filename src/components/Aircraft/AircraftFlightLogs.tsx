@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Plane, ArrowLeft, Calendar, Pencil, Trash2, X } from 'lucide-react';
@@ -9,6 +10,11 @@ import { calculateFlightCost, isPrepaidPaymentMethod, isVoucherPaymentMethod } f
 import { fetchUserPrepaidLedgerBalance } from '../../lib/prepaidLedger';
 import { StudentFileLink } from '../Students/StudentFileLink';
 import { useLatestEffect } from '../../hooks/useLatestEffect';
+import {
+  defaultFlightTimeAllocation,
+  updateFlightTimeAllocation,
+  validateFlightTimeAllocation,
+} from '../../utils/flightTimeAllocation';
 
 interface FlightLog {
   id: string;
@@ -21,6 +27,8 @@ interface FlightLog {
   start_tach: number;
   end_tach: number;
   flight_duration: number;
+  dual_time: number;
+  solo_time: number;
   landings: number;
   payment_type: string | null;
   flight_type_id: string | null;
@@ -50,6 +58,8 @@ interface EditLogForm {
   start_tach: string;
   end_tach: string;
   flight_duration: string;
+  dual_time: string;
+  solo_time: string;
   landings: string;
   payment_type: string;
   observations: string;
@@ -88,7 +98,7 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
 
       const { data: logsData, error: logsError } = await supabase
         .from('flight_logs')
-        .select('id,booking_id,aircraft_id,student_id,instructor_id,start_time,end_time,start_tach,end_tach,flight_duration,landings,observations,hobbs_start,hobbs_end,fuel_start,fuel_end,fuel_added,fuel_type,oil_start,oil_end,oil_added,aircraft_condition,maintenance_notes,created_at,passengers')
+        .select('id,booking_id,aircraft_id,student_id,instructor_id,start_time,end_time,start_tach,end_tach,flight_duration,dual_time,solo_time,landings,observations,hobbs_start,hobbs_end,fuel_start,fuel_end,fuel_added,fuel_type,oil_start,oil_end,oil_added,aircraft_condition,maintenance_notes,created_at,passengers')
         .eq('aircraft_id', aircraftId)
         .order('created_at', { ascending: false });
 
@@ -151,6 +161,8 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
             } : null,
             durationHours: parseFloat(log.flight_duration || 0),
             isDual: !!log.instructor_id,
+            dualHours: parseFloat(log.dual_time || 0),
+            soloHours: parseFloat(log.solo_time || 0),
             passengerCount: log.passengers,
             startTime: log.start_time,
           });
@@ -166,6 +178,8 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
           start_tach: parseFloat(log.start_tach),
           end_tach: parseFloat(log.end_tach),
           flight_duration: parseFloat(log.flight_duration),
+          dual_time: parseFloat(log.dual_time || 0),
+          solo_time: parseFloat(log.solo_time || 0),
           landings: log.landings || 0,
           payment_type: financial?.payment_type ?? null,
           flight_type_id: financial?.flight_type_id ?? null,
@@ -230,9 +244,51 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
       start_tach: log.start_tach.toFixed(1),
       end_tach: log.end_tach.toFixed(1),
       flight_duration: log.flight_duration.toFixed(2),
+      dual_time: log.dual_time.toFixed(1),
+      solo_time: log.solo_time.toFixed(1),
       landings: String(log.landings || 0),
       payment_type: log.payment_type || '',
       observations: log.observations || '',
+    });
+  };
+
+  const handleEditDurationChange = (value: string) => {
+    if (!editingLog || !editForm) return;
+    const duration = Number(value);
+    if (!Number.isFinite(duration) || duration < 0) {
+      setEditForm({ ...editForm, flight_duration: value });
+      return;
+    }
+    const currentSolo = Number(editForm.solo_time || 0);
+    const allocation = editingLog.instructor_id && currentSolo <= duration
+      ? updateFlightTimeAllocation({
+          durationHours: duration,
+          changedField: 'soloTime',
+          value: currentSolo,
+        })
+      : defaultFlightTimeAllocation(duration, Boolean(editingLog.instructor_id));
+    setEditForm({
+      ...editForm,
+      flight_duration: value,
+      dual_time: allocation.dualTime.toFixed(1),
+      solo_time: allocation.soloTime.toFixed(1),
+    });
+  };
+
+  const handleEditAllocatedTimeChange = (
+    changedField: 'dualTime' | 'soloTime',
+    value: string,
+  ) => {
+    if (!editForm) return;
+    const allocation = updateFlightTimeAllocation({
+      durationHours: Number(editForm.flight_duration || 0),
+      changedField,
+      value: value === '' ? 0 : Number(value),
+    });
+    setEditForm({
+      ...editForm,
+      dual_time: allocation.dualTime.toFixed(1),
+      solo_time: allocation.soloTime.toFixed(1),
     });
   };
 
@@ -280,6 +336,8 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
     const startTach = parseFloat(editForm.start_tach);
     const endTach = parseFloat(editForm.end_tach);
     const duration = parseFloat(editForm.flight_duration);
+    const dualTime = parseFloat(editForm.dual_time);
+    const soloTime = parseFloat(editForm.solo_time);
 
     if (Number.isNaN(startTach) || Number.isNaN(endTach) || endTach <= startTach) {
       toast.error('End tach must be greater than start tach');
@@ -288,6 +346,17 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
 
     if (Number.isNaN(duration) || duration <= 0) {
       toast.error('Flight duration must be positive');
+      return;
+    }
+
+    const allocationError = validateFlightTimeAllocation({
+      durationHours: duration,
+      dualTime,
+      soloTime,
+      hasInstructor: Boolean(editingLog.instructor_id),
+    });
+    if (allocationError) {
+      toast.error(allocationError);
       return;
     }
 
@@ -301,6 +370,9 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
           start_tach: startTach,
           end_tach: endTach,
           flight_duration: duration,
+          duration,
+          dual_time: dualTime,
+          solo_time: soloTime,
           landings: parseInt(editForm.landings, 10) || 0,
           observations: editForm.observations || null,
         })
@@ -309,6 +381,13 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
       if (updateError) {
         toast.error('Failed to update flight log');
         return;
+      }
+      const { error: trainingTimeError } = await supabase
+        .from('training_records')
+        .update({ dual_time_min: Math.round(dualTime * 60), solo_time_min: Math.round(soloTime * 60) })
+        .eq('flight_log_id', editingLog.id);
+      if (trainingTimeError) {
+        toast.error('Flight log was updated, but the linked RAAus lesson time could not be refreshed');
       }
       setEditingLog(null);
       setEditForm(null);
@@ -335,6 +414,8 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
       } : null,
       durationHours: duration,
       isDual: !!editingLog.instructor_id,
+      dualHours: dualTime,
+      soloHours: soloTime,
       startTime: new Date(editForm.start_time).toISOString(),
     });
 
@@ -379,6 +460,9 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
         start_tach: startTach,
         end_tach: endTach,
         flight_duration: duration,
+        duration,
+        dual_time: dualTime,
+        solo_time: soloTime,
         landings: parseInt(editForm.landings, 10) || 0,
         payment_type: editForm.payment_type || null,
         calculated_cost: recalculatedCost,
@@ -393,6 +477,14 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
     if (updateError) {
       toast.error('Failed to update flight log');
       return;
+    }
+
+    const { error: trainingTimeError } = await supabase
+      .from('training_records')
+      .update({ dual_time_min: Math.round(dualTime * 60), solo_time_min: Math.round(soloTime * 60) })
+      .eq('flight_log_id', editingLog.id);
+    if (trainingTimeError) {
+      toast.error('Flight log was updated, but the linked RAAus lesson time could not be refreshed');
     }
 
     if (!voucherPayment && prepaidPayment) {
@@ -484,7 +576,7 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
             Below, the logs for
           </div>
           <div className="flex items-center space-x-2">
-            <select
+            <SearchableSelect
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
               className="text-sm border border-gray-300 rounded px-2 py-1"
@@ -499,7 +591,7 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
                   </option>
                 );
               })}
-            </select>
+            </SearchableSelect>
           </div>
         </div>
 
@@ -568,6 +660,12 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
                           <span className="rounded bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-700">
                             {log.flight_duration.toFixed(1)} hr
                           </span>
+                          {log.dual_time > 0 && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-medium text-emerald-700">
+                            Dual {log.dual_time.toFixed(1)}
+                          </span>}
+                          {log.solo_time > 0 && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700">
+                            Solo {log.solo_time.toFixed(1)}
+                          </span>}
                           <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-medium text-emerald-700">
                             {log.landings} landing{log.landings === 1 ? '' : 's'}
                           </span>
@@ -740,8 +838,34 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
                   type="number"
                   step="0.1"
                   value={editForm.flight_duration}
-                  onChange={(e) => setEditForm({ ...editForm, flight_duration: e.target.value })}
+                  onChange={(e) => handleEditDurationChange(e.target.value)}
                   className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </label>
+              <label className="text-sm font-medium text-gray-700">
+                Student dual time
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={editForm.dual_time}
+                  onChange={(e) => handleEditAllocatedTimeChange('dualTime', e.target.value)}
+                  disabled={!editingLog.instructor_id}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
+                  required
+                />
+              </label>
+              <label className="text-sm font-medium text-gray-700">
+                Student solo / PIC time
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={editForm.solo_time}
+                  onChange={(e) => handleEditAllocatedTimeChange('soloTime', e.target.value)}
+                  disabled={!editingLog.instructor_id}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
                   required
                 />
               </label>

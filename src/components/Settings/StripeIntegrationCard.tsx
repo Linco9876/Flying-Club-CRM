@@ -33,19 +33,25 @@ export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ ca
   const [stripeStatus, setStripeStatus] = useState<StripeConnectStatus | null>(null);
   const [stripeLoading, setStripeLoading] = useState(true);
   const [stripeLoaded, setStripeLoaded] = useState(false);
+  const [statusLoadError, setStatusLoadError] = useState<string | null>(null);
   const [savingMode, setSavingMode] = useState(false);
 
   const loadStripeStatus = useCallback(async () => {
     setStripeLoading(true);
+    setStatusLoadError(null);
     try {
       const { data, error } = await supabase.functions.invoke<StripeConnectStatus>('stripe-connect', {
         body: { action: 'status' },
       });
       if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to load Stripe connection'));
       setStripeStatus(data ?? null);
+      setStatusLoadError(null);
     } catch (error: any) {
       console.error('Error loading Stripe connection:', error);
-      toast.error(error?.message || 'Failed to load Stripe connection');
+      const message = error?.message || 'Failed to load Stripe connection';
+      setStripeStatus(null);
+      setStatusLoadError(message);
+      toast.error(message);
     } finally {
       setStripeLoading(false);
       setStripeLoaded(true);
@@ -169,8 +175,16 @@ export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ ca
   const configured = Boolean(stripeStatus?.configured);
   const stripeMode = stripeStatus?.stripeMode || 'live';
   const activeModeMissing = Boolean(connected && !stripeStatus?.activeModeConfigured);
-  const statusLabel = connected ? 'Stripe is connected' : configured ? 'Ready to connect' : 'Setup needed';
-  const statusDetail = connected
+  const statusLabel = statusLoadError
+    ? 'Could not confirm status'
+    : connected
+      ? 'Stripe is connected'
+      : configured
+        ? 'Ready to connect'
+        : 'Setup needed';
+  const statusDetail = statusLoadError
+    ? 'The CRM could not confirm whether Stripe is connected. Refresh the status before changing this integration.'
+    : connected
     ? 'Online voucher payments, pilot top-ups and card payments can use this club Stripe account.'
     : configured
       ? 'Connect the club Stripe account to start taking online payments.'
@@ -195,13 +209,13 @@ export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ ca
       <div className="p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-start gap-4">
-            <div className={`flex h-12 w-12 flex-none items-center justify-center rounded-xl ${connected ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+            <div className={`flex h-12 w-12 flex-none items-center justify-center rounded-xl ${statusLoadError ? 'bg-rose-100 text-rose-700' : connected ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
               <CreditCard className="h-6 w-6" />
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-lg font-semibold text-gray-900">Stripe payments</h3>
-                <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${connected ? 'bg-green-100 text-green-800' : configured ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'}`}>
+                <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusLoadError ? 'bg-rose-100 text-rose-800' : connected ? 'bg-green-100 text-green-800' : configured ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'}`}>
                   {statusLabel}
                 </span>
               </div>
@@ -233,7 +247,7 @@ export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ ca
                 <button
                   type="button"
                   onClick={connectStripe}
-                  disabled={stripeLoading || !configured}
+                  disabled={stripeLoading || Boolean(statusLoadError) || !configured}
                   className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {stripeLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
@@ -244,7 +258,17 @@ export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ ca
           </div>
         </div>
 
-        <div className="mt-5 grid gap-3 md:grid-cols-3">
+        {statusLoadError && (
+          <div className="mt-5 flex gap-3 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
+            <AlertTriangle className="mt-0.5 h-5 w-5 flex-none" />
+            <div>
+              <p className="font-semibold">Stripe status is unavailable.</p>
+              <p className="mt-1">{statusLoadError}</p>
+            </div>
+          </div>
+        )}
+
+        {!statusLoadError && <div className="mt-5 grid gap-3 md:grid-cols-3">
           <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
             <p className="flex items-center gap-2 text-sm font-semibold text-gray-900">
               <CheckCircle2 className="h-4 w-4 text-green-600" />
@@ -266,9 +290,9 @@ export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ ca
             </p>
             <p className="mt-1 text-xs text-gray-500">Stripe handles card details and verification.</p>
           </div>
-        </div>
+        </div>}
 
-        <div className={`mt-5 rounded-xl border p-4 ${stripeMode === 'test' ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-gray-50'}`}>
+        {!statusLoadError && <div className={`mt-5 rounded-xl border p-4 ${stripeMode === 'test' ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-gray-50'}`}>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <p className="flex items-center gap-2 text-sm font-semibold text-gray-900">
@@ -344,9 +368,9 @@ export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ ca
               </span>
             </label>
           )}
-        </div>
+        </div>}
 
-        {stripeStatus && !configured && (
+        {stripeStatus && !statusLoadError && !configured && (
           <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
             <p className="font-semibold">Stripe is not ready yet.</p>
             <p className="mt-1">The CRM platform Stripe key needs to be added before this club can connect payments.</p>
@@ -355,7 +379,11 @@ export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ ca
 
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4">
           <p className="text-xs text-gray-500">
-            {connected ? 'Payments are linked to this club Stripe account.' : 'You will be sent to Stripe to finish setup.'}
+            {statusLoadError
+              ? 'No connection changes are available until the live status can be confirmed.'
+              : connected
+                ? 'Payments are linked to this club Stripe account.'
+                : 'You will be sent to Stripe to finish setup.'}
           </p>
           <button
             type="button"

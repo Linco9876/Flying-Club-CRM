@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import type { DutyContext, EndDutyBreakResponse } from '../types';
 import { type AppColours, useAppTheme } from '../theme';
 import { formatDateTime, formatDuration, hoursFromMinutes, minutesFromHours } from '../utils/time';
@@ -113,10 +114,11 @@ export const EndDutyModal = ({ visible, context, working, onClose, onEnd }: Prop
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <SafeAreaView style={styles.flex} edges={['top', 'left', 'right', 'bottom']}>
+        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.header}>
           <View><Text style={styles.title}>End duty</Text><Text style={styles.subtitle}>Review the final times before saving.</Text></View>
-          <Pressable onPress={onClose} accessibilityRole="button" hitSlop={12}><Text style={styles.close}>Close</Text></Pressable>
+          <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close end duty" hitSlop={8} style={styles.closeButton}><Text style={styles.close}>Close</Text></Pressable>
         </View>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <View style={styles.summaryCard}>
@@ -231,7 +233,8 @@ export const EndDutyModal = ({ visible, context, working, onClose, onEnd }: Prop
 
           <PrimaryButton tone="danger" loading={working} onPress={() => void submit()}>End duty</PrimaryButton>
         </ScrollView>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
     </Modal>
   );
 };
@@ -241,6 +244,7 @@ const createStyles = (colours: AppColours) => StyleSheet.create({
   header: { backgroundColor: colours.surface, paddingHorizontal: 22, paddingTop: 18, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: colours.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: { color: colours.navy, fontSize: 25, fontWeight: '900' },
   subtitle: { color: colours.muted, fontSize: 13, marginTop: 2 },
+  closeButton: { minWidth: 48, minHeight: 44, alignItems: 'flex-end', justifyContent: 'center' },
   close: { color: colours.blue, fontSize: 15, fontWeight: '800' },
   content: { padding: 20, paddingBottom: 44, gap: 12, backgroundColor: colours.background },
   sectionLabel: { color: colours.muted, fontSize: 11, letterSpacing: 1.5, fontWeight: '900', marginTop: 8 },

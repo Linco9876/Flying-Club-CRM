@@ -26,6 +26,8 @@ test('loads expensive datasets only on their relevant tabs', () => {
     invoices: true,
   });
   assert.equal(getStudentProfileLoadPlan('training', 'exams').examResults, true);
+  assert.equal(getStudentProfileLoadPlan('courses', 'records').examResults, true);
+  assert.equal(getStudentProfileLoadPlan('training', 'courses').examResults, true);
   assert.equal(getStudentProfileLoadPlan('training', 'records').examResults, false);
 });
 
@@ -74,4 +76,17 @@ test('student profile source preserves the fast targeted and progressive loading
   assert.match(skeletonSource, /role="status"/);
   assert.match(skeletonSource, /aria-busy="true"/);
   assert.match(skeletonSource, /motion-reduce:animate-none/);
+});
+
+test('completed courses are collapsed by default but remain accessible on demand', () => {
+  const profileSource = readFileSync(
+    new URL('../components/Students/StudentProfilePage.tsx', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(profileSource, /expandedCompletedCourseIds[^\n]+new Set\(\)/);
+  assert.match(profileSource, /const completedCourseExpanded = !isComplete \|\| expandedCompletedCourseIds\.has\(course\.id\)/);
+  assert.match(profileSource, /aria-expanded=\{completedCourseExpanded\}/);
+  assert.match(profileSource, /completedCourseExpanded \? 'Collapse' : 'View details'/);
+  assert.match(profileSource, /\{completedCourseExpanded && \(/);
 });

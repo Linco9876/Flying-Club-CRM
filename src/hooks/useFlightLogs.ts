@@ -7,6 +7,12 @@ import { usePageLoadState } from '../context/PageLoadContext';
 import { useFinancialProviders } from '../context/financialProviderState';
 import { useLatestEffect } from './useLatestEffect';
 import { shouldCaptureFinancialDetails } from '../utils/financialProviderPresentation';
+import {
+  FLIGHT_LOG_ALREADY_EXISTS_MESSAGE,
+  isDuplicateBookingFlightLogError,
+} from '../utils/flightLogBookingRules';
+import { validateFlightTimeAllocation } from '../utils/flightTimeAllocation';
+import { requestBookingCalendarRefresh } from '../utils/bookingCalendarRefresh';
 
 const roundFlightDecimal = (value: number) => Math.round((value + Number.EPSILON) * 10) / 10;
 const roundCurrency = (value: number) => Math.max(0, Math.round((value + Number.EPSILON) * 100) / 100);
@@ -106,6 +112,7 @@ export interface CreateFlightLogData {
   calculated_cost?: number;
   payment_status?: 'free' | 'pending' | 'paid';
   prepaid_payment_acknowledged?: boolean;
+  training_record_status?: 'pending' | 'dismissed' | 'recorded';
 }
 
 export interface FlightPaymentLinkResult {
@@ -371,6 +378,7 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
       .eq('id', id);
 
     if (deleteError) throw deleteError;
+    return existingLog?.booking_id || undefined;
   };
 
   const syncBookingTrainingRecordsToFlightLog = async (
@@ -427,6 +435,26 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
     }
   };
 
+  const findFlightLogForBooking = async (bookingId: string) => {
+    try {
+      const { data, error: lookupError } = await supabase
+        .from('flight_logs')
+        .select('id, booking_id')
+        .eq('booking_id', bookingId)
+        .limit(1)
+        .maybeSingle();
+
+      if (lookupError) throw lookupError;
+      return { data, error: null };
+    } catch (lookupError) {
+      const message = lookupError instanceof Error
+        ? lookupError.message
+        : 'The CRM could not check whether this booking already has a flight log.';
+      console.error('Error checking booking flight log:', lookupError);
+      return { data: null, error: message };
+    }
+  };
+
   const createFlightLog = async (logData: CreateFlightLogData) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -439,8 +467,24 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
         dual_time: roundFlightDecimal(logData.dual_time),
         solo_time: roundFlightDecimal(logData.solo_time),
       };
+      const allocationError = validateFlightTimeAllocation({
+        durationHours: normalisedLogData.flight_duration,
+        dualTime: normalisedLogData.dual_time,
+        soloTime: normalisedLogData.solo_time,
+        hasInstructor: Boolean(normalisedLogData.instructor_id),
+      });
+      if (allocationError) throw new Error(allocationError);
       const prepaidPaymentAcknowledged = Boolean(normalisedLogData.prepaid_payment_acknowledged);
       delete (normalisedLogData as any).prepaid_payment_acknowledged;
+
+      if (normalisedLogData.booking_id) {
+        const existingLog = await findFlightLogForBooking(normalisedLogData.booking_id);
+        if (existingLog.error) throw new Error(existingLog.error);
+        if (existingLog.data) {
+          return { data: null, error: FLIGHT_LOG_ALREADY_EXISTS_MESSAGE };
+        }
+      }
+
       const requestedCostOverride = financialCaptureEnabled
         && typeof normalisedLogData.calculated_cost === 'number'
         && Number.isFinite(normalisedLogData.calculated_cost)
@@ -467,6 +511,8 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
         rate: selectedRate as any,
         durationHours: normalisedLogData.flight_duration,
         isDual: !!normalisedLogData.instructor_id,
+        dualHours: normalisedLogData.dual_time,
+        soloHours: normalisedLogData.solo_time,
         passengerCount: normalisedLogData.passengers,
         startTime: normalisedLogData.start_time,
       });
@@ -627,6 +673,10 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
         if (approvalError) console.error('Error approving logged booking:', approvalError);
 
         await syncBookingTrainingRecordsToFlightLog(normalisedLogData.booking_id, data.id, normalisedLogData);
+        requestBookingCalendarRefresh({
+          bookingId: normalisedLogData.booking_id,
+          reason: 'flight-log-created',
+        });
       }
 
       const { error: aircraftUpdateError } = await supabase
@@ -676,7 +726,9 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
       await fetchFlightLogs();
       return { data: { ...data, paymentLink }, error: null };
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to create flight log';
+      const errorMessage = isDuplicateBookingFlightLogError(err)
+        ? FLIGHT_LOG_ALREADY_EXISTS_MESSAGE
+        : err instanceof Error ? err.message : 'Failed to create flight log';
       console.error('Error creating flight log:', err);
       return { data: null, error: errorMessage };
     }
@@ -691,12 +743,40 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
       if (normalisedUpdates.dual_time !== undefined) normalisedUpdates.dual_time = roundFlightDecimal(normalisedUpdates.dual_time);
       if (normalisedUpdates.solo_time !== undefined) normalisedUpdates.solo_time = roundFlightDecimal(normalisedUpdates.solo_time);
 
+      if (
+        normalisedUpdates.flight_duration !== undefined
+        || normalisedUpdates.dual_time !== undefined
+        || normalisedUpdates.solo_time !== undefined
+        || normalisedUpdates.instructor_id !== undefined
+      ) {
+        const { data: existingAllocation, error: allocationLookupError } = await supabase
+          .from('flight_logs')
+          .select('flight_duration, dual_time, solo_time, instructor_id')
+          .eq('id', id)
+          .maybeSingle();
+        if (allocationLookupError) throw allocationLookupError;
+        if (!existingAllocation) throw new Error('Flight log not found');
+
+        const allocationError = validateFlightTimeAllocation({
+          durationHours: Number(normalisedUpdates.flight_duration ?? existingAllocation.flight_duration ?? 0),
+          dualTime: Number(normalisedUpdates.dual_time ?? existingAllocation.dual_time ?? 0),
+          soloTime: Number(normalisedUpdates.solo_time ?? existingAllocation.solo_time ?? 0),
+          hasInstructor: Boolean(normalisedUpdates.instructor_id ?? existingAllocation.instructor_id),
+        });
+        if (allocationError) throw new Error(allocationError);
+      }
+
       const { error: updateError } = await supabase
         .from('flight_logs')
         .update(normalisedUpdates)
         .eq('id', id);
 
       if (updateError) throw updateError;
+
+      requestBookingCalendarRefresh({
+        bookingId: normalisedUpdates.booking_id,
+        reason: 'flight-log-updated',
+      });
 
       if (normalisedUpdates.booking_id) {
         const { data: updatedLog, error: updatedLogError } = await supabase
@@ -797,9 +877,10 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
         }
       }
 
-      await removeLocalFlightLog(id);
+      const bookingId = await removeLocalFlightLog(id);
 
       await fetchFlightLogs();
+      requestBookingCalendarRefresh({ bookingId, reason: 'flight-log-deleted' });
       return { error: null, impact: deleteImpact };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to delete flight log';
@@ -846,6 +927,7 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
     updateFlightLog,
     deleteFlightLog,
     getFlightLogDeleteImpact: buildDeleteImpact,
+    findFlightLogForBooking,
     checkTachOverlap,
     refetch: fetchFlightLogs,
   };

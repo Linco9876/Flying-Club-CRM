@@ -8,7 +8,6 @@
 
 alter function public.protect_candidate_flight_review_update()
   security definer;
-
 alter function public.protect_candidate_flight_review_update()
   set search_path = pg_catalog, public, private, pg_temp;
 
@@ -21,7 +20,6 @@ set security_definer = true,
     rationale = 'Trigger-only candidate update guard; runs as its owner so it can call protected private role helpers without exposing that schema to browser roles.',
     reviewed_at = current_date
 where signature = 'public.protect_candidate_flight_review_update()';
-
 do $migration$
 begin
   if not exists (
@@ -35,5 +33,4 @@ begin
   end if;
 end
 $migration$;
-
 select private.assert_function_permission_manifest();

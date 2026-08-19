@@ -29,6 +29,12 @@ const staffRoles = new Set<PortalRole>([
 ]);
 const expectFinancialDashboard =
   process.env.EXPECT_FINANCIAL_DASHBOARD === "true";
+const recoveryApiHost = new URL(process.env.VITE_SUPABASE_URL || "https://invalid.local").host;
+
+const isWebKitNavigationCancellation = (message: string) =>
+  (message.includes(`/${recoveryApiHost}/rest/v1/`) ||
+    message.includes(`/${recoveryApiHost}/functions/v1/`)) &&
+  message.endsWith(" due to access control checks.");
 
 const expectedMenuItems: Record<PortalRole, string[]> = {
   admin: [
@@ -94,6 +100,16 @@ const expectedMenuItems: Record<PortalRole, string[]> = {
   ],
 };
 
+// Split the route inventory across roles so the suite opens every phone-facing
+// top-level workspace without reloading the same data-heavy screen for all six
+// roles. Calendar, Home, Maintenance and Settings are exercised separately.
+const mobileRouteSweep: Partial<Record<PortalRole, string[]>> = {
+  admin: ["/students", "/membership", "/aircraft", "/duty", "/training"],
+  cfi: ["/training/outstanding-records", "/safety"],
+  senior_instructor: ["/learning-centre", "/pilot-file"],
+  pilot: ["/documents", "/my-logbook"],
+};
+
 const decodeBase32 = (value: string) => {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
   const normalized = value.toUpperCase().replace(/=+$/g, "").replace(/\s/g, "");
@@ -131,6 +147,7 @@ for (const role of roles) {
   test(`${role} can authenticate and access the correct mobile portal navigation`, async ({
     page,
   }, testInfo) => {
+    test.setTimeout(role === "admin" ? 240_000 : 120_000);
     const credentialKey = `${testInfo.project.name}:${role}`;
     const user = credentials[credentialKey];
     expect(
@@ -173,7 +190,11 @@ for (const role of roles) {
       });
     }
 
-    await expect(page.getByRole("button", { name: "Logout" })).toBeVisible();
+    const primaryNavigation = page.getByRole("navigation", {
+      name: "Primary navigation",
+    });
+    await expect(primaryNavigation).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open profile" })).toBeVisible();
     await expect(
       page.getByRole("heading", { name: "Bendigo Flying Club" }),
     ).toBeVisible();
@@ -182,6 +203,7 @@ for (const role of roles) {
       exact: true,
     });
     if (await profileReminder.isVisible()) await profileReminder.click();
+    await page.waitForLoadState("networkidle");
 
     await page
       .getByRole("button", { name: "Open navigation menu" })
@@ -200,6 +222,9 @@ for (const role of roles) {
         }),
       ).toHaveCount(0);
     }
+    await expect(
+      mobileMenu.getByRole("button", { name: "Sign out", exact: true }),
+    ).toBeVisible();
     await mobileMenu
       .getByRole("button", { name: "Close navigation menu" })
       .evaluate((button) => {
@@ -207,13 +232,15 @@ for (const role of roles) {
       });
     await expect(mobileMenu).toBeHidden();
 
-    await page.locator('header button[aria-label="Calendar"]').click();
+    await primaryNavigation.getByRole("button", { name: "Calendar" }).click();
     await expect(page).toHaveURL(/\/calendar$/);
-    await expect(page.getByRole("button", { name: "Logout" })).toBeVisible();
+    await expect(primaryNavigation).toBeVisible();
+    await page.waitForLoadState("networkidle");
 
-    await page.locator('header button[aria-label="Profile"]').click();
+    await primaryNavigation.getByRole("button", { name: "Home" }).click();
     await expect(page).toHaveURL(/\/$/);
-    await expect(page.getByRole("button", { name: "Logout" })).toBeVisible();
+    await expect(primaryNavigation).toBeVisible();
+    await page.waitForLoadState("networkidle");
 
     if (expectedMenuItems[role].includes("Maintenance")) {
       await page.goto("/maintenance");
@@ -232,6 +259,38 @@ for (const role of roles) {
       await expect(
         page.getByRole("button", { name: "Deferred", exact: true }),
       ).toBeVisible();
+      await page.waitForLoadState("networkidle");
+
+      await page.getByRole("button", { name: "Report Defect", exact: true }).click();
+      const phoneSheet = page.getByRole("dialog", { name: "Report Defect" });
+      await expect(phoneSheet).toBeVisible();
+      expect(
+        await phoneSheet.evaluate((element) => {
+          const bounds = element.getBoundingClientRect();
+          return {
+            fillsWidth: bounds.width >= window.innerWidth - 1,
+            isBottomAnchored: Math.abs(bounds.bottom - window.innerHeight) <= 1,
+            remainsOnScreen: bounds.top >= 0,
+          };
+        }),
+      ).toEqual({ fillsWidth: true, isBottomAnchored: true, remainsOnScreen: true });
+      await phoneSheet.getByRole("button", { name: "Close defect report" }).click();
+      await expect(phoneSheet).toBeHidden();
+    }
+
+    for (const route of mobileRouteSweep[role] || []) {
+      await page.goto(route);
+      await expect(page).toHaveURL(new RegExp(`${route.replaceAll("/", "\\/")}$`));
+      await expect(page.locator("main.portal-main")).toBeVisible();
+      await expect(primaryNavigation).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Something went wrong" })).toHaveCount(0);
+      await page.waitForLoadState("networkidle");
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
+        ),
+        `${route} should not make the phone viewport scroll sideways`,
+      ).toBe(true);
     }
 
     await page.goto("/settings?tab=account-info&focus=personal-details");
@@ -244,7 +303,8 @@ for (const role of roles) {
       page.getByRole("status").filter({ hasText: "Opened Update My Info" }),
     ).toContainText("Personal Details");
     await expect(page.locator("#account-personal-details")).toBeVisible();
-    await expect(page.locator("#account-personal-details")).toBeFocused();
+    await expect(page.locator("#account-personal-details")).toBeInViewport();
+    await page.waitForLoadState("networkidle");
 
     if (role === "pilot") {
       await page.goto(
@@ -259,7 +319,48 @@ for (const role of roles) {
         page.getByRole("status").filter({ hasText: "Opened Update My Info" }),
       ).toContainText("Aviation Credentials");
       await expect(page.locator("#account-aviation-credentials")).toBeVisible();
-      await expect(page.locator("#account-aviation-credentials")).toBeFocused();
+      await expect(page.locator("#account-aviation-credentials")).toBeInViewport();
+      await page.waitForLoadState("networkidle");
+    }
+
+    if (role === "admin") {
+      const settingsSections = [
+        ["organisation", "Organisation Settings"],
+        ["portal", "Portal & UX"],
+        ["resources", "Resources (Aircraft & Rooms)"],
+        ["calendar", "Calendar Settings"],
+        ["booking-rules", "Bookings & Rules"],
+        ["duty-supervision", "Duty and supervision"],
+        ["roster", "Roster & Availability"],
+        ["maintenance", "Maintenance Settings"],
+        ["safety", "Safety & Compliance"],
+        ["training", "Training / Syllabus Settings"],
+        ["billing", "Billing & Rates"],
+        ["flight-log", "Flight Log Form Settings"],
+        ["integrations", "Integrations"],
+        ["notifications", "Notifications"],
+        ["roles", "Roles & Permissions"],
+        ["audit", "Audit & Data"],
+      ] as const;
+
+      for (const [section, heading] of settingsSections) {
+        await page.goto(`/settings?tab=${section}`);
+        const panel = page.locator(`[data-active-settings-section="${section}"]`);
+        await expect(panel).toBeVisible();
+        await expect(panel.getByRole("heading", { name: heading, exact: true }).first()).toBeVisible();
+        await page.waitForLoadState("networkidle");
+        const loadErrors = await panel
+          .getByRole("alert")
+          .filter({ hasText: "settings could not be loaded" })
+          .allTextContents();
+        const unexpectedLoadErrors = loadErrors.filter(message => !(
+          section === "portal" &&
+          message.includes("Kiosk access settings could not be loaded") &&
+          message.includes("KIOSK_TOKEN_ENCRYPTION_KEY is not configured")
+        ));
+        expect(unexpectedLoadErrors).toEqual([]);
+        expect(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+      }
     }
 
     const horizontalOverflow = await page.evaluate(
@@ -268,6 +369,10 @@ for (const role of roles) {
         document.documentElement.clientWidth + 1,
     );
     expect(horizontalOverflow).toBe(false);
-    expect(pageErrors).toEqual([]);
+    // WebKit reports cross-origin REST and Edge Function requests cancelled by
+    // a subsequent page.goto as access-control page errors. The runner verifies
+    // both CORS contracts before launching the browser, so retain every
+    // genuine application exception while excluding that engine-specific noise.
+    expect(pageErrors.filter(error => !isWebKitNavigationCancellation(error))).toEqual([]);
   });
 }

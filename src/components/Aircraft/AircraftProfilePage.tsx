@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AlertTriangle, ArrowLeft, Calendar, Download, FileText, Loader2, Plane, Plus, Save, Settings, Trash2, Upload, Wrench } from 'lucide-react';
@@ -373,10 +374,10 @@ export const AircraftProfilePage: React.FC = () => {
               <p className="text-sm text-gray-500">POH, charts and school documents for this aircraft.</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <select value={documentTypeFilter} onChange={event => setDocumentTypeFilter(event.target.value)} className={inputClass}>
+              <SearchableSelect value={documentTypeFilter} onChange={event => setDocumentTypeFilter(event.target.value)} className={inputClass}>
                 <option value="">All document types</option>
                 {DOCUMENT_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
-              </select>
+              </SearchableSelect>
               {isAdmin && (
                 <button onClick={() => setShowUpload(true)} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
                   <Plus className="h-4 w-4" />
@@ -390,9 +391,9 @@ export const AircraftProfilePage: React.FC = () => {
             <form onSubmit={handleUploadDocument} className="rounded-lg border border-blue-200 bg-blue-50 p-5">
               <div className="grid gap-3 md:grid-cols-4">
                 <input name="displayName" placeholder="Display name" className={inputClass} />
-                <select name="documentType" className={inputClass} defaultValue="POH">
+                <SearchableSelect name="documentType" className={inputClass} defaultValue="POH">
                   {DOCUMENT_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
-                </select>
+                </SearchableSelect>
                 <input name="file" type="file" className="md:col-span-1 text-sm" required />
                 <div className="flex gap-2">
                   <button disabled={uploading} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
@@ -532,13 +533,13 @@ export const AircraftProfilePage: React.FC = () => {
               <h2 className="text-lg font-semibold text-gray-900">Maintenance Milestones</h2>
               <p className="text-sm text-gray-500">Upcoming, due, overdue and completed milestones for this aircraft.</p>
             </div>
-            <select value={milestoneFilter} onChange={event => setMilestoneFilter(event.target.value as any)} className={inputClass}>
+            <SearchableSelect value={milestoneFilter} onChange={event => setMilestoneFilter(event.target.value as any)} className={inputClass}>
               <option value="all">All milestones</option>
               <option value="upcoming">Upcoming</option>
               <option value="due">Due</option>
               <option value="overdue">Overdue</option>
               <option value="completed">Completed</option>
-            </select>
+            </SearchableSelect>
           </div>
           <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
             {milestonesLoading ? (
@@ -619,12 +620,12 @@ export const AircraftProfilePage: React.FC = () => {
               <p className="text-sm text-gray-500">Past and future bookings for this aircraft.</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <select value={bookingFilter} onChange={event => setBookingFilter(event.target.value as any)} className={inputClass}>
+              <SearchableSelect value={bookingFilter} onChange={event => setBookingFilter(event.target.value as any)} className={inputClass}>
                 <option value="all">All bookings</option>
                 <option value="future">Future</option>
                 <option value="past">Past</option>
                 <option value="cancelled">Cancelled</option>
-              </select>
+              </SearchableSelect>
               <input
                 value={bookingSearch}
                 onChange={event => setBookingSearch(event.target.value)}
@@ -783,13 +784,13 @@ const RateRow: React.FC<RateRowProps> = ({ flightTypeName, rate, disabled, payme
       </div>
       <label className="block">
         <span className="mb-1 block text-xs font-medium text-gray-500">Charge</span>
-        <select disabled={disabled} value={draft.chargeType} onChange={event => setDraft(prev => ({ ...prev, chargeType: event.target.value as AircraftRate['chargeType'] }))} className={inputClass}>
+        <SearchableSelect disabled={disabled} value={draft.chargeType} onChange={event => setDraft(prev => ({ ...prev, chargeType: event.target.value as AircraftRate['chargeType'] }))} className={inputClass}>
           <option value="tach">Tach</option>
           <option value="flat">Flat</option>
           <option value="per_pax">Per pax</option>
           <option value="free">Free</option>
           <option value="not_used">Not used</option>
-        </select>
+        </SearchableSelect>
       </label>
       {[
         ['Solo', 'soloRate'],
@@ -804,10 +805,10 @@ const RateRow: React.FC<RateRowProps> = ({ flightTypeName, rate, disabled, payme
       ))}
       <label className="block">
         <span className="mb-1 block text-xs font-medium text-gray-500">Default method</span>
-        <select disabled={disabled} value={draft.defaultPaymentMethodId} onChange={event => setDraft(prev => ({ ...prev, defaultPaymentMethodId: event.target.value }))} className={inputClass}>
+        <SearchableSelect disabled={disabled} value={draft.defaultPaymentMethodId} onChange={event => setDraft(prev => ({ ...prev, defaultPaymentMethodId: event.target.value }))} className={inputClass}>
           <option value="">None</option>
           {paymentMethods.map(method => <option key={method.id} value={method.id}>{method.name}</option>)}
-        </select>
+        </SearchableSelect>
       </label>
       <div className="flex gap-2">
         <button type="button" disabled={disabled || saving} onClick={save} className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50">

@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useState, useEffect, useRef } from 'react';
 import { Building2, Globe, Phone, Mail, MapPin, Plus, Trash2, X, Loader, Image as ImageIcon } from 'lucide-react';
 import { useOrganisationSettings } from '../../hooks/useSettings';
@@ -8,25 +9,33 @@ import {
 import { safeImageSource } from '../../utils/imageSource';
 import { OrganisationDocumentsSettings } from './OrganisationDocumentsSettings';
 import { useLatestEffect } from '../../hooks/useLatestEffect';
+import { getOrganisationLocationValidationError } from '../../utils/organisationLocationRules';
+import { getOrganisationSettingsValidationError } from '../../utils/organisationSettingsRules';
+import { SettingsLoadError } from './SettingsLoadError';
 
 interface OrganisationSettingsProps {
   canEdit: boolean;
   onFormChange: () => void;
 }
 
+const CLUB_TIMEZONE = 'Australia/Melbourne';
+const CLUB_CURRENCY = 'AUD';
+
 export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canEdit, onFormChange }) => {
-  const { settings, loading, updateSettings } = useOrganisationSettings();
+  const { settings, loading, error, updateSettings, refetch } = useOrganisationSettings();
   const {
     locations,
     loading: locationsLoading,
+    error: locationsError,
     saveLocations,
+    refetch: refetchLocations,
   } = useOrganisationLocations();
 
   const [formData, setFormData] = useState({
     clubName: '',
     address: '',
-    timezone: 'Australia/Melbourne',
-    currency: 'AUD',
+    timezone: CLUB_TIMEZONE,
+    currency: CLUB_CURRENCY,
     contactEmail: '',
     contactPhone: '',
     website: '',
@@ -47,8 +56,8 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
       setFormData({
         clubName: settings.club_name ?? '',
         address: settings.address ?? '',
-        timezone: settings.timezone ?? 'Australia/Melbourne',
-        currency: settings.currency ?? 'AUD',
+        timezone: CLUB_TIMEZONE,
+        currency: CLUB_CURRENCY,
         contactEmail: settings.contact_email ?? '',
         contactPhone: settings.contact_phone ?? '',
         website: settings.website ?? '',
@@ -136,16 +145,20 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
   // Register save/discard handlers for the dashboard's global Save/Cancel bar
   useEffect(() => {
     (window as any).__organisationSettingsSave = async () => {
+      const settingsValidationError = getOrganisationSettingsValidationError(formData);
+      if (settingsValidationError) throw new Error(settingsValidationError);
+      const locationValidationError = getOrganisationLocationValidationError(locationDrafts);
+      if (locationValidationError) throw new Error(locationValidationError);
       await updateSettings(
         {
-          club_name: formData.clubName,
-          address: formData.address,
-          timezone: formData.timezone,
-          currency: formData.currency,
-          contact_email: formData.contactEmail,
-          contact_phone: formData.contactPhone,
-          website: formData.website,
-          student_portal_url: formData.studentPortalUrl,
+          club_name: formData.clubName.trim(),
+          address: formData.address.trim(),
+          timezone: CLUB_TIMEZONE,
+          currency: CLUB_CURRENCY,
+          contact_email: formData.contactEmail.trim(),
+          contact_phone: formData.contactPhone.trim(),
+          website: formData.website.trim(),
+          student_portal_url: formData.studentPortalUrl.trim(),
           booking_day_start: formData.bookingDayStart,
           booking_day_end: formData.bookingDayEnd,
           default_slot_length: formData.defaultSlotLength,
@@ -160,8 +173,8 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
       setFormData({
         clubName: settings?.club_name ?? '',
         address: settings?.address ?? '',
-        timezone: settings?.timezone ?? 'Australia/Melbourne',
-        currency: settings?.currency ?? 'AUD',
+        timezone: CLUB_TIMEZONE,
+        currency: CLUB_CURRENCY,
         contactEmail: settings?.contact_email ?? '',
         contactPhone: settings?.contact_phone ?? '',
         website: settings?.website ?? '',
@@ -189,25 +202,15 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
       </div>
     );
   }
-
-  const timezones = [
-    'Australia/Melbourne',
-    'Australia/Sydney',
-    'Australia/Brisbane',
-    'Australia/Adelaide',
-    'Australia/Perth',
-    'Australia/Darwin',
-    'Pacific/Auckland',
-    'America/New_York',
-    'America/Chicago',
-    'America/Denver',
-    'America/Los_Angeles',
-    'Europe/London',
-    'Europe/Paris',
-    'Asia/Singapore',
-  ];
-
-  const currencies = ['AUD', 'USD', 'EUR', 'GBP', 'NZD', 'CAD', 'SGD'];
+  if (error || locationsError) {
+    return (
+      <SettingsLoadError
+        section="Organisation"
+        error={error || locationsError || 'Organisation settings could not be loaded'}
+        onRetry={async () => { await Promise.all([refetch(), refetchLocations()]); }}
+      />
+    );
+  }
 
   const inputClass = (disabled: boolean) =>
     `w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
@@ -419,26 +422,14 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
 
             <div>
               <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Currency</label>
-              <select
-                value={formData.currency}
-                onChange={e => handleChange('currency', e.target.value)}
-                disabled={!canEdit}
-                className={inputClass(!canEdit)}
-              >
-                {currencies.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+              <input value={CLUB_CURRENCY} readOnly className={inputClass(true)} />
+              <p className="mt-1 text-xs text-gray-500">Fixed to AUD because Stripe, Xero and club billing are configured for Australian dollars.</p>
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Timezone</label>
-              <select
-                value={formData.timezone}
-                onChange={e => handleChange('timezone', e.target.value)}
-                disabled={!canEdit}
-                className={inputClass(!canEdit)}
-              >
-                {timezones.map(tz => <option key={tz} value={tz}>{tz}</option>)}
-              </select>
+              <input value={CLUB_TIMEZONE} readOnly className={inputClass(true)} />
+              <p className="mt-1 text-xs text-gray-500">Fixed to Bendigo local time, including Victorian daylight-saving changes.</p>
             </div>
 
             <div className="md:col-span-2">
@@ -551,7 +542,7 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
 
             <div>
               <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Default Slot Length</label>
-              <select
+              <SearchableSelect
                 value={formData.defaultSlotLength}
                 onChange={e => handleChange('defaultSlotLength', parseInt(e.target.value))}
                 disabled={!canEdit}
@@ -561,7 +552,7 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
                 <option value={30}>30 minutes</option>
                 <option value={60}>60 minutes</option>
                 <option value={90}>90 minutes</option>
-              </select>
+              </SearchableSelect>
             </div>
           </div>
         </section>

@@ -40,6 +40,9 @@ export interface Student extends User {
   medicalType?: string;
   medicalExpiry?: Date;
   licenceExpiry?: Date;
+  lastRaausBfrDate?: Date;
+  lastCasaAfrDate?: Date;
+  /** @deprecated Compatibility alias for lastRaausBfrDate. */
   lastFlightReview?: Date;
   occupation?: string;
   alternatePhone?: string;
@@ -146,6 +149,8 @@ export interface Booking {
   guestName?: string;
   guestEmail?: string;
   guestPhone?: string;
+  casualContactId?: string;
+  bookingPurpose?: BookingPurpose;
   location?: string;
   locationId?: string;
   dutyOverrideReason?: string;
@@ -170,6 +175,8 @@ export type MembershipRolloutMode = 'information_only' | 'staff_warning' | 'enfo
 export type MembershipProrationMethod = 'daily' | 'monthly' | 'none';
 export type MembershipPaymentMethod = 'invoice' | 'becs' | 'card';
 export type MembershipPaymentAuthorityStatus = 'not_required' | 'pending' | 'ready' | 'failed' | 'cancelled';
+export type MembershipChangeStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'applied' | 'needs_review';
+export type MembershipChangeTiming = 'immediate' | 'next_renewal';
 
 export interface MembershipClass {
   id: string;
@@ -219,11 +226,44 @@ export interface ClubMembership {
   endReason?: string | null;
   userName?: string;
   userEmail?: string;
+  userIsActive?: boolean;
   xeroLinked?: boolean;
   membershipClassName?: string;
   membershipClassCode?: MembershipClassCode;
   hasVotingRights?: boolean;
   canSelfBookAircraft?: boolean;
+  dateOfBirth?: string | null;
+}
+
+export type BookingPurpose =
+  | 'standard'
+  | 'trial_flight'
+  | 'casual_flight'
+  | 'external_flight_review'
+  | 'external_flight_test';
+
+export interface MembershipChangeRequest {
+  id: string;
+  membershipId: string;
+  userId: string;
+  fromMembershipClassId: string;
+  toMembershipClassId: string;
+  status: MembershipChangeStatus;
+  requestedEffectiveTiming: MembershipChangeTiming;
+  effectiveOn: string;
+  requestReason: string;
+  requestedBy?: string | null;
+  submittedAt: string;
+  decidedAt?: string | null;
+  decidedBy?: string | null;
+  decisionReason?: string | null;
+  appliedAt?: string | null;
+  userName?: string;
+  userEmail?: string;
+  fromMembershipClassName?: string;
+  fromMembershipClassCode?: MembershipClassCode;
+  toMembershipClassName?: string;
+  toMembershipClassCode?: MembershipClassCode;
 }
 
 export interface MembershipFinancialPeriod {
@@ -336,6 +376,8 @@ export interface DutyAssessment {
   rolling14DutyHours?: number;
   rolling28FlightHours?: number;
   rolling365FlightHours?: number;
+  openPriorDutyStart?: string | null;
+  openPriorDutyCountedThrough?: string | null;
   dataSource?: string;
   engineVersion?: string;
 }
@@ -859,7 +901,7 @@ export interface InvoiceItem {
 export interface Notification {
   id: string;
   userId: string;
-  type: 'conflict' | 'cancellation' | 'reminder' | 'system' | 'training_record' | 'booking_approval' | 'licence_verification' | 'duty_auto_started' | 'duty_auto_closed';
+  type: 'booking' | 'conflict' | 'cancellation' | 'reminder' | 'system' | 'training_record' | 'outstanding_record' | 'booking_approval' | 'licence_verification' | 'duty_auto_started' | 'duty_auto_closed' | 'duty_break_reminder';
   title: string;
   message: string;
   bookingId?: string;

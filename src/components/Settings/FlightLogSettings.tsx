@@ -1,7 +1,9 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ClipboardList, Info, Loader2, RotateCcw } from 'lucide-react';
 import { FlightLogFieldSetting, useFlightLogSettings } from '../../hooks/useFlightLogSettings';
 import toast from 'react-hot-toast';
+import { SettingsLoadError } from './SettingsLoadError';
 import { useAircraft } from '../../hooks/useAircraft';
 
 interface FlightLogSettingsProps {
@@ -233,7 +235,7 @@ const Toggle = ({
 );
 
 const FlightLogSettings: React.FC<FlightLogSettingsProps> = ({ canEdit, onFormChange }) => {
-  const { settings, loading, updateSettings, deleteAircraftSettings } = useFlightLogSettings();
+  const { settings, loading, error, updateSettings, deleteAircraftSettings, refetch } = useFlightLogSettings();
   const { aircraft } = useAircraft();
   const [selectedAircraftId, setSelectedAircraftId] = useState<string>('');
   const [draft, setDraft] = useState<FlightLogFieldSetting[]>([]);
@@ -249,8 +251,11 @@ const FlightLogSettings: React.FC<FlightLogSettingsProps> = ({ canEdit, onFormCh
   useEffect(() => {
     (window as any).__flightlogSettingsSave = async () => {
       const { error } = await updateSettings(draft);
-      if (error) toast.error(error);
-      else toast.success(selectedAircraft ? `Flight log settings saved for ${selectedAircraft.registration}` : 'Global flight log form settings saved');
+      if (error) {
+        toast.error(error);
+        throw new Error(error);
+      }
+      toast.success(selectedAircraft ? `Flight log settings saved for ${selectedAircraft.registration}` : 'Global flight log form settings saved');
     };
     (window as any).__flightlogSettingsCancel = () => setDraft(makeDraft(settings, selectedAircraftId || null));
     return () => {
@@ -295,6 +300,7 @@ const FlightLogSettings: React.FC<FlightLogSettingsProps> = ({ canEdit, onFormCh
       </div>
     );
   }
+  if (error) return <SettingsLoadError section="Flight Log Form" error={error} onRetry={refetch} />;
 
   return (
     <div className="p-6 space-y-8">
@@ -310,7 +316,7 @@ const FlightLogSettings: React.FC<FlightLogSettingsProps> = ({ canEdit, onFormCh
         <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-gray-700">Settings scope</span>
-            <select
+            <SearchableSelect
               value={selectedAircraftId}
               onChange={event => {
                 setSelectedAircraftId(event.target.value);
@@ -325,7 +331,7 @@ const FlightLogSettings: React.FC<FlightLogSettingsProps> = ({ canEdit, onFormCh
                   {item.registration} - {item.make} {item.model}
                 </option>
               ))}
-            </select>
+            </SearchableSelect>
           </label>
           {selectedAircraftId && (
             <button

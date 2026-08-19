@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { brandPortalEmailHtml } from "../_shared/emailBranding.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -48,7 +49,7 @@ const sendBrevoEmail = async ({
       sender: { email: senderEmail, name: senderName },
       to: [{ email: to, name: toName || to }],
       subject,
-      htmlContent: html,
+      htmlContent: await brandPortalEmailHtml(html),
     }),
   });
 
@@ -140,9 +141,41 @@ Deno.serve(async (req) => {
 
   for (const instructorId of instructorIds) {
     const instructor = instructorsById.get(instructorId);
-    if (!instructor?.email) continue;
-
     const instructorLogs = logs.filter((log: any) => log.instructor_id === instructorId);
+    const firstOutstandingLog = instructorLogs[0];
+    if (firstOutstandingLog) {
+      const { data: activeNotification, error: notificationLookupError } = await admin
+        .from("notifications")
+        .select("id")
+        .eq("user_id", instructorId)
+        .eq("type", "outstanding_record")
+        .eq("is_read", false)
+        .limit(1)
+        .maybeSingle();
+
+      if (notificationLookupError) {
+        console.error("Failed to check outstanding record notification", instructorId, notificationLookupError);
+      } else if (!activeNotification) {
+        const route = `/training/outstanding-records?outstandingFlightLogId=${encodeURIComponent(firstOutstandingLog.id)}`;
+        const { error: notificationError } = await admin.from("notifications").insert({
+          user_id: instructorId,
+          type: "outstanding_record",
+          title: "Outstanding training records",
+          message: `You have ${instructorLogs.length} training ${instructorLogs.length === 1 ? "record" : "records"} waiting to be submitted.`,
+          is_read: false,
+          metadata: {
+            notification_kind: "outstanding_record",
+            outstanding_flight_log_id: firstOutstandingLog.id,
+            route,
+          },
+        });
+        if (notificationError) {
+          console.error("Failed to create outstanding record notification", instructorId, notificationError);
+        }
+      }
+    }
+
+    if (!instructor?.email) continue;
     const rows = instructorLogs.slice(0, 12).map((log: any) => `
       <tr>
         <td style="padding:10px 8px;border-bottom:1px solid #e2e8f0;">${escapeHtml(formatSydneyDate(log.start_time))}</td>

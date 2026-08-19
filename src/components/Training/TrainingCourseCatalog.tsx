@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import {
@@ -1247,7 +1248,7 @@ const CourseMatrixPanel: React.FC<CourseMatrixPanelProps> = ({
                         <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
                           Contributes to assessment criterion
                         </label>
-                        <select
+                        <SearchableSelect
                           disabled={!canEdit || savingKey === `criterion-${requirement.id}`}
                           value={requirement.assessmentCriterionId || ''}
                           onChange={(event) => handleUpdateRequirementCriterion(requirement, event.target.value)}
@@ -1259,7 +1260,7 @@ const CourseMatrixPanel: React.FC<CourseMatrixPanelProps> = ({
                               {criterion.name}
                             </option>
                           ))}
-                        </select>
+                        </SearchableSelect>
                         <p className="mt-1 text-xs text-slate-500">
                           If this matrix item is below its required standard, the linked criterion is treated as below pass for that lesson.
                         </p>
@@ -2632,14 +2633,14 @@ export const TrainingCourseCatalog: React.FC = () => {
             </label>
             <label className="flex flex-col text-sm font-medium text-blue-900">
               Status
-              <select
+              <SearchableSelect
                 value={newCourse.status}
                 onChange={(event) => setNewCourse((prev) => ({ ...prev, status: event.target.value as TrainingModule['status'] }))}
                 className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
               >
                 <option value="draft">Draft</option>
                 <option value="published">Published</option>
-              </select>
+              </SearchableSelect>
             </label>
             <label className="flex flex-col text-sm font-medium text-blue-900 md:col-span-2">
               Course overview
@@ -2830,7 +2831,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                 <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
                   <label className="flex flex-col text-xs font-medium text-emerald-950">
                     Endorsement name
-                    <select
+                    <SearchableSelect
                       value={newCourse.completionEndorsementType}
                       onChange={(event) => setNewCourse((prev) => ({ ...prev, completionEndorsementType: event.target.value }))}
                       className="mt-1 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
@@ -2839,7 +2840,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                       {endorsementTypes.map((type) => (
                         <option key={type} value={type}>{type}</option>
                       ))}
-                    </select>
+                    </SearchableSelect>
                     <span className="mt-1 text-[11px] font-normal text-emerald-700">
                       Add or rename endorsement options in Training / Syllabus Settings.
                     </span>
@@ -2865,7 +2866,7 @@ export const TrainingCourseCatalog: React.FC = () => {
               </label>
               {newCourse.completionLicenceEnabled && (
                 <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
-                  <label className="flex flex-col text-xs font-medium text-blue-950">Licence<select value={newCourse.completionLicenceType} onChange={event => setNewCourse(prev => ({ ...prev, completionLicenceType: event.target.value }))} className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900"><option value="">Select licence</option>{licenceTypes.map(type => <option key={type} value={type}>{type}</option>)}</select></label>
+                  <label className="flex flex-col text-xs font-medium text-blue-950">Licence<SearchableSelect value={newCourse.completionLicenceType} onChange={event => setNewCourse(prev => ({ ...prev, completionLicenceType: event.target.value }))} className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900"><option value="">Select licence</option>{licenceTypes.map(type => <option key={type} value={type}>{type}</option>)}</SearchableSelect></label>
                   <label className="flex flex-col text-xs font-medium text-blue-950">Expiry months<input type="number" min={1} value={newCourse.completionLicenceExpiryMonths} onChange={event => setNewCourse(prev => ({ ...prev, completionLicenceExpiryMonths: event.target.value }))} placeholder="No expiry" className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900" /></label>
                 </div>
               )}
@@ -2917,11 +2918,11 @@ export const TrainingCourseCatalog: React.FC = () => {
                   <input type="text" placeholder="e.g. Airmanship" value={criterion.name}
                     onChange={(e) => setCourseCriteria((p) => updateCriterionName(p, criterion.id, e.target.value))}
                     className="flex-1 rounded-md border border-blue-200 bg-white px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none" />
-                  <select value={criterion.gradingSystem}
+                  <SearchableSelect value={criterion.gradingSystem}
                     onChange={(e) => setCourseCriteria((p) => p.map((c) => c.id === criterion.id ? { ...c, gradingSystem: e.target.value as LessonGradingSystem, passingGrade: getDefaultPassingGrade(e.target.value as LessonGradingSystem) } : c))}
                     className="rounded-md border border-blue-200 bg-white px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none">
                     {gradingOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-                  </select>
+                  </SearchableSelect>
                   <label className="flex min-w-[130px] flex-col text-[11px] font-semibold uppercase tracking-wide text-blue-700">
                     Course target
                     {criterion.gradingSystem === 'Out of 100' ? (
@@ -2934,7 +2935,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                         className="mt-1 rounded-md border border-blue-200 bg-white px-2 py-1.5 text-sm font-normal text-gray-900 focus:border-blue-400 focus:outline-none"
                       />
                     ) : (
-                      <select
+                      <SearchableSelect
                         value={criterion.passingGrade}
                         onChange={(e) => setCourseCriteria((p) => p.map((c) => c.id === criterion.id ? { ...c, passingGrade: e.target.value } : c))}
                         className="mt-1 rounded-md border border-blue-200 bg-white px-2 py-1.5 text-sm font-normal text-gray-900 focus:border-blue-400 focus:outline-none"
@@ -2942,7 +2943,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                         {getPassingGradeOptions(criterion.gradingSystem).map((option) => (
                           <option key={option} value={option}>{option}</option>
                         ))}
-                      </select>
+                      </SearchableSelect>
                     )}
                   </label>
                   <button type="button" onClick={() => setCourseCriteria((p) => p.filter((c) => c.id !== criterion.id))} className="text-red-500 hover:text-red-700"><X className="h-4 w-4" /></button>
@@ -2980,7 +2981,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                   <div key={resource.id} className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 md:grid-cols-[140px_minmax(0,1fr)_minmax(0,1fr)_auto]">
                     <label className="flex flex-col text-xs font-medium text-slate-700">
                       Type
-                      <select
+                      <SearchableSelect
                         value={resource.type}
                         onChange={(event) => setCourseResources((current) => current.map((item) => item.id === resource.id ? { ...item, type: event.target.value as TrainingResource['type'] } : item))}
                         className="mt-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
@@ -2988,7 +2989,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                         {resourceTypeOptions.map((option) => (
                           <option key={option} value={option}>{option}</option>
                         ))}
-                      </select>
+                      </SearchableSelect>
                     </label>
                     <label className="flex flex-col text-xs font-medium text-slate-700">
                       Title
@@ -3447,10 +3448,10 @@ export const TrainingCourseCatalog: React.FC = () => {
                     </label>
                     <label className="flex flex-col text-sm font-medium text-gray-700">
                       Status
-                      <select value={editCourse.status} onChange={(e) => setEditCourse((p) => ({ ...p, status: e.target.value as TrainingModule['status'] }))} className="mt-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100">
+                      <SearchableSelect value={editCourse.status} onChange={(e) => setEditCourse((p) => ({ ...p, status: e.target.value as TrainingModule['status'] }))} className="mt-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100">
                         <option value="draft">Draft</option>
                         <option value="published">Published</option>
-                      </select>
+                      </SearchableSelect>
                     </label>
                     <label className="flex flex-col text-sm font-medium text-gray-700 md:col-span-2">
                       Description
@@ -3616,7 +3617,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                         <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
                           <label className="flex flex-col text-xs font-medium text-emerald-950">
                             Endorsement name
-                            <select
+                            <SearchableSelect
                               value={editCourse.completionEndorsementType}
                               onChange={(e) => setEditCourse((p) => ({ ...p, completionEndorsementType: e.target.value }))}
                               className="mt-1 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-emerald-400 focus:outline-none"
@@ -3625,7 +3626,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                               {endorsementTypes.map((type) => (
                                 <option key={type} value={type}>{type}</option>
                               ))}
-                            </select>
+                            </SearchableSelect>
                             <span className="mt-1 text-[11px] font-normal text-emerald-700">
                               Add or rename endorsement options in Training / Syllabus Settings.
                             </span>
@@ -3651,7 +3652,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                       </label>
                       {editCourse.completionLicenceEnabled && (
                         <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
-                          <label className="flex flex-col text-xs font-medium text-blue-950">Licence<select value={editCourse.completionLicenceType} onChange={event => setEditCourse(prev => ({ ...prev, completionLicenceType: event.target.value }))} className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900"><option value="">Select licence</option>{licenceTypes.map(type => <option key={type} value={type}>{type}</option>)}</select></label>
+                          <label className="flex flex-col text-xs font-medium text-blue-950">Licence<SearchableSelect value={editCourse.completionLicenceType} onChange={event => setEditCourse(prev => ({ ...prev, completionLicenceType: event.target.value }))} className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900"><option value="">Select licence</option>{licenceTypes.map(type => <option key={type} value={type}>{type}</option>)}</SearchableSelect></label>
                           <label className="flex flex-col text-xs font-medium text-blue-950">Expiry months<input type="number" min={1} value={editCourse.completionLicenceExpiryMonths} onChange={event => setEditCourse(prev => ({ ...prev, completionLicenceExpiryMonths: event.target.value }))} placeholder="No expiry" className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900" /></label>
                         </div>
                       )}
@@ -3699,11 +3700,11 @@ export const TrainingCourseCatalog: React.FC = () => {
                           <input type="text" placeholder="Criterion name" value={criterion.name}
                             onChange={(e) => setEditCourseCriteria((p) => updateCriterionName(p, criterion.id, e.target.value))}
                             className="flex-1 rounded-md border border-gray-200 px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none" />
-                          <select value={criterion.gradingSystem}
+                          <SearchableSelect value={criterion.gradingSystem}
                             onChange={(e) => setEditCourseCriteria((p) => p.map((c) => c.id === criterion.id ? { ...c, gradingSystem: e.target.value as LessonGradingSystem, passingGrade: getDefaultPassingGrade(e.target.value as LessonGradingSystem) } : c))}
                             className="rounded-md border border-gray-200 px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none">
                             {gradingOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-                          </select>
+                          </SearchableSelect>
                           <label className="flex min-w-[130px] flex-col text-[11px] font-semibold uppercase tracking-wide text-gray-500">
                             Course target
                             {criterion.gradingSystem === 'Out of 100' ? (
@@ -3716,7 +3717,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                                 className="mt-1 rounded-md border border-gray-200 px-2 py-1.5 text-sm font-normal text-gray-900 focus:border-blue-400 focus:outline-none"
                               />
                             ) : (
-                              <select
+                              <SearchableSelect
                                 value={criterion.passingGrade}
                                 onChange={(e) => setEditCourseCriteria((p) => p.map((c) => c.id === criterion.id ? { ...c, passingGrade: e.target.value } : c))}
                                 className="mt-1 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm font-normal text-gray-900 focus:border-blue-400 focus:outline-none"
@@ -3724,7 +3725,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                                 {getPassingGradeOptions(criterion.gradingSystem).map((option) => (
                                   <option key={option} value={option}>{option}</option>
                                 ))}
-                              </select>
+                              </SearchableSelect>
                             )}
                           </label>
                           <button type="button" onClick={() => setEditCourseCriteria((p) => p.filter((c) => c.id !== criterion.id))} className="text-red-500 hover:text-red-700">
@@ -3826,7 +3827,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                           <div key={resource.id} className="grid gap-3 rounded-md border border-slate-200 bg-white px-4 py-3 md:grid-cols-[140px_minmax(0,1fr)_minmax(0,1fr)_auto]">
                             <label className="flex flex-col text-xs font-medium text-slate-700">
                               Type
-                              <select
+                              <SearchableSelect
                                 value={resource.type}
                                 onChange={(event) => setEditCourseResources((current) => current.map((item) => item.id === resource.id ? { ...item, type: event.target.value as TrainingResource['type'] } : item))}
                                 className="mt-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
@@ -3834,7 +3835,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                                 {resourceTypeOptions.map((option) => (
                                   <option key={option} value={option}>{option}</option>
                                 ))}
-                              </select>
+                              </SearchableSelect>
                             </label>
                             <label className="flex flex-col text-xs font-medium text-slate-700">
                               Title
@@ -3999,7 +4000,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                         </label>
                         <label className="flex flex-col text-xs font-medium text-blue-900">
                           Stage
-                          <select
+                          <SearchableSelect
                             value={newLesson.stage}
                             onChange={(event) => setNewLesson((prev) => ({ ...prev, stage: event.target.value as TrainingLesson['stage'] }))}
                             className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-400 focus:outline-none"
@@ -4007,7 +4008,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                             <option value="ground">Ground</option>
                             <option value="flight">Flight</option>
                             <option value="simulator">Simulator</option>
-                          </select>
+                          </SearchableSelect>
                         </label>
                         <label className="flex flex-col text-xs font-medium text-blue-900">
                           Duration minutes
@@ -4021,7 +4022,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                         </label>
                         <label className="flex flex-col text-xs font-medium text-blue-900">
                           Minimum competency
-                          <select
+                          <SearchableSelect
                             value={newLesson.minCompetency}
                             onChange={(event) => setNewLesson((prev) => ({ ...prev, minCompetency: event.target.value as TrainingLesson['minCompetency'] }))}
                             className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-400 focus:outline-none"
@@ -4029,7 +4030,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                             <option value="Introduce">Introduce</option>
                             <option value="Practice">Practice</option>
                             <option value="Assess">Assess</option>
-                          </select>
+                          </SearchableSelect>
                         </label>
                       </div>
                     </div>
@@ -4313,7 +4314,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                                   aria-label={`Pass mark for ${criterion.name}`}
                                 />
                               ) : (
-                                <select
+                                <SearchableSelect
                                   value={currentMark}
                                   onChange={(e) => setLessonPassMarks((prev) => ({ ...prev, [criterion.id]: e.target.value }))}
                                   className="rounded-md border border-blue-200 px-2 py-1.5 text-sm text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-200"
@@ -4322,7 +4323,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                                   {getPassingGradeOptions(criterion.gradingSystem).map((opt) => (
                                     <option key={opt} value={opt}>{opt}</option>
                                   ))}
-                                </select>
+                                </SearchableSelect>
                               )}
                               <label className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-xs font-medium ${
                                 requiresRepeat

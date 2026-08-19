@@ -8,6 +8,39 @@ export const getFlightReviewDueDate = (reviewDate?: Date | string | null) => {
   return due;
 };
 
+export type RegulatoryReviewAuthority = 'raaus' | 'casa' | 'club';
+
+export const applyRegulatoryReviewDate = ({
+  authority,
+  completedOn,
+  resetsFlightReview,
+  lastRaausBfrDate,
+  lastCasaAfrDate,
+}: {
+  authority: RegulatoryReviewAuthority;
+  completedOn: string;
+  resetsFlightReview: boolean;
+  lastRaausBfrDate?: string;
+  lastCasaAfrDate?: string;
+}) => {
+  if (!resetsFlightReview || authority === 'club') {
+    return { lastRaausBfrDate, lastCasaAfrDate };
+  }
+
+  const newest = (current?: string) => !current || completedOn > current ? completedOn : current;
+  if (authority === 'casa') {
+    return {
+      lastRaausBfrDate: newest(lastRaausBfrDate),
+      lastCasaAfrDate: newest(lastCasaAfrDate),
+    };
+  }
+
+  return {
+    lastRaausBfrDate: newest(lastRaausBfrDate),
+    lastCasaAfrDate,
+  };
+};
+
 export const getCourseAwardDate = (
   records: Array<Pick<TrainingRecord, 'courseId' | 'status' | 'date'>>,
   courseId: string,

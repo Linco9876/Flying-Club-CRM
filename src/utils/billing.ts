@@ -1,4 +1,4 @@
-import { AircraftRate } from '../types';
+import type { AircraftRate } from '../types/index.ts';
 
 export type ChargeType = 'tach' | 'flat' | 'per_pax' | 'free' | 'not_used';
 
@@ -6,6 +6,8 @@ export interface BillingCalculationInput {
   rate?: Pick<AircraftRate, 'chargeType' | 'soloRate' | 'dualRate' | 'flatSurcharge' | 'weekendSurcharge'> | null;
   durationHours: number;
   isDual: boolean;
+  dualHours?: number | null;
+  soloHours?: number | null;
   passengerCount?: number | null;
   startTime?: string | Date | null;
 }
@@ -37,12 +39,16 @@ export const calculateFlightCost = ({
   rate,
   durationHours,
   isDual,
+  dualHours,
+  soloHours,
   passengerCount,
   startTime,
 }: BillingCalculationInput) => {
   if (!rate || isNoChargeRate(rate.chargeType)) return 0;
 
-  const baseRate = Number(isDual ? rate.dualRate : rate.soloRate) || 0;
+  const dualRate = Number(rate.dualRate) || 0;
+  const soloRate = Number(rate.soloRate) || 0;
+  const baseRate = isDual ? dualRate : soloRate;
   const flatSurcharge = Number(rate.flatSurcharge) || 0;
   const weekendSurcharge = isWeekend(startTime) ? Number(rate.weekendSurcharge) || 0 : 0;
   const duration = Math.max(0, Number(durationHours) || 0);
@@ -54,7 +60,13 @@ export const calculateFlightCost = ({
   } else if (rate.chargeType === 'per_pax') {
     subtotal = baseRate * passengers;
   } else {
-    subtotal = baseRate * duration;
+    const allocatedDual = Math.max(0, Number(dualHours) || 0);
+    const allocatedSolo = Math.max(0, Number(soloHours) || 0);
+    const hasCompleteAllocation = allocatedDual + allocatedSolo > 0
+      && Math.abs((allocatedDual + allocatedSolo) - duration) <= 0.051;
+    subtotal = hasCompleteAllocation
+      ? (dualRate * allocatedDual) + (soloRate * allocatedSolo)
+      : baseRate * duration;
   }
 
   return Math.max(0, Number((subtotal + flatSurcharge + weekendSurcharge).toFixed(2)));

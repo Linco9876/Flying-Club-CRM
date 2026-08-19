@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, CreditCard, DollarSign, GripVertical, Link2, Loader2, Lock, Plus, Trash2, Users } from 'lucide-react';
 import { useBillingSettings, FlightType, PaymentMethod } from '../../hooks/useBillingSettings';
@@ -9,6 +10,9 @@ import { getSupabaseFunctionErrorMessage } from '../../lib/supabaseFunctionError
 import { TAX_INCLUSIVE_NOTICE } from '../../utils/pricingPolicy';
 import toast from 'react-hot-toast';
 import { useFinancialProviders } from '../../context/financialProviderState';
+import { isPaymentMethodAvailable, paymentMethodUnavailableReason } from '../../utils/paymentMethodAvailability';
+import { getBillingSettingsValidationError } from '../../utils/billingSettingsRules';
+import { SettingsLoadError } from './SettingsLoadError';
 
 interface BillingRatesSettingsProps {
   canEdit: boolean;
@@ -19,17 +23,25 @@ const allRoles: UserRole[] = ['admin', 'instructor', 'pilot', 'student'];
 const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50';
 
 const newId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+const isPersistedId = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 
 export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canEdit, onFormChange }) => {
-  const { flightTypes, paymentMethods, loading, saveBillingSettings } = useBillingSettings();
+  const { flightTypes, paymentMethods, loading, error, refetch } = useBillingSettings();
   const {
     options: groundSessionDescriptionOptions,
-    saveOptions: saveGroundSessionDescriptionOptions,
+    loading: groundDescriptionsLoading,
+    error: groundDescriptionsError,
+    refetch: refetchGroundDescriptions,
   } = useGroundSessionDescriptions();
   const { aircraft } = useAircraft();
   const [draftFlightTypes, setDraftFlightTypes] = useState<FlightType[]>([]);
   const [draftPaymentMethods, setDraftPaymentMethods] = useState<PaymentMethod[]>([]);
-  const { capabilities, loading: providersLoading } = useFinancialProviders();
+  const {
+    capabilities,
+    loading: providersLoading,
+    error: providersError,
+    refresh: refreshProviders,
+  } = useFinancialProviders();
   const [xeroItemSyncingId, setXeroItemSyncingId] = useState<string | null>(null);
   const [draftGroundSessionDescriptions, setDraftGroundSessionDescriptions] = useState<GroundSessionDescriptionOption[]>([]);
 
@@ -51,6 +63,12 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
 
   useEffect(() => {
     (window as any).__billingSettingsSave = async () => {
+      if (providersError) throw new Error('Financial provider status must load successfully before billing settings can be changed.');
+      const validationError = getBillingSettingsValidationError(draftFlightTypes, draftPaymentMethods);
+      if (validationError) {
+        toast.error(validationError);
+        throw new Error(validationError);
+      }
       const invalidEnabledGroundRate = draftGroundSessionDescriptions
         .filter(description => description.pricingMode === 'flight_type_hourly')
         .flatMap(description => description.rates.map(rate => ({ description, rate })))
@@ -72,15 +90,18 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
         toast.error(message);
         throw new Error(message);
       }
-      const billingResult = await saveBillingSettings(draftFlightTypes, draftPaymentMethods);
-      const descriptionsWithSavedPaymentTypes = draftGroundSessionDescriptions.map(description => ({
-        ...description,
-        rates: description.rates.map(rate => ({
-          ...rate,
-          flightTypeId: billingResult?.flightTypeIdMap.get(rate.flightTypeId) || rate.flightTypeId,
-        })),
-      }));
-      await saveGroundSessionDescriptionOptions(descriptionsWithSavedPaymentTypes);
+      const { error: saveError } = await supabase.rpc('save_billing_configuration', {
+        p_payment_methods: draftPaymentMethods,
+        p_flight_types: draftFlightTypes,
+        p_ground_options: draftGroundSessionDescriptions,
+      });
+      if (saveError) {
+        const message = await getSupabaseFunctionErrorMessage(saveError, 'Failed to save billing settings');
+        toast.error(message);
+        throw new Error(message);
+      }
+      await Promise.all([refetch(), refetchGroundDescriptions()]);
+      toast.success('Billing settings saved');
     };
     (window as any).__billingSettingsCancel = () => {
       setDraftFlightTypes(flightTypes);
@@ -95,7 +116,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
       delete (window as any).__billingSettingsSave;
       delete (window as any).__billingSettingsCancel;
     };
-  }, [draftFlightTypes, draftPaymentMethods, draftGroundSessionDescriptions, flightTypes, paymentMethods, groundSessionDescriptionOptions, saveBillingSettings, saveGroundSessionDescriptionOptions]);
+  }, [draftFlightTypes, draftPaymentMethods, draftGroundSessionDescriptions, flightTypes, groundSessionDescriptionOptions, paymentMethods, providersError, refetch, refetchGroundDescriptions]);
 
   const updateFlightType = (id: string, updates: Partial<FlightType>) => {
     setDraftFlightTypes(current => current.map(type => type.id === id ? { ...type, ...updates } : type));
@@ -110,6 +131,14 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
       (updates.active === true || updates.allowAccountTopup === true)
     ) {
       toast.error('Connect Stripe in Settings > Integrations before enabling Stripe payments.');
+      return;
+    }
+    if (
+      method?.systemKey === 'pilot_account' &&
+      !xeroConnected &&
+      updates.active === true
+    ) {
+      toast.error('Connect Xero in Settings > Integrations before enabling Pilot Account.');
       return;
     }
     setDraftPaymentMethods(current => current.map(method => method.id === id ? { ...method, ...updates } : method));
@@ -295,11 +324,34 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
     })));
   }, [aircraft, draftFlightTypes]);
 
-  if (loading) {
+  if (loading || providersLoading || groundDescriptionsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
       </div>
+    );
+  }
+  if (error) return <SettingsLoadError section="Billing & Rates" error={error} onRetry={refetch} />;
+  if (groundDescriptionsError) {
+    return (
+      <SettingsLoadError
+        section="Billing & Rates"
+        error={groundDescriptionsError}
+        onRetry={async () => {
+          await Promise.all([refetch(), refetchGroundDescriptions(), refreshProviders()]);
+        }}
+      />
+    );
+  }
+  if (providersError) {
+    return (
+      <SettingsLoadError
+        section="Billing & Rates"
+        error={providersError}
+        onRetry={async () => {
+          await Promise.all([refetch(), refreshProviders()]);
+        }}
+      />
     );
   }
 
@@ -505,17 +557,27 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
                   className={inputClass}
                   placeholder="Description"
                 />
-                <select
+                <SearchableSelect
                   value={type.forcedPaymentMethodId ?? ''}
                   onChange={event => updateFlightType(type.id, { forcedPaymentMethodId: event.target.value || null })}
                   disabled={!canEdit}
                   className={inputClass}
                 >
                   <option value="">No forced method</option>
-                  {activePaymentMethods.map(method => (
-                    <option key={method.id} value={method.id}>{method.name}</option>
-                  ))}
-                </select>
+                  {activePaymentMethods.map(method => {
+                    const unavailableReason = paymentMethodUnavailableReason(method, capabilities);
+                    const isCurrentSelection = type.forcedPaymentMethodId === method.id;
+                    return (
+                      <option
+                        key={method.id}
+                        value={method.id}
+                        disabled={!isCurrentSelection && !isPaymentMethodAvailable(method, capabilities)}
+                      >
+                        {method.name}{unavailableReason ? ` (${unavailableReason.replace(/\.$/, '')})` : ''}
+                      </option>
+                    );
+                  })}
+                </SearchableSelect>
                 {canEdit && (
                   <button
                     onClick={() => removeFlightType(type.id)}
@@ -561,7 +623,8 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
                 <button
                   type="button"
                   onClick={() => void ensureFlightTypeXeroItem(type)}
-                  disabled={!canEdit || !xeroConnected || xeroItemSyncingId === type.id || !(type.xeroItemCode || '').trim()}
+                  disabled={!canEdit || !xeroConnected || !isPersistedId(type.id) || xeroItemSyncingId === type.id || !(type.xeroItemCode || '').trim()}
+                  title={!isPersistedId(type.id) ? 'Save this Payment Type before creating its Xero item' : undefined}
                   className="inline-flex items-center justify-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {xeroItemSyncingId === type.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
@@ -631,7 +694,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
 
                 <label className="space-y-1">
                   <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Charge method</span>
-                  <select
+                  <SearchableSelect
                     value={description.pricingMode}
                     onChange={event => updateGroundSessionDescription(index, {
                       pricingMode: event.target.value === 'fixed' ? 'fixed' : 'flight_type_hourly',
@@ -642,7 +705,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
                   >
                     <option value="flight_type_hourly">Hourly rate</option>
                     <option value="fixed">Fixed price</option>
-                  </select>
+                  </SearchableSelect>
                 </label>
 
                 {description.pricingMode === 'fixed' ? (

@@ -3,6 +3,10 @@ import { publicSupabaseKey, publicSupabaseUrl, supabase } from '../lib/supabase'
 import { Student, Endorsement, Licence, UserRole } from '../types';
 import toast from 'react-hot-toast';
 import { usePageLoadState } from '../context/PageLoadContext';
+import {
+  isReconcileableOrphanEmailConflict,
+  orphanEmailReconciliationPrompt,
+} from '../utils/accountEmailConflict';
 
 const getErrorMessage = (error: unknown, fallback: string) => {
   if (error instanceof Error) return error.message;
@@ -190,7 +194,9 @@ export const useStudents = (options?: UseStudentsOptions) => {
           medicalType: studentData?.medical_type,
           medicalExpiry: studentData?.medical_expiry ? new Date(studentData.medical_expiry) : undefined,
           licenceExpiry: studentData?.licence_expiry ? new Date(studentData.licence_expiry) : undefined,
-          lastFlightReview: studentData?.last_flight_review ? new Date(studentData.last_flight_review) : undefined,
+          lastRaausBfrDate: studentData?.last_raaus_bfr_date ? new Date(studentData.last_raaus_bfr_date) : studentData?.last_flight_review ? new Date(studentData.last_flight_review) : undefined,
+          lastCasaAfrDate: studentData?.last_casa_afr_date ? new Date(studentData.last_casa_afr_date) : undefined,
+          lastFlightReview: studentData?.last_raaus_bfr_date ? new Date(studentData.last_raaus_bfr_date) : studentData?.last_flight_review ? new Date(studentData.last_flight_review) : undefined,
           occupation: studentData?.occupation,
           alternatePhone: studentData?.alternate_phone,
           emergencyContact: studentData?.emergency_contact_name ? {
@@ -317,7 +323,8 @@ export const useStudents = (options?: UseStudentsOptions) => {
         medical_type: studentData.medicalType,
         medical_expiry: studentData.medicalExpiry,
         licence_expiry: studentData.licenceExpiry,
-        last_flight_review: studentData.lastFlightReview,
+        last_raaus_bfr_date: studentData.lastRaausBfrDate || studentData.lastFlightReview,
+        last_casa_afr_date: studentData.lastCasaAfrDate,
         occupation: studentData.occupation,
         alternate_phone: studentData.alternatePhone,
         date_of_birth: studentData.dateOfBirth,
@@ -399,6 +406,8 @@ export const useStudents = (options?: UseStudentsOptions) => {
       const nextEmail = String(studentData.email || '').trim().toLowerCase();
       let emailChangeLink: string | undefined;
       let emailChangeRequested = false;
+      let reconciledOrphanAuth = false;
+      let passwordResetEmailQueued = false;
 
       if (nextEmail && nextEmail !== currentEmail) {
         const { data: { session } } = await supabase.auth.getSession();
@@ -409,27 +418,42 @@ export const useStudents = (options?: UseStudentsOptions) => {
         const appBasePath = import.meta.env.VITE_AUTH_REDIRECT_ORIGIN ? '/' : import.meta.env.BASE_URL;
         const redirectTo = `${redirectBase}${appBasePath}`;
 
-        const response = await fetch(`${publicSupabaseUrl}/functions/v1/change-user-email`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-            Apikey: publicSupabaseKey,
-          },
-          body: JSON.stringify({
-            userId: id,
-            newEmail: nextEmail,
-            redirectTo,
-          }),
-        });
+        const resetRedirectTo = `${redirectBase}/reset-password`;
+        const requestEmailChange = async (reconcileOrphanAuth = false) => {
+          const response = await fetch(`${publicSupabaseUrl}/functions/v1/change-user-email`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session.access_token}`,
+              Apikey: publicSupabaseKey,
+            },
+            body: JSON.stringify({
+              action: reconcileOrphanAuth ? 'reconcile_orphan_auth' : undefined,
+              confirmOrphanReplacement: reconcileOrphanAuth || undefined,
+              userId: id,
+              newEmail: nextEmail,
+              redirectTo,
+              resetRedirectTo,
+            }),
+          });
+          const result = await response.json().catch(() => ({}));
+          return { response, result };
+        };
 
-        const result = await response.json();
+        let { response, result } = await requestEmailChange();
+        if (!response.ok && isReconcileableOrphanEmailConflict(result)) {
+          const confirmed = window.confirm(orphanEmailReconciliationPrompt(nextEmail));
+          if (!confirmed) throw new Error('EMAIL_CHANGE_CANCELLED');
+          ({ response, result } = await requestEmailChange(true));
+        }
         if (!response.ok) {
           throw new Error(result.error || result.message || 'Failed to request login email change');
         }
 
         emailChangeRequested = Boolean(result.changed);
         emailChangeLink = result.manualLink;
+        reconciledOrphanAuth = Boolean(result.reconciledOrphanAuth);
+        passwordResetEmailQueued = Boolean(result.emailQueued);
       }
 
       const { data: updatedUsers, error: userError } = await supabase
@@ -463,7 +487,8 @@ export const useStudents = (options?: UseStudentsOptions) => {
         medical_type: studentData.medicalType,
         medical_expiry: studentData.medicalExpiry,
         licence_expiry: studentData.licenceExpiry,
-        last_flight_review: studentData.lastFlightReview,
+        last_raaus_bfr_date: studentData.lastRaausBfrDate || studentData.lastFlightReview,
+        last_casa_afr_date: studentData.lastCasaAfrDate,
         occupation: studentData.occupation,
         alternate_phone: studentData.alternatePhone,
         date_of_birth: studentData.dateOfBirth,
@@ -531,7 +556,17 @@ export const useStudents = (options?: UseStudentsOptions) => {
       }
 
       await fetchStudents();
-      if (emailChangeRequested) {
+      if (reconciledOrphanAuth) {
+        toast.success(passwordResetEmailQueued
+          ? 'Login linked to this member. A password reset email has been queued.'
+          : 'Login linked to this member. Send them the generated password reset link.');
+        if (emailChangeLink) {
+          window.prompt(
+            'The unused login was replaced safely. Keep this password reset link as a fallback if the email does not arrive:',
+            emailChangeLink,
+          );
+        }
+      } else if (emailChangeRequested) {
         toast.success('User updated. Email change requires verification before login changes.');
         if (emailChangeLink) {
           window.prompt('Send this email verification link to the member if they did not receive the Supabase email:', emailChangeLink);
@@ -541,6 +576,10 @@ export const useStudents = (options?: UseStudentsOptions) => {
       }
     } catch (err) {
       console.error('Error updating student:', err);
+      if (err instanceof Error && err.message === 'EMAIL_CHANGE_CANCELLED') {
+        toast('Email change cancelled. No member details were changed.');
+        throw err;
+      }
       toast.error(`Failed to update user: ${getErrorMessage(err, 'Unknown error')}`);
       throw err;
     }

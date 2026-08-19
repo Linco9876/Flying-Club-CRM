@@ -24,6 +24,9 @@ import { MfaGate } from './components/Auth/MfaSecurity';
 import { FinancialProviderProvider } from './context/FinancialProviderContext';
 import { StudentProfileSkeleton } from './components/Students/StudentProfileSkeleton';
 import { loadStudentProfileModule } from './components/Students/studentProfileLoader';
+import { syncExistingPwaPushSubscription } from './utils/pushNotifications';
+import { PwaNotificationPermissionPrompt } from './components/Layout/PwaNotificationPermissionPrompt';
+import { openOutstandingRecordPopup, OUTSTANDING_RECORD_POPUP_EVENT, type OutstandingRecordPopupRequest } from './utils/outstandingRecordPopup';
 
 const ResetPasswordPage = lazy(() => import('./components/Auth/ResetPasswordPage').then(module => ({ default: module.ResetPasswordPage })));
 const AcceptInvitationPage = lazy(() => import('./components/Auth/AcceptInvitationPage').then(module => ({ default: module.AcceptInvitationPage })));
@@ -46,6 +49,7 @@ const DutyDashboard = lazy(() => import('./components/Duty/DutyDashboard').then(
 const DutyClockDownloadPage = lazy(() => import('./components/Duty/DutyClockDownloadPage').then(module => ({ default: module.DutyClockDownloadPage })));
 const MembershipDashboard = lazy(() => import('./components/Membership/MembershipDashboard').then(module => ({ default: module.MembershipDashboard })));
 const SafetyLoginWarningModal = lazy(() => import('./components/Safety/SafetyLoginWarningModal').then(module => ({ default: module.SafetyLoginWarningModal })));
+const PortalFeedbackButton = lazy(() => import('./components/Layout/PortalFeedbackButton').then(module => ({ default: module.PortalFeedbackButton })));
 const TrainingRecordForm = lazy(() => import('./components/Training/TrainingRecordForm').then(module => ({ default: module.TrainingRecordForm })));
 const TrainingWorkspacePage = lazy(() => import('./components/Training/TrainingWorkspacePage').then(module => ({ default: module.TrainingWorkspacePage })));
 const OutstandingRecordsTab = lazy(() => import('./components/Training/OutstandingRecordsTab').then(module => ({ default: module.OutstandingRecordsTab })));
@@ -77,6 +81,8 @@ const buildCopiedBookingFormData = (booking: Booking) => ({
   guestEmail: booking.guestEmail || '',
   guestPhone: booking.guestPhone || '',
   trialFlightVoucherId: booking.trialFlightVoucherId || '',
+  casualContactId: booking.casualContactId || '',
+  bookingPurpose: booking.bookingPurpose || (booking.isGuestBooking ? 'casual_flight' : 'standard'),
   location: booking.location || '',
   locationId: booking.locationId || '',
   copiedFromBookingId: booking.id,
@@ -187,12 +193,11 @@ const StudentProfileScreen: React.FC<{ portalSection?: 'training' | 'documents' 
 
 const OverdueTrainingRecordsLoginAlert = () => {
   const { user } = useAuth();
-  const navigate = useNavigate();
 
   useEffect(() => {
     if (!user) return;
     const roles = user.roles?.length ? user.roles : [user.role];
-    const isInstructor = roles.some((role) => ['admin', 'senior_instructor', 'instructor'].includes(role));
+    const isInstructor = roles.some((role) => ['admin', 'cfi', 'senior_instructor', 'instructor'].includes(role));
     if (!isInstructor) return;
 
     const todayKey = new Date().toISOString().slice(0, 10);
@@ -200,6 +205,7 @@ const OverdueTrainingRecordsLoginAlert = () => {
     if (localStorage.getItem(storageKey)) return;
 
     let cancelled = false;
+    let alertToastId: string | undefined;
 
     const loadOutstandingCount = async () => {
       const { data: logs, error } = await supabase
@@ -238,7 +244,7 @@ const OverdueTrainingRecordsLoginAlert = () => {
       localStorage.setItem(storageKey, 'shown');
       const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
       const olderThanSevenDays = outstanding.filter((log: any) => new Date(log.start_time).getTime() < sevenDaysAgo).length;
-      toast.custom((toastInstance) => (
+      alertToastId = toast.custom((toastInstance) => (
         <div className="max-w-sm rounded-xl border border-amber-200 bg-white p-4 shadow-xl">
           <p className="text-sm font-semibold text-gray-900">Outstanding training records</p>
           <p className="mt-1 text-sm text-gray-600">
@@ -257,7 +263,7 @@ const OverdueTrainingRecordsLoginAlert = () => {
               type="button"
               onClick={() => {
                 toast.dismiss(toastInstance.id);
-                navigate('/training/outstanding-records');
+                openOutstandingRecordPopup({ flightLogId: outstanding[0]?.id });
               }}
               className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
             >
@@ -272,15 +278,78 @@ const OverdueTrainingRecordsLoginAlert = () => {
 
     return () => {
       cancelled = true;
+      if (alertToastId) toast.dismiss(alertToastId);
     };
-  }, [navigate, user]);
+  }, [user]);
 
   return null;
 };
 
 const AppNotifications = () => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const isKioskRoute = location.pathname.startsWith('/kiosk');
+  const [outstandingPopup, setOutstandingPopup] = useState<{ key: number; flightLogId?: string } | null>(null);
+
+  useEffect(() => {
+    const openPopup = (event: Event) => {
+      const detail = (event as CustomEvent<OutstandingRecordPopupRequest>).detail ?? {};
+      toast.remove();
+      setOutstandingPopup({ key: Date.now(), flightLogId: detail.flightLogId });
+    };
+    window.addEventListener(OUTSTANDING_RECORD_POPUP_EVENT, openPopup);
+    return () => window.removeEventListener(OUTSTANDING_RECORD_POPUP_EVENT, openPopup);
+  }, []);
+
+  useEffect(() => {
+    if (!user?.id || isKioskRoute) return;
+    const parameters = new URLSearchParams(location.search);
+    const flightLogId = parameters.get('outstandingFlightLogId');
+    if (!flightLogId || !/^[0-9a-f-]{36}$/i.test(flightLogId)) return;
+    toast.remove();
+    setOutstandingPopup({ key: Date.now(), flightLogId });
+    parameters.delete('outstandingFlightLogId');
+    navigate({
+      pathname: location.pathname,
+      search: parameters.toString() ? `?${parameters.toString()}` : '',
+      hash: location.hash,
+    }, { replace: true });
+  }, [isKioskRoute, location.hash, location.pathname, location.search, navigate, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || isKioskRoute) return;
+    void syncExistingPwaPushSubscription('portal').catch((syncError) => {
+      console.warn('Existing phone notification subscription could not be refreshed', syncError);
+    });
+  }, [isKioskRoute, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const parameters = new URLSearchParams(location.search);
+    const notificationId = parameters.get('pushNotificationId');
+    if (!notificationId || !/^[0-9a-f-]{36}$/i.test(notificationId)) return;
+    let cancelled = false;
+    const markOpenedNotification = async () => {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('id', notificationId)
+        .eq('user_id', user.id);
+      if (error) console.error('Failed to mark opened phone notification as read', error);
+      if (cancelled) return;
+      parameters.delete('pushNotificationId');
+      navigate({
+        pathname: location.pathname,
+        search: parameters.toString() ? `?${parameters.toString()}` : '',
+        hash: location.hash,
+      }, { replace: true });
+    };
+    void markOpenedNotification();
+    return () => {
+      cancelled = true;
+    };
+  }, [location.hash, location.pathname, location.search, navigate, user?.id]);
 
   if (isKioskRoute) {
     return null;
@@ -288,7 +357,18 @@ const AppNotifications = () => {
 
   return (
     <>
-      <OverdueTrainingRecordsLoginAlert />
+      {!outstandingPopup && <OverdueTrainingRecordsLoginAlert />}
+      <PwaNotificationPermissionPrompt authenticated={Boolean(user?.id)} />
+      {outstandingPopup && (
+        <Suspense fallback={null}>
+          <OutstandingRecordsTab
+            key={outstandingPopup.key}
+            popupOnly
+            requestedFlightLogId={outstandingPopup.flightLogId}
+            onPopupClose={() => setOutstandingPopup(null)}
+          />
+        </Suspense>
+      )}
       <Toaster
         position="top-right"
         toastOptions={{
@@ -316,13 +396,20 @@ const AppShell = ({
   onViewChange: (view: string) => void;
   backgroundColor: string;
   mainClassName?: string;
-}) => (
-  <div className="portal-app-shell relative min-h-screen bg-gray-50 dark:bg-[#0f1117]" style={{ backgroundColor }}>
-    <div className="relative z-10 min-h-screen">
+}) => {
+  const location = useLocation();
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [location.pathname]);
+
+  return (
+  <div className="portal-app-shell relative min-h-dvh bg-gray-50 dark:bg-[#0f1117]" style={{ backgroundColor }}>
+    <div className="relative z-10 min-h-dvh">
       <Header />
       <div className="flex items-start lg:ml-0 ml-0">
         <Sidebar activeView={activeSidebarView} onViewChange={onViewChange} />
-        <main className={`${mainClassName} relative`}>
+        <main className={`${mainClassName} portal-main relative`}>
           <PageLoadGate routeKey={activeSidebarView}>
             <Suspense fallback={<PageLoader />}>
               {children}
@@ -332,10 +419,12 @@ const AppShell = ({
       </div>
       <Suspense fallback={null}>
         <SafetyLoginWarningModal />
+        <PortalFeedbackButton />
       </Suspense>
     </div>
   </div>
-);
+  );
+};
 
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
@@ -379,10 +468,21 @@ const AppContent: React.FC = () => {
   }
 
   if (normalisedPathname === '/join') {
+    if (user) return <Navigate to="/membership-join" replace />;
+    return (
+      <PageLoadGate routeKey="portal-account-signup">
+        <Suspense fallback={<PageLoader />}>
+          <MembershipJoinPage intent="portal" />
+        </Suspense>
+      </PageLoadGate>
+    );
+  }
+
+  if (normalisedPathname === '/membership-join') {
     return (
       <PageLoadGate routeKey="membership-join">
         <Suspense fallback={<PageLoader />}>
-          <MembershipJoinPage />
+          <MembershipJoinPage intent="membership" />
         </Suspense>
       </PageLoadGate>
     );
@@ -709,6 +809,8 @@ const KioskAuthenticatedRoute: React.FC<{
           guestEmail: bookingData.guestEmail || undefined,
           guestPhone: bookingData.guestPhone || undefined,
           trialFlightVoucherId: bookingData.trialFlightVoucherId || undefined,
+          casualContactId: bookingData.casualContactId || undefined,
+          bookingPurpose: bookingData.bookingPurpose || undefined,
           location: bookingData.location || 'Bendigo',
           locationId: bookingData.locationId || undefined,
           dutyOverrideReason: bookingData.dutyOverrideReason || undefined,
@@ -738,6 +840,8 @@ const KioskAuthenticatedRoute: React.FC<{
             guestEmail: bookingData.guestEmail || undefined,
             guestPhone: bookingData.guestPhone || undefined,
             trialFlightVoucherId: bookingData.trialFlightVoucherId || undefined,
+            casualContactId: bookingData.casualContactId || undefined,
+            bookingPurpose: bookingData.bookingPurpose || undefined,
             location: bookingData.location || 'Bendigo',
             locationId: bookingData.locationId || undefined,
             dutyOverrideReason: bookingData.dutyOverrideReason || undefined,
@@ -955,6 +1059,8 @@ const AuthenticatedApp: React.FC<{
           guestEmail: bookingData.guestEmail || undefined,
           guestPhone: bookingData.guestPhone || undefined,
           trialFlightVoucherId: bookingData.trialFlightVoucherId || undefined,
+          casualContactId: bookingData.casualContactId || undefined,
+          bookingPurpose: bookingData.bookingPurpose || undefined,
           location: bookingData.location || 'Bendigo',
           locationId: bookingData.locationId || undefined,
           dutyOverrideReason: bookingData.dutyOverrideReason || undefined,
@@ -984,6 +1090,8 @@ const AuthenticatedApp: React.FC<{
             guestEmail: bookingData.guestEmail || undefined,
             guestPhone: bookingData.guestPhone || undefined,
             trialFlightVoucherId: bookingData.trialFlightVoucherId || undefined,
+            casualContactId: bookingData.casualContactId || undefined,
+            bookingPurpose: bookingData.bookingPurpose || undefined,
             location: bookingData.location || 'Bendigo',
             locationId: bookingData.locationId || undefined,
             dutyOverrideReason: bookingData.dutyOverrideReason || undefined,

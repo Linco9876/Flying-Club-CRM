@@ -1,5 +1,6 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useState, useEffect } from 'react';
-import { X, Lock, Copy, ExternalLink, Mail, QrCode, Loader2 } from 'lucide-react';
+import { AlertTriangle, X, Lock, Copy, ExternalLink, Mail, QrCode, Loader2 } from 'lucide-react';
 import { CreateFlightLogData, FlightPaymentLinkResult, useFlightLogs } from '../../hooks/useFlightLogs';
 import { useFlightLogSettings } from '../../hooks/useFlightLogSettings';
 import { useAircraft } from '../../hooks/useAircraft';
@@ -17,6 +18,16 @@ import { useLatestEffect } from '../../hooks/useLatestEffect';
 import { StripeTestModeBanner } from '../Billing/StripeTestModeBanner';
 import { useFinancialProviders } from '../../context/financialProviderState';
 import { shouldCaptureFinancialDetails } from '../../utils/financialProviderPresentation';
+import { isPaymentMethodAvailable, isPaymentTypeAvailable } from '../../utils/paymentMethodAvailability';
+import { FLIGHT_LOG_ALREADY_EXISTS_MESSAGE } from '../../utils/flightLogBookingRules';
+import {
+  defaultFlightTimeAllocation,
+  getFlightTimeAllocationLabel,
+  updateFlightTimeAllocation,
+  validateFlightTimeAllocation,
+} from '../../utils/flightTimeAllocation';
+import { bookingPurposeNeedsTrainingRecord } from '../../utils/casualContacts';
+import type { BookingPurpose } from '../../types';
 
 interface Booking {
   id: string;
@@ -34,6 +45,7 @@ interface Booking {
   guestName?: string;
   guestEmail?: string;
   guestPhone?: string;
+  bookingPurpose?: BookingPurpose;
   hirerName?: string;
   supervisionRequired?: boolean;
   supervisionStatus?: 'not_required' | 'pending' | 'assigned' | 'acknowledged';
@@ -44,6 +56,7 @@ interface FlightLogModalProps {
   booking: Booking;
   onClose: () => void;
   onSuccess: () => void;
+  onSaved?: () => Promise<void> | void;
   onApproveBooking?: (bookingId: string) => Promise<void> | void;
   mode?: 'create' | 'edit';
   flightLogId?: string;
@@ -82,18 +95,31 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   booking,
   onClose,
   onSuccess,
+  onSaved,
   onApproveBooking,
   mode = 'create',
   flightLogId,
 }) => {
   const { createFlightLog, updateFlightLog, checkTachOverlap } = useFlightLogs();
   const { user: currentUser } = useAuth();
-  const { effectiveSettings: settings } = useFlightLogSettings(booking.aircraftId);
+  const {
+    effectiveSettings: settings,
+    error: flightLogSettingsError,
+  } = useFlightLogSettings(booking.aircraftId);
   const { aircraft: aircraftList } = useAircraft();
   const { users } = useUsers();
-  const { flightTypes, paymentMethods } = useBillingSettings();
+  const {
+    flightTypes,
+    paymentMethods,
+    loading: billingSettingsLoading,
+    error: billingSettingsError,
+  } = useBillingSettings();
   const { rates: aircraftRates } = useAircraftRates(booking.aircraftId);
-  const { capabilities: financialProviders, loading: financialProvidersLoading } = useFinancialProviders();
+  const {
+    capabilities: financialProviders,
+    loading: financialProvidersLoading,
+    error: financialProvidersError,
+  } = useFinancialProviders();
   const financialCaptureEnabled = shouldCaptureFinancialDetails(financialProviders);
 
   const aircraft = aircraftList.find((a) => a.id === booking.aircraftId);
@@ -203,10 +229,16 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const isPrepaidSelectedFlightType = isPrepaidFlightType(selectedFlightType?.name);
   const isPaymentForced = isVoucherBooking || isPrepaidSelectedFlightType || (!isFree && !!selectedFlightType?.forcedPaymentMethodId);
   const isAdmin = currentUser?.role === 'admin' || currentUser?.roles?.includes('admin');
+  const flightTimeAllocationLabel = getFlightTimeAllocationLabel({
+    dualTime: formData.dual_time,
+    soloTime: formData.solo_time,
+  });
   const estimatedCost = calculateFlightCost({
     rate: selectedRate,
     durationHours: formData.flight_duration === '' ? 0 : formData.flight_duration,
     isDual: isDualFlight,
+    dualHours: formData.dual_time,
+    soloHours: formData.solo_time,
     passengerCount: formData.passengers,
     startTime: formData.start_time,
   });
@@ -451,14 +483,16 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
 
     if (field === 'start_tach' && formData.end_tach !== '') {
       const duration = roundFlightDecimal(Math.max(0, formData.end_tach - numValue));
+      const allocation = defaultFlightTimeAllocation(duration, isDualFlight);
       newData.flight_duration = duration;
-      newData.dual_time = isDualFlight ? duration : 0;
-      newData.solo_time = isDualFlight ? 0 : duration;
+      newData.dual_time = allocation.dualTime;
+      newData.solo_time = allocation.soloTime;
     } else if (field === 'end_tach') {
       const duration = roundFlightDecimal(Math.max(0, numValue - formData.start_tach));
+      const allocation = defaultFlightTimeAllocation(duration, isDualFlight);
       newData.flight_duration = duration;
-      newData.dual_time = isDualFlight ? duration : 0;
-      newData.solo_time = isDualFlight ? 0 : duration;
+      newData.dual_time = allocation.dualTime;
+      newData.solo_time = allocation.soloTime;
     }
     setFormData(newData);
   };
@@ -475,12 +509,32 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
       return;
     }
 
+    const allocation = defaultFlightTimeAllocation(duration, isDualFlight);
     setFormData({
       ...formData,
       flight_duration: duration,
       end_tach: roundFlightDecimal(formData.start_tach + duration),
-      dual_time: isDualFlight ? duration : 0,
-      solo_time: isDualFlight ? 0 : duration,
+      dual_time: allocation.dualTime,
+      solo_time: allocation.soloTime,
+    });
+  };
+
+  const handleAllocatedTimeChange = (
+    changedField: 'dualTime' | 'soloTime',
+    value: string,
+  ) => {
+    setFormData(current => {
+      const duration = current.flight_duration === '' ? 0 : Number(current.flight_duration);
+      const allocation = updateFlightTimeAllocation({
+        durationHours: duration,
+        changedField,
+        value: value === '' ? 0 : Number(value),
+      });
+      return {
+        ...current,
+        dual_time: allocation.dualTime,
+        solo_time: allocation.soloTime,
+      };
     });
   };
 
@@ -516,9 +570,34 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     if (formData.flight_duration === '') return 'Please enter flight duration';
     if (formData.start_tach >= formData.end_tach) return 'End tach must be greater than start tach';
     if (formData.flight_duration <= 0) return 'Flight duration must be positive';
+    const allocationError = validateFlightTimeAllocation({
+      durationHours: Number(formData.flight_duration),
+      dualTime: formData.dual_time,
+      soloTime: formData.solo_time,
+      hasInstructor: isDualFlight,
+    });
+    if (allocationError) return allocationError;
     if (financialCaptureEnabled && !isVoucherBooking && !formData.flight_type_id) return 'Please select a Payment Type';
+    if (
+      financialCaptureEnabled
+      && !isVoucherBooking
+      && formData.flight_type_id
+      && !isPaymentTypeAvailable(
+        flightTypes.find(type => type.id === formData.flight_type_id) || {},
+        paymentMethods,
+        financialProviders,
+      )
+    ) return 'The selected Payment Type needs a financial provider that is not connected';
     if (showAdminChargeOverride && adminChargeOverride !== '' && (!Number.isFinite(adminChargeOverride) || adminChargeOverride < 0)) return 'Flight charge cannot be negative';
     if (financialCaptureEnabled && !isFree && isPaymentSelectorEnabled && isFieldMandatory('payment_type') && !formData.payment_type) return 'Please select a Payment Method';
+    if (
+      financialCaptureEnabled
+      && formData.payment_type
+      && !isVoucherBooking
+      && !paymentMethods.some(method =>
+        method.name === formData.payment_type && isPaymentMethodAvailable(method, financialProviders)
+      )
+    ) return 'The selected Payment Method is not currently available';
     if (isTakeoffsLandingsMandatory && (formData.takeoffs === undefined || formData.landings === undefined)) return 'Please enter takeoffs and landings';
     if (isFieldMandatory('comments') && !formData.comments.trim()) return 'Please enter debrief comments';
     if (isFieldMandatory('observations') && !formData.observations.trim()) return 'Please enter observations';
@@ -567,7 +646,21 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     const { error } = result;
     if (error) {
       toast.error(error);
+      if (error === FLIGHT_LOG_ALREADY_EXISTS_MESSAGE) {
+        try {
+          await onSaved?.();
+        } catch (refreshError) {
+          console.error('Duplicate flight log found, but calendar refresh failed:', refreshError);
+        }
+        onClose();
+      }
       return;
+    }
+
+    try {
+      await onSaved?.();
+    } catch (refreshError) {
+      console.error('Flight log saved, but calendar refresh failed:', refreshError);
     }
 
     const createdData = mode === 'create' && 'data' in result
@@ -712,6 +805,14 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      if (financialProvidersError) {
+        toast.error('Financial service status could not be confirmed. Try again before saving the flight log.');
+        return;
+      }
+      if (flightLogSettingsError || billingSettingsError) {
+        toast.error('Flight log settings could not be loaded. Try again before saving the flight log.');
+        return;
+      }
       const validationError = validateForm();
       if (validationError) {
         toast.error(validationError);
@@ -734,6 +835,9 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
         solo_time: roundFlightDecimal(formData.solo_time),
         takeoffs: isTakeoffsLandingsEnabled ? formData.takeoffs : undefined,
         comments: isFieldEnabled('comments') ? formData.comments || undefined : undefined,
+        training_record_status: bookingPurposeNeedsTrainingRecord(booking.bookingPurpose, Boolean(booking.isGuestBooking))
+          ? 'pending' as const
+          : 'dismissed' as const,
         ...(financialCaptureEnabled && {
           flight_type_id: isVoucherBooking ? undefined : formData.flight_type_id || undefined,
           payment_type: isVoucherBooking ? voucherPaymentType : formData.payment_type || undefined,
@@ -797,14 +901,24 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const instructor = booking.instructorId ? users.find((u) => u.id === booking.instructorId) : null;
   const guestLabel = booking.guestName || booking.hirerName || 'Guest';
   const studentLabel = booking.isGuestBooking ? guestLabel : (student?.name || 'Unknown');
-  const pilotInCommand = instructor ? instructor.name : studentLabel;
+  const hasMixedAllocation = formData.dual_time > 0 && formData.solo_time > 0;
+  const pilotInCommand = instructor
+    ? hasMixedAllocation
+      ? `${instructor.name} (dual) / ${studentLabel} (solo)`
+      : formData.solo_time > 0
+        ? studentLabel
+        : instructor.name
+    : studentLabel;
   const otherPilot = instructor ? studentLabel : (isDualFlight ? studentLabel : 'Self');
   const availablePaymentMethods = paymentMethods.filter((pm) => {
-    if (!pm.active) return false;
+    if (!isPaymentMethodAvailable(pm, financialProviders)) return false;
     if (!booking.isGuestBooking) return true;
     const name = String(pm.name || '').toLowerCase();
     return !name.includes('pilot account') && !name.includes('prepaid') && !name.includes('pre-paid');
   });
+  const availableFlightTypes = flightTypes.filter(ft =>
+    ft.active && isPaymentTypeAvailable(ft, paymentMethods, financialProviders)
+  );
 
   return (
     <>
@@ -822,8 +936,16 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 space-y-3">
+          {(financialProvidersError || flightLogSettingsError || billingSettingsError) && (
+            <div className="flex gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              {financialProvidersError
+                ? 'Financial service status could not be confirmed. This flight log cannot be saved until the status is available.'
+                : 'Flight log settings could not be loaded. This record cannot be saved until they are available.'}
+            </div>
+          )}
           {financialCaptureEnabled && <StripeTestModeBanner compact />}
-          {!financialProvidersLoading && !financialCaptureEnabled && (
+          {!financialProvidersLoading && !financialProvidersError && !financialCaptureEnabled && (
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
               Payment details are off while Stripe and Xero are disconnected. This flight will be saved without financial information.
             </div>
@@ -848,7 +970,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
             </div>
             <div>
               <span className="text-xs font-medium text-gray-500 uppercase">Flight Mode</span>
-              <p className="font-medium text-gray-900">{isDualFlight ? 'Dual (with Instructor)' : 'Solo'}</p>
+              <p className="font-medium text-gray-900">{flightTimeAllocationLabel}</p>
             </div>
           </div>
 
@@ -938,6 +1060,54 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
             )}
           </div>
 
+          {/* Student flight-time allocation */}
+          <div className="rounded-lg border border-blue-200 bg-blue-50/70 px-3 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <h3 className="text-xs font-semibold text-blue-950">Dual / solo split</h3>
+                <p className="truncate text-[11px] leading-4 text-blue-800">
+                  {isDualFlight ? 'Enter either value; the other adjusts automatically.' : 'Full flight recorded as solo/PIC.'}
+                </p>
+              </div>
+              <span className="inline-flex shrink-0 rounded-full border border-blue-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-blue-800">
+                {flightTimeAllocationLabel}
+              </span>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <div>
+                <label className="mb-0.5 block text-[11px] font-medium text-gray-700">Dual (hours)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max={formData.flight_duration === '' ? undefined : formData.flight_duration}
+                  step="0.1"
+                  inputMode="decimal"
+                  value={formData.dual_time}
+                  onChange={(event) => handleAllocatedTimeChange('dualTime', event.target.value)}
+                  className={`${fieldClass} bg-white disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500`}
+                  disabled={!isDualFlight}
+                />
+              </div>
+              <div>
+                <label className="mb-0.5 block text-[11px] font-medium text-gray-700">Solo (hours)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max={formData.flight_duration === '' ? undefined : formData.flight_duration}
+                  step="0.1"
+                  inputMode="decimal"
+                  value={formData.solo_time}
+                  onChange={(event) => handleAllocatedTimeChange('soloTime', event.target.value)}
+                  className={`${fieldClass} bg-white`}
+                  disabled={!isDualFlight}
+                />
+              </div>
+            </div>
+            <p className="mt-1 text-[11px] font-medium leading-4 text-blue-900">
+              {(formData.dual_time + formData.solo_time).toFixed(1)} / {Number(formData.flight_duration || 0).toFixed(1)} hours allocated
+            </p>
+          </div>
+
           {financialCaptureEnabled && isVoucherBooking && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
               <p className="font-semibold">Covered by linked gift voucher</p>
@@ -954,7 +1124,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
               <label className={labelClass}>
                 Payment Type <span className="text-red-500">*</span>
               </label>
-              <select
+              <SearchableSelect
                 value={formData.flight_type_id}
                 onChange={(e) => {
                   if (!isVoucherBooking) {
@@ -975,10 +1145,10 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                 disabled={isVoucherBooking}
               >
                 <option value="">Select payment type</option>
-                {flightTypes.filter(ft => ft.active).map(ft => (
+                {availableFlightTypes.map(ft => (
                   <option key={ft.id} value={ft.id}>{ft.name}</option>
                 ))}
-              </select>
+              </SearchableSelect>
               {isFree && formData.flight_type_id && (
                 <p className="mt-1.5 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-2 py-0.5 inline-block">
                   No charge — payment not required
@@ -991,7 +1161,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                 <label className={labelClass}>
                   Payment Method {isFieldMandatory('payment_type') && <span className="text-red-500">*</span>}
                 </label>
-                <select
+                <SearchableSelect
                   value={formData.payment_type}
                   onChange={(e) => {
                     if (!isPaymentForced) setFormData(prev => ({ ...prev, payment_type: e.target.value }));
@@ -1013,7 +1183,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                   {availablePaymentMethods.map(pm => (
                     <option key={pm.id} value={pm.name}>{pm.name}</option>
                   ))}
-                </select>
+                </SearchableSelect>
                 {isPaymentForced && (
                   <p className="mt-1 inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs text-amber-700">
                     <Lock className="h-3 w-3" />
@@ -1034,7 +1204,9 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                   {selectedRate && (
                     <span className="ml-2 text-xs text-blue-700">
                       {selectedRate.chargeType === 'tach'
-                        ? `${isDualFlight ? 'Dual' : 'Solo'} tach rate`
+                        ? flightTimeAllocationLabel === 'Mixed dual / solo'
+                          ? 'Mixed dual / solo tach rates'
+                          : `${flightTimeAllocationLabel} tach rate`
                         : selectedRate.chargeType.replace('_', ' ')}
                     </span>
                   )}
@@ -1227,7 +1399,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                 <label className={labelClass}>
                   Fuel Type {isFieldMandatory('fuel_type') && <span className="text-red-500">*</span>}
                 </label>
-                <select
+                <SearchableSelect
                   value={formData.fuel_type}
                   onChange={(e) => setFormData({ ...formData, fuel_type: e.target.value })}
                   className={fieldClass}
@@ -1238,7 +1410,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                   <option value="Mogas">Mogas</option>
                   <option value="Jet A-1">Jet A-1</option>
                   <option value="Other">Other</option>
-                </select>
+                </SearchableSelect>
               </div>
             )}
             {isFieldEnabled('passengers') && (
@@ -1264,7 +1436,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                   <label className={labelClass}>
                     Aircraft Condition {isFieldMandatory('aircraft_condition') && <span className="text-red-500">*</span>}
                   </label>
-                  <select
+                  <SearchableSelect
                     value={formData.aircraft_condition}
                     onChange={(e) => setFormData({ ...formData, aircraft_condition: e.target.value })}
                     className={fieldClass}
@@ -1275,7 +1447,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                     <option value="Monitor">Monitor</option>
                     <option value="Attention required">Attention required</option>
                     <option value="Defect reported">Defect reported</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
               )}
               {isFieldEnabled('maintenance_notes') && (
@@ -1315,13 +1487,13 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
               type="button"
               onClick={onClose}
               className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              disabled={isSubmitting || financialProvidersLoading}
+              disabled={isSubmitting || financialProvidersLoading || billingSettingsLoading}
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={isSubmitting || financialProvidersLoading}
+              disabled={isSubmitting || financialProvidersLoading || billingSettingsLoading || Boolean(financialProvidersError) || Boolean(flightLogSettingsError) || Boolean(billingSettingsError)}
               className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}

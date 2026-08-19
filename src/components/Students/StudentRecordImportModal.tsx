@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
@@ -773,7 +774,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                 </div>
                 <label className="mt-3 block text-sm font-medium text-gray-800">
                   Course
-                  <select
+                  <SearchableSelect
                     value={selectedCourseId}
                     onChange={event => handleCourseChange(event.target.value)}
                     className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
@@ -782,7 +783,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                     {availableCourses.map(course => (
                       <option key={course.id} value={course.id}>{course.title} · version {course.version}</option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                 </label>
                 {availableCourses.length === 0 && (
                   <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900" role="status">
@@ -922,14 +923,14 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                     {validation.unmatchedCourses.map(label => (
                       <label key={label} className="grid gap-1 text-sm sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] sm:items-center sm:gap-3">
                         <span className="font-medium text-gray-800">Course: “{label}”</span>
-                        <select
+                        <SearchableSelect
                           value={mappings.courses[keyForCourse(label)] || ''}
                           onChange={event => updateCourseMapping(label, event.target.value)}
                           className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-gray-900"
                         >
                           <option value="">Choose course…</option>
                           {courses.map(course => <option key={course.id} value={course.id}>{course.title}</option>)}
-                        </select>
+                        </SearchableSelect>
                       </label>
                     ))}
                     {validation.unmatchedLessons.map(item => {
@@ -937,7 +938,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                       return (
                         <label key={item.key} className="grid gap-1 text-sm sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] sm:items-center sm:gap-3">
                           <span className="font-medium text-gray-800">Lesson: “{item.lessonLabel}”</span>
-                          <select
+                          <SearchableSelect
                             value={mappings.lessons[item.key] || ''}
                             disabled={!course}
                             onChange={event => setMappings(current => ({ ...current, lessons: { ...current.lessons, [item.key]: event.target.value } }))}
@@ -945,7 +946,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                           >
                             <option value="">{course ? 'Choose lesson…' : 'Choose the course first'}</option>
                             {course?.lessons.map(lesson => <option key={lesson.id} value={lesson.id}>{lesson.sequenceCode ? `${lesson.sequenceCode} · ` : ''}{lesson.name}</option>)}
-                          </select>
+                          </SearchableSelect>
                         </label>
                       );
                     })}
@@ -954,7 +955,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                       return (
                         <label key={item.key} className="grid gap-1 text-sm sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] sm:items-center sm:gap-3">
                           <span className="font-medium text-gray-800">Exam: “{item.examLabel}”</span>
-                          <select
+                          <SearchableSelect
                             value={mappings.exams[item.key] || ''}
                             disabled={!course}
                             onChange={event => setMappings(current => ({ ...current, exams: { ...current.exams, [item.key]: event.target.value } }))}
@@ -962,7 +963,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                           >
                             <option value="">{course ? 'Choose exam…' : 'Choose the course first'}</option>
                             {course?.exams?.map(exam => <option key={exam.id} value={exam.id}>{exam.name}</option>)}
-                          </select>
+                          </SearchableSelect>
                         </label>
                       );
                     })}
@@ -1013,7 +1014,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                         <div className="mt-3 grid gap-3 sm:grid-cols-2">
                           <label className="block">
                             <span className="mb-1 block text-xs font-medium text-orange-900">Result</span>
-                            <select
+                            <SearchableSelect
                               value={item.result}
                               onChange={event => {
                                 const result = event.target.value as ImportedFlightTestResult;
@@ -1030,7 +1031,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                               <option value="not_assessed">Select result…</option>
                               <option value="pass">Pass</option>
                               <option value="fail">Further training required</option>
-                            </select>
+                            </SearchableSelect>
                           </label>
                           <label className="block sm:col-span-2">
                             <span className="mb-1 block text-xs font-medium text-orange-900">

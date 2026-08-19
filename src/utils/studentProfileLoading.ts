@@ -18,7 +18,8 @@ export const getStudentProfileLoadPlan = (
     || activeTab === 'timeline',
   safetyReports: activeTab === 'safety' || activeTab === 'timeline',
   examResults: activeTab === 'exams'
+    || activeTab === 'courses'
     || activeTab === 'timeline'
-    || (activeTab === 'training' && trainingSubtab === 'exams'),
+    || (activeTab === 'training' && (trainingSubtab === 'exams' || trainingSubtab === 'courses')),
   invoices: activeTab === 'billing',
 });

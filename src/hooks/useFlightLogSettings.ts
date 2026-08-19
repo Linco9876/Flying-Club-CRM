@@ -90,111 +90,24 @@ export function useFlightLogSettings(aircraftId?: string | null) {
   };
 
   const updateSettings = async (nextSettings: FlightLogFieldSetting[]) => {
+    if (error) return { error: 'Flight log settings must load successfully before they can be changed.' };
     try {
       const timestamp = new Date().toISOString();
-      const existingRows = nextSettings.filter(setting => !setting.id.startsWith('flight-log-field-'));
-      const newRows = nextSettings.filter(setting => setting.id.startsWith('flight-log-field-'));
-
-      for (const setting of existingRows) {
-        const { error: updateError } = await supabase
-          .from('flight_log_field_settings')
-          .update({
-            aircraft_id: setting.aircraft_id ?? null,
-            field_name: setting.field_name,
-            is_enabled: setting.is_enabled,
-            is_mandatory: setting.is_enabled ? setting.is_mandatory : false,
-            display_order: setting.display_order,
-            updated_at: timestamp,
-          })
-          .eq('id', setting.id);
-
-        if (updateError) throw updateError;
-      }
-
-      const toPayload = (setting: FlightLogFieldSetting) => ({
+      const payload = nextSettings.map(setting => ({
+        id: setting.id.startsWith('flight-log-field-') ? crypto.randomUUID() : setting.id,
         aircraft_id: setting.aircraft_id ?? null,
         field_name: setting.field_name,
         is_enabled: setting.is_enabled,
         is_mandatory: setting.is_enabled ? setting.is_mandatory : false,
         display_order: setting.display_order,
         updated_at: timestamp,
-      });
+      }));
 
-      const globalDraftRows = newRows.filter(setting => !setting.aircraft_id);
-      const globalRows = globalDraftRows.map(toPayload);
-      if (globalRows.length > 0) {
-        const { data: existingGlobalRows, error: globalLookupError } = await supabase
-          .from('flight_log_field_settings')
-          .select('id, field_name')
-          .is('aircraft_id', null)
-          .in('field_name', globalDraftRows.map(setting => setting.field_name));
+      const { error: upsertError } = await supabase
+        .from('flight_log_field_settings')
+        .upsert(payload, { onConflict: 'id' });
 
-        if (globalLookupError) throw globalLookupError;
-
-        const existingGlobalByName = new Map((existingGlobalRows || []).map(row => [row.field_name, row.id]));
-        const globalRowsToInsert = globalDraftRows
-          .filter(setting => !existingGlobalByName.has(setting.field_name))
-          .map(toPayload);
-
-        for (const setting of globalDraftRows.filter(row => existingGlobalByName.has(row.field_name))) {
-          const { error: globalUpdateError } = await supabase
-            .from('flight_log_field_settings')
-            .update(toPayload(setting))
-            .eq('id', existingGlobalByName.get(setting.field_name));
-
-          if (globalUpdateError) throw globalUpdateError;
-        }
-
-        if (globalRowsToInsert.length > 0) {
-          const { error: globalInsertError } = await supabase
-            .from('flight_log_field_settings')
-            .insert(globalRowsToInsert);
-
-          if (globalInsertError) throw globalInsertError;
-        }
-      }
-
-      const aircraftGroups = new Map<string, FlightLogFieldSetting[]>();
-      newRows
-        .filter(setting => setting.aircraft_id)
-        .forEach(setting => {
-          const group = aircraftGroups.get(setting.aircraft_id!) || [];
-          group.push(setting);
-          aircraftGroups.set(setting.aircraft_id!, group);
-        });
-
-      for (const [aircraftId, aircraftDraftRows] of aircraftGroups.entries()) {
-        const { data: existingAircraftRows, error: aircraftLookupError } = await supabase
-          .from('flight_log_field_settings')
-          .select('id, field_name')
-          .eq('aircraft_id', aircraftId)
-          .in('field_name', aircraftDraftRows.map(setting => setting.field_name));
-
-        if (aircraftLookupError) throw aircraftLookupError;
-
-        const existingAircraftByName = new Map((existingAircraftRows || []).map(row => [row.field_name, row.id]));
-
-        for (const setting of aircraftDraftRows.filter(row => existingAircraftByName.has(row.field_name))) {
-          const { error: aircraftUpdateError } = await supabase
-            .from('flight_log_field_settings')
-            .update(toPayload(setting))
-            .eq('id', existingAircraftByName.get(setting.field_name));
-
-          if (aircraftUpdateError) throw aircraftUpdateError;
-        }
-
-        const aircraftRowsToInsert = aircraftDraftRows
-          .filter(setting => !existingAircraftByName.has(setting.field_name))
-          .map(toPayload);
-
-        if (aircraftRowsToInsert.length > 0) {
-          const { error: aircraftInsertError } = await supabase
-            .from('flight_log_field_settings')
-            .insert(aircraftRowsToInsert);
-
-          if (aircraftInsertError) throw aircraftInsertError;
-        }
-      }
+      if (upsertError) throw upsertError;
 
       await fetchSettings();
       return { error: null };

@@ -7,6 +7,7 @@ import { Action, Resource, rolePermissions } from '../../utils/rbac';
 import { UserRole } from '../../types';
 import { StudentFileLink } from '../Students/StudentFileLink';
 import { useLatestEffect } from '../../hooks/useLatestEffect';
+import { SettingsLoadError } from './SettingsLoadError';
 
 interface RolesPermissionsSettingsProps {
   canEdit: boolean;
@@ -45,7 +46,7 @@ const permissionRows: PermissionRow[] = [
 
 const roleLabels: Record<UserRole, string> = {
   admin: 'Admin',
-  cfi: 'CFI',
+  cfi: 'CFI / DCFI review',
   senior_instructor: 'Senior Instructor',
   instructor: 'Instructor',
   pilot: 'Pilot',
@@ -114,7 +115,7 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
     }
 
     if (role === 'instructor' && !isChecked && targetRoles.includes('cfi')) {
-      toast.error('Remove the CFI authority before removing the Instructor role.');
+      toast.error('Remove the CFI/DCFI review authority before removing the Instructor role.');
       return;
     }
 
@@ -150,12 +151,17 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
       }
     } catch (err) {
       console.error('Error changing user role:', err);
+      await refetch();
     } finally {
       setUpdatingUserId(null);
     }
   };
 
   const roleCount = (role: UserRole) => users.filter(user => (user.roles || [user.role]).includes(role)).length;
+
+  if (error && !loading) {
+    return <SettingsLoadError section="Roles & permissions" error={error} onRetry={refetch} />;
+  }
 
   return (
     <div className="p-6 space-y-8">
@@ -185,7 +191,7 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
               User Role Assignment
             </h3>
             <p className="text-sm text-gray-500 mt-1">
-              Role changes save immediately. CFI is a protected authority added to an Instructor account; it does not replace the person's normal portal role. Student is standalone.
+              Role changes save immediately. CFI / DCFI review is a protected authority added to an Instructor account; assign it only to authorised CFI or DCFI reviewers. It does not replace the person's normal portal role. Student is standalone.
             </p>
           </div>
           <input
@@ -255,7 +261,7 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
                           const title = wouldConflictWithStudent
                             ? 'Student cannot be combined with any other role'
                             : role === 'instructor' && checked && userRoles.includes('cfi')
-                              ? 'Remove the CFI authority before removing Instructor'
+                              ? 'Remove the CFI/DCFI review authority before removing Instructor'
                             : role === 'senior_instructor' && !userRoles.includes('instructor')
                               ? 'Assign Instructor before Senior Instructor'
                               : undefined;

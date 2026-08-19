@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useState } from 'react';
 import { X, Save, Send, Clock, User, FileText, Upload, FileSignature as Signature, Check, Plus, Search, Sparkles, RotateCcw, Loader2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -431,7 +432,7 @@ export const TrainingRecordForm: React.FC<TrainingRecordFormProps> = ({
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Instructor *</label>
                   {user?.role === 'admin' ? (
-                    <select
+                    <SearchableSelect
                       value={formData.instructorId}
                       onChange={(e) => setFormData(prev => ({ ...prev, instructorId: e.target.value }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -439,7 +440,7 @@ export const TrainingRecordForm: React.FC<TrainingRecordFormProps> = ({
                       {mockStudents.filter(s => s.role === 'instructor').map(instructor => (
                         <option key={instructor.id} value={instructor.id}>{instructor.name}</option>
                       ))}
-                    </select>
+                    </SearchableSelect>
                   ) : (
                     <input
                       type="text"
@@ -454,7 +455,7 @@ export const TrainingRecordForm: React.FC<TrainingRecordFormProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Aircraft Registration *</label>
-                  <select
+                  <SearchableSelect
                     value={formData.aircraftRegistration}
                     onChange={(e) => setFormData(prev => ({ ...prev, aircraftRegistration: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -467,12 +468,12 @@ export const TrainingRecordForm: React.FC<TrainingRecordFormProps> = ({
                       </option>
                     ))}
                     <option value="OTHER">Other</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Aircraft Type</label>
-                  <select
+                  <SearchableSelect
                     value={formData.aircraftType}
                     onChange={(e) => setFormData(prev => ({ ...prev, aircraftType: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -480,7 +481,7 @@ export const TrainingRecordForm: React.FC<TrainingRecordFormProps> = ({
                     <option value="single-engine">Single Engine</option>
                     <option value="multi-engine">Multi Engine</option>
                     <option value="helicopter">Helicopter</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 <div className="flex items-center space-x-3 pt-8">
@@ -606,7 +607,7 @@ export const TrainingRecordForm: React.FC<TrainingRecordFormProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Lesson Code</label>
-                  <select
+                  <SearchableSelect
                     value={formData.lessonCode}
                     onChange={(e) => setFormData(prev => ({ ...prev, lessonCode: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -615,12 +616,12 @@ export const TrainingRecordForm: React.FC<TrainingRecordFormProps> = ({
                     {lessonCodes.map(lesson => (
                       <option key={lesson.value} value={lesson.value}>{lesson.label}</option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Next Lesson</label>
-                  <select
+                  <SearchableSelect
                     value={formData.nextLessonCode}
                     onChange={(e) => setFormData(prev => ({ ...prev, nextLessonCode: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -629,7 +630,7 @@ export const TrainingRecordForm: React.FC<TrainingRecordFormProps> = ({
                     {lessonCodes.map(lesson => (
                       <option key={lesson.value} value={lesson.value}>{lesson.label}</option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                 </div>
               </div>
 

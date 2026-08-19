@@ -14,6 +14,18 @@ import {
   pendingAccountClaimResponse,
   resolvePendingAccountRedirect,
 } from "../_shared/pendingPortalAccount.ts";
+import { brandPortalEmailHtml } from "../_shared/emailBranding.ts";
+import { buildPasswordResetEmail } from "../_shared/passwordResetEmail.ts";
+import {
+  nextPasswordResetRequestWindow,
+  passwordResetRequestIsAvailable,
+  passwordResetRequestIsWithinWindowLimit,
+  publicPasswordResetResponse,
+} from "../_shared/passwordResetRequest.ts";
+import {
+  provisioningAccessFor,
+  validProvisionedUserRoles,
+} from "../_shared/userProvisioningRules.ts";
 
 declare const EdgeRuntime: {
   waitUntil(promise: Promise<unknown>): void;
@@ -26,13 +38,6 @@ const corsHeaders = {
     "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-const validRoles = new Set([
-  "admin",
-  "senior_instructor",
-  "instructor",
-  "pilot",
-  "student",
-]);
 const defaultPortalOrigin = "https://portal.bendigoflyingclub.com.au";
 
 const jsonResponse = (body: Record<string, unknown>, status = 200) =>
@@ -145,7 +150,7 @@ const sendSetupEmail = async ({
     ? "Verify your portal account"
     : "Your portal invitation";
   const introduction = isPasswordReset
-    ? "A club administrator has sent you a secure link to choose a new password for your Bendigo Flying Club portal account."
+    ? "A secure password reset was requested for your Bendigo Flying Club portal account. Use the link below to choose a new password."
     : isAccountClaim
     ? "The club has already added your details to the portal. Use this secure link to verify your email address and choose your own password."
     : "You have been invited to the Bendigo Flying Club portal. Use it to manage bookings, flying records, club documents and your account information.";
@@ -159,6 +164,9 @@ const sendSetupEmail = async ({
     : isAccountClaim
     ? "If you did not try to create a portal account, you can ignore this email."
     : "If you did not expect this invitation, you can ignore this email.";
+  const passwordResetEmail = isPasswordReset
+    ? await buildPasswordResetEmail({ name, setupLink })
+    : null;
 
   const response = await fetch("https://api.brevo.com/v3/smtp/email", {
     method: "POST",
@@ -169,8 +177,9 @@ const sendSetupEmail = async ({
     body: JSON.stringify({
       sender: { email: senderEmail, name: senderName },
       to: [{ email, name }],
-      subject,
-      htmlContent: `<!doctype html>
+      subject: passwordResetEmail?.subject || subject,
+      htmlContent: passwordResetEmail?.htmlContent ||
+        await brandPortalEmailHtml(`<!doctype html>
 <html lang="en">
   <body style="margin:0;background:#f1f5f9;font-family:Arial,sans-serif;color:#172033;">
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f1f5f9;padding:28px 12px;">
@@ -204,7 +213,7 @@ const sendSetupEmail = async ({
       </td></tr>
     </table>
   </body>
-</html>`,
+</html>`),
     }),
   });
 
@@ -423,6 +432,230 @@ const handlePendingAccountClaim = async ({
   }
 };
 
+const sha256Hex = async (value: string) => {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(value),
+  );
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+};
+
+type PasswordResetRequestRow = {
+  user_id: string;
+  email_hash: string;
+  reserved_at: string;
+  window_started_at: string;
+  request_count: number;
+  updated_at: string;
+};
+
+type PasswordResetReservation = {
+  userId: string;
+  reservedAt: string;
+  previous: PasswordResetRequestRow | null;
+};
+
+const reservePasswordResetEmail = async ({
+  adminClient,
+  userId,
+  email,
+}: {
+  adminClient: SupabaseClient;
+  userId: string;
+  email: string;
+}) => {
+  const { data: existing, error: lookupError } = await adminClient
+    .from("password_reset_email_requests")
+    .select(
+      "user_id,email_hash,reserved_at,window_started_at,request_count,updated_at",
+    )
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (lookupError) {
+    console.warn(
+      "Password reset reservation lookup failed",
+      lookupError.message,
+    );
+    return null;
+  }
+
+  if (
+    existing &&
+    (!passwordResetRequestIsAvailable(existing.reserved_at) ||
+      !passwordResetRequestIsWithinWindowLimit(
+        existing.request_count,
+        existing.window_started_at,
+      ))
+  ) {
+    return null;
+  }
+
+  const reservedAt = new Date().toISOString();
+  const nextWindow = nextPasswordResetRequestWindow(
+    existing?.request_count,
+    existing?.window_started_at,
+    Date.parse(reservedAt),
+  );
+  const values = {
+    email_hash: await sha256Hex(email),
+    reserved_at: reservedAt,
+    window_started_at: nextWindow.windowStartedAt,
+    request_count: nextWindow.requestCount,
+    updated_at: reservedAt,
+  };
+
+  if (!existing) {
+    const { error } = await adminClient
+      .from("password_reset_email_requests")
+      .insert({ user_id: userId, ...values });
+    if (error) {
+      if (error.code !== "23505") {
+        console.warn("Password reset reservation insert failed", error.message);
+      }
+      return null;
+    }
+    return {
+      userId,
+      reservedAt,
+      previous: null,
+    } satisfies PasswordResetReservation;
+  }
+
+  const { data: reserved, error: reservationError } = await adminClient
+    .from("password_reset_email_requests")
+    .update(values)
+    .eq("user_id", userId)
+    .eq("reserved_at", existing.reserved_at)
+    .select("user_id")
+    .maybeSingle();
+  if (reservationError) {
+    console.warn(
+      "Password reset reservation update failed",
+      reservationError.message,
+    );
+    return null;
+  }
+  if (!reserved) return null;
+  return {
+    userId,
+    reservedAt,
+    previous: existing as PasswordResetRequestRow,
+  } satisfies PasswordResetReservation;
+};
+
+const releasePasswordResetReservation = async (
+  adminClient: SupabaseClient,
+  reservation: PasswordResetReservation,
+) => {
+  if (!reservation.previous) {
+    const { error } = await adminClient
+      .from("password_reset_email_requests")
+      .delete()
+      .eq("user_id", reservation.userId)
+      .eq("reserved_at", reservation.reservedAt);
+    if (error) {
+      console.warn("Password reset reservation release failed", error.message);
+    }
+    return;
+  }
+
+  const { user_id: _userId, ...previousValues } = reservation.previous;
+  const { error } = await adminClient
+    .from("password_reset_email_requests")
+    .update(previousValues)
+    .eq("user_id", reservation.userId)
+    .eq("reserved_at", reservation.reservedAt);
+  if (error) {
+    console.warn("Password reset reservation restore failed", error.message);
+  }
+};
+
+const handlePublicPasswordReset = async ({
+  adminClient,
+  emailValue,
+  redirectValue,
+}: {
+  adminClient: SupabaseClient;
+  emailValue: unknown;
+  redirectValue: unknown;
+}) => {
+  if (!isValidPendingAccountEmail(emailValue)) return;
+  const email = normaliseEmail(emailValue);
+  const authUser = await findAuthUserByEmail(adminClient, email);
+  if (!authUser || normaliseEmail(authUser.email) !== email) return;
+
+  const reservation = await reservePasswordResetEmail({
+    adminClient,
+    userId: authUser.id,
+    email,
+  });
+  if (!reservation) return;
+
+  let delivered = false;
+  try {
+    const { data: profile, error: profileError } = await adminClient
+      .from("users")
+      .select("name,email")
+      .eq("id", authUser.id)
+      .maybeSingle();
+    if (profileError) {
+      console.warn(
+        "Password reset profile lookup failed",
+        profileError.message,
+      );
+    }
+    if (profile?.email && normaliseEmail(profile.email) !== email) {
+      console.warn(
+        "Password reset profile and authentication emails do not match",
+      );
+      return;
+    }
+
+    const name =
+      String(profile?.name || authUser.user_metadata?.name || email).trim() ||
+      email;
+    const redirectTo = resolvePendingAccountRedirect(
+      redirectValue,
+      Deno.env.get("PORTAL_ORIGIN") || defaultPortalOrigin,
+    );
+    const { actionLink, error: actionError } = await generateAuthAction({
+      adminClient,
+      email,
+      name,
+      phone: null,
+      redirectTo,
+      existingAuthUser: authUser,
+    });
+    if (actionError || !actionLink) {
+      console.warn(
+        "Public password reset link generation failed",
+        actionError?.message || "No action link",
+      );
+      return;
+    }
+
+    const delivery = await sendSetupEmail({
+      email,
+      name,
+      setupLink: buildScannerSafeLink(actionLink, redirectTo, "password_reset"),
+      purpose: "password_reset",
+    });
+    delivered = delivery.sent;
+    if (!delivery.sent) {
+      console.warn(
+        "Public password reset email delivery failed",
+        delivery.error,
+      );
+    }
+  } finally {
+    if (!delivered) {
+      await releasePasswordResetReservation(adminClient, reservation);
+    }
+  }
+};
+
 const removeProvisionedAuthUser = async (
   adminClient: SupabaseClient,
   userId: string,
@@ -466,6 +699,21 @@ Deno.serve(async (req: Request) => {
       });
       EdgeRuntime.waitUntil(claimTask);
       return jsonResponse(pendingAccountClaimResponse());
+    }
+
+    if (body.action === "request_password_reset") {
+      const resetTask = handlePublicPasswordReset({
+        adminClient,
+        emailValue: body.email,
+        redirectValue: body.redirectTo,
+      }).catch((error) => {
+        console.warn(
+          "Public password reset request failed",
+          error instanceof Error ? error.message : "Unknown error",
+        );
+      });
+      EdgeRuntime.waitUntil(resetTask);
+      return jsonResponse(publicPasswordResetResponse());
     }
 
     const authHeader = req.headers.get("Authorization");
@@ -541,11 +789,13 @@ Deno.serve(async (req: Request) => {
     if (callerRolesError) {
       return jsonResponse({ error: callerRolesError.message }, 500);
     }
-    if (!(callerRoles || []).some((row) => row.role === "admin")) {
-      return jsonResponse({ error: "Only admins can manage user access" }, 403);
-    }
+    const callerRoleNames = (callerRoles || []).map((row) => String(row.role));
+    const callerIsAdmin = callerRoleNames.includes("admin");
 
     if (body.action === "send_password_reset") {
+      if (!callerIsAdmin) {
+        return jsonResponse({ error: "Only admins can manage password resets" }, 403);
+      }
       const targetUserId = String(body.userId || "").trim();
       if (
         !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -634,7 +884,7 @@ Deno.serve(async (req: Request) => {
       : ["student"];
     const userRoles = Array.from(new Set(requestedRoles))
       .map((role) => String(role).trim())
-      .filter((role) => validRoles.has(role));
+      .filter((role) => validProvisionedUserRoles.has(role));
 
     if (!isValidPendingAccountEmail(email) || !name) {
       return jsonResponse(
@@ -655,6 +905,10 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({
         error: "Student cannot be combined with any other role",
       }, 400);
+    }
+    const provisioningAccess = provisioningAccessFor(callerRoleNames, userRoles);
+    if (!provisioningAccess.allowed) {
+      return jsonResponse({ error: provisioningAccess.error || "User access is not permitted" }, 403);
     }
 
     const { data: existingProfile, error: profileLookupError } =

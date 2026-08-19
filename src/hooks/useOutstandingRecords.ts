@@ -55,7 +55,7 @@ export function useOutstandingRecords(instructorId?: string, fetchAll?: boolean)
             ? supabase.from('users').select('id, name, email').in('id', allUserIds)
             : Promise.resolve({ data: [] }),
           aircraftIds.length > 0
-            ? supabase.from('aircraft').select('id, registration, type').in('id', aircraftIds)
+            ? supabase.from('aircraft').select('id, registration, make, model, type').in('id', aircraftIds)
             : Promise.resolve({ data: [] }),
         ]);
 
@@ -69,7 +69,10 @@ export function useOutstandingRecords(instructorId?: string, fetchAll?: boolean)
           student_email: userMap.get(log.student_id)?.email,
           instructor_name: userMap.get(log.instructor_id)?.name,
           aircraft_registration: aircraftMap.get(log.aircraft_id)?.registration,
-          aircraft_type: aircraftMap.get(log.aircraft_id)?.type,
+          aircraft_type: [
+            aircraftMap.get(log.aircraft_id)?.make,
+            aircraftMap.get(log.aircraft_id)?.model,
+          ].filter(Boolean).join(' ') || aircraftMap.get(log.aircraft_id)?.type,
         }));
       };
 

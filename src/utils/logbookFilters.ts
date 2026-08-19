@@ -22,7 +22,12 @@ export interface LogbookFilterableEntry {
   flight_duration?: number | null;
   dual_time?: number | null;
   solo_time?: number | null;
+  hoursDual?: number | null;
+  hoursPic?: number | null;
   comments?: string | null;
+  lessonName?: string | null;
+  bookingDescription?: string | null;
+  personalNote?: string | null;
   payment_type?: string | null;
   pilotInCommand?: string | null;
   otherPilotOrCrew?: string | null;
@@ -85,14 +90,19 @@ export const filterAndSortLogbookEntries = <T extends LogbookFilterableEntry>(
     if (filters.dateFrom && (!dateKey || dateKey < filters.dateFrom)) return false;
     if (filters.dateTo && (!dateKey || dateKey > filters.dateTo)) return false;
 
-    if (filters.flightMode === 'dual' && Number(entry.dual_time || 0) <= 0) return false;
-    if (filters.flightMode === 'solo' && Number(entry.solo_time || 0) <= 0) return false;
+    const dualHours = entry.hoursDual ?? entry.dual_time;
+    const picHours = entry.hoursPic ?? entry.solo_time;
+    if (filters.flightMode === 'dual' && Number(dualHours || 0) <= 0) return false;
+    if (filters.flightMode === 'solo' && Number(picHours || 0) <= 0) return false;
 
     if (search) {
       const searchable = normalise([
         getAircraftLabel(entry),
         entry.pilotInCommand,
         entry.otherPilotOrCrew,
+        entry.lessonName,
+        entry.bookingDescription,
+        entry.personalNote,
         entry.comments,
         entry.payment_type,
       ].filter(Boolean).join(' '));

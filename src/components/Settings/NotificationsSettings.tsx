@@ -10,6 +10,7 @@ import {
   Wrench,
 } from 'lucide-react';
 import { NotificationSettings as NotificationSettingsRecord, useNotificationSettings } from '../../hooks/useSettings';
+import { SettingsLoadError } from './SettingsLoadError';
 
 interface NotificationsSettingsProps {
   canEdit: boolean;
@@ -19,10 +20,8 @@ interface NotificationsSettingsProps {
 type NotificationFormData = Omit<NotificationSettingsRecord, 'id'>;
 type NotificationField = keyof NotificationFormData;
 
-const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50';
-
 export const NotificationsSettings: React.FC<NotificationsSettingsProps> = ({ canEdit, onFormChange }) => {
-  const { settings, loading, updateSettings } = useNotificationSettings();
+  const { settings, loading, error, updateSettings, refetch } = useNotificationSettings();
   const [formData, setFormData] = useState<NotificationFormData>({
     email_notifications_enabled: true,
     sms_notifications_enabled: false,
@@ -75,11 +74,6 @@ export const NotificationsSettings: React.FC<NotificationsSettingsProps> = ({ ca
     onFormChange();
   };
 
-  const updateNumberField = (field: NotificationField, value: string, fallback: number) => {
-    const parsed = Number.parseInt(value, 10);
-    updateField(field, Number.isFinite(parsed) ? parsed : fallback);
-  };
-
   const Toggle = ({
     field,
     label,
@@ -104,51 +98,43 @@ export const NotificationsSettings: React.FC<NotificationsSettingsProps> = ({ ca
     </label>
   );
 
-  const NumberInput = ({
-    field,
+  const UnavailableSetting = ({
     label,
     description,
-    min,
-    max,
-    suffix,
   }: {
-    field: NotificationField;
     label: string;
     description: string;
-    min: number;
-    max: number;
-    suffix: string;
   }) => (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
-      <div className="flex max-w-xs rounded-md shadow-sm">
-        <input
-          type="number"
-          min={min}
-          max={max}
-          value={Number(formData[field])}
-          onChange={event => updateNumberField(field, event.target.value, min)}
-          disabled={!canEdit}
-          className={`${inputClass} rounded-r-none`}
-        />
-        <span className="inline-flex items-center rounded-r-md border border-l-0 border-gray-300 bg-gray-50 px-3 text-sm text-gray-500">
-          {suffix}
+    <div className="rounded-md border border-gray-200 bg-gray-50 p-3" aria-disabled="true">
+      <div className="flex items-start justify-between gap-3">
+        <span>
+          <span className="block text-sm font-medium text-gray-700">{label}</span>
+          <span className="mt-0.5 block text-xs text-gray-500">{description}</span>
+        </span>
+        <span className="shrink-0 rounded-full bg-gray-200 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+          Not connected
         </span>
       </div>
-      <p className="mt-1 text-xs text-gray-500">{description}</p>
     </div>
   );
 
-  const TimeInput = ({ field, label }: { field: NotificationField; label: string }) => (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
-      <input
-        type="time"
-        value={String(formData[field])}
-        onChange={event => updateField(field, event.target.value)}
-        disabled={!canEdit}
-        className={`${inputClass} max-w-xs`}
-      />
+  const ActiveWorkflow = ({
+    label,
+    description,
+  }: {
+    label: string;
+    description: string;
+  }) => (
+    <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <span>
+          <span className="block text-sm font-medium text-emerald-950">{label}</span>
+          <span className="mt-0.5 block text-xs text-emerald-800">{description}</span>
+        </span>
+        <span className="shrink-0 rounded-full bg-emerald-200 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-800">
+          Active
+        </span>
+      </div>
     </div>
   );
 
@@ -159,6 +145,7 @@ export const NotificationsSettings: React.FC<NotificationsSettingsProps> = ({ ca
       </div>
     );
   }
+  if (error) return <SettingsLoadError section="Notification" error={error} onRetry={refetch} />;
 
   return (
     <div className="p-6 space-y-8">
@@ -180,8 +167,8 @@ export const NotificationsSettings: React.FC<NotificationsSettingsProps> = ({ ca
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
           <Toggle field="in_app_notifications_enabled" label="In-app notifications" description="Show alerts in the notification bell inside the CRM." />
-          <Toggle field="email_notifications_enabled" label="Email notifications" description="Allow the system to send email notifications when email delivery is connected." />
-          <Toggle field="sms_notifications_enabled" label="SMS notifications" description="Allow urgent SMS alerts when an SMS provider is connected." />
+          <UnavailableSetting label="Email notifications" description="No general notification email service is installed. Transactional emails continue through their own audited workflows." />
+          <UnavailableSetting label="SMS notifications" description="No SMS delivery provider is installed, so this cannot be enabled yet." />
         </div>
       </section>
 
@@ -195,13 +182,13 @@ export const NotificationsSettings: React.FC<NotificationsSettingsProps> = ({ ca
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <Toggle field="booking_confirmation_enabled" label="Booking confirmations" description="Notify participants when a booking is created." />
-          <Toggle field="booking_change_notification_enabled" label="Booking changes" description="Notify participants when times, aircraft, instructor or notes change." />
-          <Toggle field="booking_reminder_24h_enabled" label="24 hour reminders" description="Send a reminder the day before a flight." />
-          <Toggle field="booking_reminder_2h_enabled" label="2 hour reminders" description="Send a same-day reminder shortly before a flight." />
+          <Toggle field="booking_change_notification_enabled" label="Booking changes" description="Notify participants when times, aircraft, instructor or status change." />
           <Toggle field="cancellation_notification_enabled" label="Cancellations" description="Notify affected people when a booking is cancelled." />
           <Toggle field="waitlist_notification_enabled" label="Waitlist movement" description="Notify people when a waitlisted booking is promoted or blocked by a conflict." />
-          <Toggle field="instructor_absence_notification_enabled" label="Instructor absence changes" description="Notify affected people when temporary absences change booking availability." />
           <Toggle field="approval_request_notification_enabled" label="Approval requests" description="Notify instructors and admins when a booking or training action needs approval." />
+          <ActiveWorkflow label="Guest booking emails" description="Casual guests receive a confirmation and a day-prior email reminder. The reminder is suppressed when confirmation was sent in the previous 12 hours." />
+          <UnavailableSetting label="Member timed reminders" description="General member 24-hour and 2-hour reminder controls are not installed yet. Guest/casual reminders run through their dedicated audited workflow." />
+          <UnavailableSetting label="Instructor absence messages" description="Availability changes affect booking checks immediately; participant messaging is not automated yet." />
         </div>
       </section>
 
@@ -215,13 +202,10 @@ export const NotificationsSettings: React.FC<NotificationsSettingsProps> = ({ ca
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <Toggle field="maintenance_alert_enabled" label="Maintenance alerts" description="Notify staff when aircraft maintenance milestones are coming due." />
-          <Toggle field="defect_report_notification_enabled" label="Defect reports" description="Notify maintenance/admin staff when a defect is lodged or updated." />
-          <Toggle field="safety_report_notification_enabled" label="Safety reports" description="Notify safety/admin staff when an incident or hazard report is submitted." />
+          <Toggle field="defect_report_notification_enabled" label="Defect reports" description="Notify maintenance/admin staff about defect-related grounding and maintenance events." />
+          <UnavailableSetting label="Safety report messages" description="Safety reports remain visible in the safety workflow; a separate automatic alert sender is not installed." />
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <NumberInput field="maintenance_due_alert_days" label="Calendar maintenance warning" description="Warn this many days before date-based maintenance is due." min={1} max={180} suffix="days" />
-          <NumberInput field="maintenance_due_alert_hours" label="Aircraft hour maintenance warning" description="Warn when a tach or airframe milestone is this close." min={1} max={100} suffix="hours" />
-        </div>
+        <p className="text-sm text-gray-500">Maintenance warning thresholds are configured once in Maintenance settings, where the hourly maintenance job uses them.</p>
       </section>
 
       <section className="space-y-4">
@@ -232,9 +216,9 @@ export const NotificationsSettings: React.FC<NotificationsSettingsProps> = ({ ca
           </h3>
           <p className="text-sm text-gray-500 mt-1">Settings for keeping pilot records, training records and flight logs from quietly going stale.</p>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <NumberInput field="currency_expiry_alert_days" label="Currency expiry warning" description="Warn before medical, licence or club currency expiry dates." min={1} max={365} suffix="days" />
-          <NumberInput field="overdue_flight_record_alert_hours" label="Overdue flight record warning" description="Flag bookings that still have no logged flight after this time." min={1} max={168} suffix="hours" />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <UnavailableSetting label="Currency expiry messages" description="Expiry status is enforced in safety checks, but scheduled expiry notifications are not installed." />
+          <UnavailableSetting label="Overdue flight-record messages" description="Outstanding records are visible in the training workflow; timed reminder delivery is not installed." />
         </div>
       </section>
 
@@ -244,16 +228,11 @@ export const NotificationsSettings: React.FC<NotificationsSettingsProps> = ({ ca
             <Clock className="h-5 w-5 mr-2 text-blue-600" />
             Timing Rules
           </h3>
-          <p className="text-sm text-gray-500 mt-1">These controls prepare the CRM for digest-style messaging and after-hours quiet periods.</p>
+          <p className="text-sm text-gray-500 mt-1">Scheduled and delayed delivery features only appear as editable controls after their jobs are installed.</p>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          <Toggle field="daily_ops_digest_enabled" label="Daily operations digest" description="Send staff a morning summary of bookings, maintenance and outstanding records." />
-          <Toggle field="quiet_hours_enabled" label="Quiet hours" description="Hold non-urgent notifications during the selected after-hours period." />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <TimeInput field="daily_ops_digest_time" label="Digest time" />
-          <TimeInput field="quiet_hours_start" label="Quiet hours start" />
-          <TimeInput field="quiet_hours_end" label="Quiet hours end" />
+          <UnavailableSetting label="Daily operations digest" description="No scheduled digest job is installed." />
+          <UnavailableSetting label="Quiet-hours queue" description="The CRM does not yet have a delayed-delivery queue, so in-app alerts appear immediately." />
         </div>
       </section>
 
@@ -263,7 +242,7 @@ export const NotificationsSettings: React.FC<NotificationsSettingsProps> = ({ ca
           <div>
             <h4 className="text-sm font-medium text-amber-900">Delivery note</h4>
             <p className="mt-1 text-sm text-amber-800">
-              These settings control what the CRM should generate. Email, SMS and scheduled digest delivery still need their provider jobs connected before those channels can send outside the app.
+              Every editable switch on this page is enforced when an in-app notification is created. Features without a working sender are shown as unavailable instead of saving a setting that has no effect.
             </p>
           </div>
         </div>
@@ -275,7 +254,7 @@ export const NotificationsSettings: React.FC<NotificationsSettingsProps> = ({ ca
           <div>
             <h4 className="text-sm font-medium text-green-900">Personal preferences still apply</h4>
             <p className="mt-1 text-sm text-green-800">
-              Club-wide settings define what is available. Each user can still narrow their own email, SMS, reminder, currency and maintenance preferences in Personal Preferences.
+              Club-wide settings define what is available. Staff can additionally turn off their own maintenance alerts in Personal Preferences.
             </p>
           </div>
         </div>

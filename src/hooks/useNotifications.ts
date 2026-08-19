@@ -1,17 +1,34 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Notification } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useLatestEffect } from './useLatestEffect';
+import { getUnreadNotificationCount } from '../utils/notificationBadge';
 
 export const useNotifications = () => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
+  const unreadCount = useMemo(
+    () => getUnreadNotificationCount(notifications),
+    [notifications],
+  );
+
+  useEffect(() => {
+    const badgeNavigator = navigator as Navigator & {
+      setAppBadge?: (contents?: number) => Promise<void>;
+      clearAppBadge?: () => Promise<void>;
+    };
+    if (unreadCount > 0 && badgeNavigator.setAppBadge) {
+      void badgeNavigator.setAppBadge(unreadCount).catch(() => undefined);
+    } else if (unreadCount === 0 && badgeNavigator.clearAppBadge) {
+      void badgeNavigator.clearAppBadge().catch(() => undefined);
+    }
+  }, [unreadCount]);
 
   const fetchNotifications = async () => {
     if (!user?.id) {
+      setNotifications([]);
       setLoading(false);
       return;
     }
@@ -40,7 +57,6 @@ export const useNotifications = () => {
       }));
 
       setNotifications(notificationsList);
-      setUnreadCount(notificationsList.filter(n => !n.isRead).length);
     } catch (err) {
       console.error('Error fetching notifications:', err);
     } finally {
@@ -60,7 +76,6 @@ export const useNotifications = () => {
       setNotifications(prev =>
         prev.map(n => (n.id === notificationId ? { ...n, isRead: true } : n))
       );
-      setUnreadCount(prev => Math.max(0, prev - 1));
     } catch (err) {
       console.error('Error marking notification as read:', err);
     }
@@ -79,9 +94,38 @@ export const useNotifications = () => {
       if (error) throw error;
 
       setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
-      setUnreadCount(0);
     } catch (err) {
       console.error('Error marking all notifications as read:', err);
+    }
+  };
+
+  const clearAllNotifications = async () => {
+    if (!user?.id) return false;
+
+    try {
+      // Mark first so the unread badge clears even if a later delete is
+      // interrupted. Deletion then removes the cleared items from the tray.
+      const { error: readError } = await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('user_id', user.id)
+        .eq('is_read', false);
+
+      if (readError) throw readError;
+      setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+
+      const { error: deleteError } = await supabase
+        .from('notifications')
+        .delete()
+        .eq('user_id', user.id);
+
+      if (deleteError) throw deleteError;
+      setNotifications([]);
+      return true;
+    } catch (err) {
+      console.error('Error clearing notifications:', err);
+      await fetchNotifications();
+      return false;
     }
   };
 
@@ -130,6 +174,7 @@ export const useNotifications = () => {
     loading,
     markAsRead,
     markAllAsRead,
+    clearAllNotifications,
     deleteNotification,
     refetch: fetchNotifications
   };

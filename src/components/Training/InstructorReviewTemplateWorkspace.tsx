@@ -231,10 +231,10 @@ export const InstructorReviewTemplateWorkspace: React.FC = () => {
       <div className={`${panelClass} p-8 text-center`}>
         <LockKeyhole className="mx-auto h-10 w-10 text-gray-400" />
         <h2 className="mt-3 text-lg font-bold text-gray-900 dark:text-gray-100">
-          CFI access required
+          CFI/DCFI review access required
         </h2>
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Only a CFI can change the forms used for S&amp;P checks and instructor
+          Only an authorised CFI or DCFI can change the forms used for S&amp;P checks and instructor
           renewals.
         </p>
       </div>
@@ -257,7 +257,7 @@ export const InstructorReviewTemplateWorkspace: React.FC = () => {
           <div>
             <div className="flex items-center gap-2 text-xs font-bold uppercase text-cyan-200">
               <ShieldCheck className="h-4 w-4" />
-              CFI form template library
+              CFI/DCFI form template library
             </div>
             <h1 className="mt-2 text-2xl font-bold">Instructor Reviews</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-cyan-100">
@@ -334,7 +334,7 @@ export const InstructorReviewTemplateWorkspace: React.FC = () => {
               No instructor review form configured
             </h2>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              Create the first protected CFI checklist.
+              Create the first protected CFI/DCFI checklist.
             </p>
           </div>
         )}
@@ -346,7 +346,7 @@ export const InstructorReviewTemplateWorkspace: React.FC = () => {
             <header className="flex items-start justify-between gap-4 bg-gradient-to-r from-slate-950 via-cyan-950 to-slate-900 px-4 py-5 text-white sm:px-6">
               <div>
                 <p className="text-xs font-bold uppercase text-cyan-200">
-                  CFI form editor
+                  CFI/DCFI form editor
                 </p>
                 <h2 className="mt-1 text-xl font-bold">
                   {draft.id
@@ -435,7 +435,7 @@ export const InstructorReviewTemplateWorkspace: React.FC = () => {
                       Form purpose
                     </legend>
                     <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                      The CFI chooses between these forms before starting the
+                      The CFI/DCFI reviewer chooses between these forms before starting the
                       protected record.
                     </p>
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -584,7 +584,7 @@ export const InstructorReviewTemplateWorkspace: React.FC = () => {
                         Checklist and applicability
                       </h3>
                       <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                        Define exactly what the CFI assesses and when each item
+                        Define exactly what the CFI/DCFI reviewer assesses and when each item
                         appears.
                       </p>
                     </div>
@@ -687,7 +687,7 @@ export const InstructorReviewTemplateWorkspace: React.FC = () => {
                         </div>
                       </div>
                       <label className="mt-4 block text-sm font-medium text-gray-700 dark:text-gray-200">
-                        Guidance for the CFI
+                        Guidance for the CFI/DCFI reviewer
                         <textarea
                           rows={2}
                           value={item.guidance}
@@ -759,7 +759,7 @@ export const InstructorReviewTemplateWorkspace: React.FC = () => {
                 <div className="space-y-4">
                   <div className={`${panelClass} p-5`}>
                     <span className="rounded-full bg-cyan-100 px-2 py-1 text-xs font-bold text-cyan-900 dark:bg-cyan-500/15 dark:text-cyan-200">
-                      Protected CFI form
+                      Protected CFI/DCFI form
                     </span>
                     <h3 className="mt-3 text-xl font-bold text-gray-950 dark:text-gray-100">
                       {draft.name || "Untitled form"}

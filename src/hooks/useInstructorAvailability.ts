@@ -93,6 +93,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
   const [absences, setAbsences] = useState<Absence[]>(() => absencesCache || []);
   const [scheduleChanges, setScheduleChanges] = useState<ScheduleChange[]>(() => scheduleChangesCache || []);
   const [loading, setLoading] = useState(() => !weeklySchedulesCache || !absencesCache || !scheduleChangesCache);
+  const [error, setError] = useState<string | null>(null);
 
   const isAdmin = hasAnyRole(user, ['admin']);
   const canManageAbsenceFor = (targetUserId?: string | null) =>
@@ -181,7 +182,9 @@ export const useInstructorAvailability = (instructorId?: string) => {
       setWeeklySchedules(schedules);
     } catch (error) {
       console.error('Error fetching weekly schedules:', error);
+      setError(error instanceof Error ? error.message : 'Weekly schedules could not be loaded');
       toast.error('Failed to fetch weekly schedules');
+      throw error;
     }
   };
 
@@ -205,7 +208,9 @@ export const useInstructorAvailability = (instructorId?: string) => {
       setAbsences(absencesList);
     } catch (error) {
       console.error('Error fetching absences:', error);
+      setError(error instanceof Error ? error.message : 'Instructor absences could not be loaded');
       toast.error('Failed to fetch absences');
+      throw error;
     }
   };
 
@@ -229,7 +234,9 @@ export const useInstructorAvailability = (instructorId?: string) => {
       setScheduleChanges(changes);
     } catch (error) {
       console.error('Error fetching schedule changes:', error);
+      setError(error instanceof Error ? error.message : 'Schedule changes could not be loaded');
       toast.error('Failed to fetch schedule changes');
+      throw error;
     }
   };
 
@@ -463,27 +470,27 @@ export const useInstructorAvailability = (instructorId?: string) => {
     }
   };
 
-  useEffect(() => {
-    const fetchAll = async () => {
-      if (!weeklySchedulesCache || !absencesCache || !scheduleChangesCache) {
-        setLoading(true);
-      }
+  const refetch = async () => {
+    setError(null);
+    setLoading(true);
+    try {
       await Promise.all([
         fetchWeeklySchedules(instructorId),
         fetchAbsences(instructorId),
         fetchScheduleChanges(instructorId)
       ]);
+    } finally {
       setLoading(false);
-    };
+    }
+  };
 
-    fetchAll();
+  useEffect(() => {
+    void refetch().catch(() => undefined);
   }, [instructorId]);
 
   useEffect(() => {
     const refreshAvailability = () => {
-      fetchWeeklySchedules(instructorId);
-      fetchAbsences(instructorId);
-      fetchScheduleChanges(instructorId);
+      void refetch().catch(() => undefined);
     };
 
     window.addEventListener(AVAILABILITY_UPDATED_EVENT, refreshAvailability);
@@ -609,6 +616,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
     absences,
     scheduleChanges,
     loading,
+    error,
     upsertWeeklySchedule,
     upsertWeeklySchedules,
     deleteWeeklySchedule,
@@ -617,10 +625,6 @@ export const useInstructorAvailability = (instructorId?: string) => {
     deleteAbsence,
     addScheduleChange,
     deleteScheduleChange,
-    refetch: () => {
-      fetchWeeklySchedules(instructorId);
-      fetchAbsences(instructorId);
-      fetchScheduleChanges(instructorId);
-    }
+    refetch
   };
 };

@@ -3,6 +3,7 @@ import { Copy, Eye, EyeOff, KeyRound, Loader, RefreshCw, ShieldCheck, Trash2 } f
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 import { getSupabaseFunctionErrorMessage } from '../../lib/supabaseFunctionErrors';
+import { SettingsLoadError } from './SettingsLoadError';
 
 interface KioskAccessSettingsProps {
   canEdit: boolean;
@@ -28,6 +29,7 @@ const formatDateTime = (value?: string | null) => {
 export const KioskAccessSettings: React.FC<KioskAccessSettingsProps> = ({ canEdit }) => {
   const [access, setAccess] = useState<KioskAccessState>({ configured: false });
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [working, setWorking] = useState<'rotate' | 'disable' | null>(null);
   const [revealed, setRevealed] = useState(false);
 
@@ -44,10 +46,14 @@ export const KioskAccessSettings: React.FC<KioskAccessSettingsProps> = ({ canEdi
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       setAccess(await invoke('get-settings'));
+      setLoadError(null);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Kiosk access settings could not be loaded');
+      const message = error instanceof Error ? error.message : 'Kiosk access settings could not be loaded';
+      setLoadError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -56,6 +62,10 @@ export const KioskAccessSettings: React.FC<KioskAccessSettingsProps> = ({ canEdi
   useEffect(() => {
     void load();
   }, [load]);
+
+  if (!loading && loadError) {
+    return <SettingsLoadError section="Kiosk access" error={loadError} onRetry={load} />;
+  }
 
   const rotate = async () => {
     if (access.configured && !window.confirm(

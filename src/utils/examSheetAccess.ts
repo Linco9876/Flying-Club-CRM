@@ -1,6 +1,6 @@
 import type { User } from '../types';
 
-const EXAM_SHEET_STAFF_ROLES = ['admin', 'instructor', 'senior_instructor'] as const;
+const EXAM_SHEET_STAFF_ROLES = ['admin', 'cfi', 'instructor', 'senior_instructor'] as const;
 
 export const STUDENT_SAFE_EXAM_RESULT_COLUMNS = [
   'id', 'student_id', 'course_id', 'exam_id', 'exam_name', 'score', 'pass_mark', 'result',

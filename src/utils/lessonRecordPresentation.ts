@@ -12,10 +12,21 @@ export interface CompactLessonRecordSummary {
 export const formatLessonRecordHours = (minutes: number) =>
   `${(Math.max(0, Number(minutes) || 0) / 60).toFixed(1)} h`;
 
-export const shouldCompactAcknowledgedLesson = (
+export const shouldUseCompactLessonRecord = (
   record: Pick<TrainingRecord, 'studentAck'>,
-  detailsExpanded: boolean,
-) => Boolean(record.studentAck) && !detailsExpanded;
+  {
+    detailsExpanded,
+    requiresAcknowledgement,
+    viewerCanExpand,
+  }: {
+    detailsExpanded: boolean;
+    requiresAcknowledgement: boolean;
+    viewerCanExpand: boolean;
+  },
+) => {
+  if (record.studentAck) return !viewerCanExpand || !detailsExpanded;
+  return !requiresAcknowledgement && !viewerCanExpand;
+};
 
 export const buildCompactLessonRecordSummary = ({
   record,

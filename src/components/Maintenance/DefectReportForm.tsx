@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useState } from 'react';
 import { X, AlertTriangle, Camera, Save } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -246,7 +247,7 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Aircraft *
               </label>
-              <select
+              <SearchableSelect
                 value={formData.aircraftId}
                 onChange={(e) => setFormData(prev => ({ ...prev, aircraftId: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -261,7 +262,7 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
                     {a.registration} - {a.make} {a.model}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
               {aircraft.length === 0 && !loading && (
                 <p className="text-xs text-red-600 mt-1">
                   No aircraft found. Please add aircraft first.
@@ -349,7 +350,7 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Severity *
               </label>
-              <select
+              <SearchableSelect
                 value={formData.severity}
                 onChange={(e) => setFormData(prev => ({ ...prev, severity: e.target.value as any }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -357,7 +358,7 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
                 <option value="Minor">Minor</option>
                 <option value="Major">Major</option>
                 <option value="Critical">Critical</option>
-              </select>
+              </SearchableSelect>
               <div className="mt-2">
                 <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full border ${getSeverityColor(formData.severity)}`}>
                   {formData.severity}

@@ -21,6 +21,8 @@ export interface StudentCourseEnrolment {
   guardianDeclarationPhone?: string;
   guardianDeclarationTextSnapshot?: string;
   guardianDeclarationVersion?: number;
+  completedAt?: Date;
+  completionSourceTrainingRecordId?: string;
   enrolledAt: Date;
   updatedAt: Date;
 }
@@ -65,6 +67,8 @@ export const useStudentCourseEnrolments = (studentId?: string) => {
         guardianDeclarationPhone: row.guardian_declaration_phone || undefined,
         guardianDeclarationTextSnapshot: row.guardian_declaration_text_snapshot || undefined,
         guardianDeclarationVersion: row.guardian_declaration_version ?? undefined,
+        completedAt: row.completed_at ? new Date(row.completed_at) : undefined,
+        completionSourceTrainingRecordId: row.completion_source_training_record_id || undefined,
         enrolledAt: row.enrolled_at ? new Date(row.enrolled_at) : new Date(),
         updatedAt: row.updated_at ? new Date(row.updated_at) : new Date(),
       })));

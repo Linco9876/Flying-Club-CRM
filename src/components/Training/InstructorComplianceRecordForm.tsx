@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -22,6 +23,11 @@ import {
   InstructorComplianceLevel,
   useInstructorCompliance,
 } from "../../hooks/useInstructorCompliance";
+import { getInstructorCurrencyAfterCheck } from "../../utils/instructorComplianceCurrency";
+import {
+  instructorComplianceSaveFailureMessage,
+  type InstructorComplianceSaveStage,
+} from "../../utils/instructorComplianceSave";
 import { StudentFileLink } from "../Students/StudentFileLink";
 
 interface InstructorComplianceRecordFormProps {
@@ -55,11 +61,24 @@ const resultOptions: Array<{
   },
 ];
 
+const formatCurrencyDate = (value?: string) =>
+  value && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? format(new Date(`${value}T00:00:00`), "d MMM yyyy")
+    : value || "not recorded";
+
 export const InstructorComplianceRecordForm: React.FC<
   InstructorComplianceRecordFormProps
 > = ({ flightLog, candidate, examiner, onClose, onCompleted }) => {
-  const { courses, items, loading, error, saveRecord, uploadRenewalForm } =
-    useInstructorCompliance(true);
+  const {
+    courses,
+    items,
+    records,
+    loading,
+    error,
+    saveRecord,
+    uploadRenewalForm,
+    deleteRenewalForm,
+  } = useInstructorCompliance(true);
   const isSenior =
     candidate.roles?.includes("senior_instructor") ||
     candidate.role === "senior_instructor";
@@ -83,6 +102,9 @@ export const InstructorComplianceRecordForm: React.FC<
   const [emergencyControlPlanConfirmed, setEmergencyControlPlanConfirmed] =
     useState(false);
   const [medicalSighted, setMedicalSighted] = useState(false);
+  const [logbookEntriesConfirmed, setLogbookEntriesConfirmed] = useState(false);
+  const [authoritySubmissionConfirmed, setAuthoritySubmissionConfirmed] =
+    useState(false);
   const [results, setResults] = useState<
     Record<string, InstructorComplianceChecklistResult>
   >({});
@@ -155,6 +177,29 @@ export const InstructorComplianceRecordForm: React.FC<
       item.required &&
       (results[item.id]?.result || "not_assessed") === "not_assessed",
   );
+  const projectedCurrency = /^\d{4}-\d{2}-\d{2}$/.test(checkDate)
+    ? getInstructorCurrencyAfterCheck(
+        checkDate,
+        instructorLevel,
+        checkType,
+        unsatisfactoryCount > 0 ? "unsatisfactory" : "satisfactory",
+      )
+    : {
+        nextSpCheckDue: "select a valid date",
+        nextRenewalDue: undefined,
+        bfrResetDate: undefined,
+      };
+  const previousRenewalDue = records
+    .filter(
+      (record) =>
+        record.candidateInstructorId === candidate.id &&
+        record.outcome === "satisfactory" &&
+        record.status === "completed" &&
+        record.nextRenewalDue,
+    )
+    .map((record) => record.nextRenewalDue as string)
+    .sort()
+    .slice(-1)[0];
 
   const setItemResult = (
     itemId: string,
@@ -175,7 +220,7 @@ export const InstructorComplianceRecordForm: React.FC<
 
   const handleSubmit = async () => {
     if (!course) {
-      toast.error("The CFI compliance course is not available");
+      toast.error("The CFI/DCFI compliance form is not available");
       return;
     }
     if (!briefingLesson.trim()) {
@@ -194,8 +239,33 @@ export const InstructorComplianceRecordForm: React.FC<
       );
       return;
     }
+    if (!logbookEntriesConfirmed) {
+      toast.error("Confirm the result was entered in both required logbooks");
+      return;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(checkDate)) {
+      toast.error("Select a valid check date");
+      return;
+    }
+    const today = format(new Date(), "yyyy-MM-dd");
+    if (checkDate > today) {
+      toast.error("An instructor check cannot be completed with a future date");
+      return;
+    }
     if (checkType === "renewal" && !renewalForm) {
       toast.error("Attach the completed RAAus instructor renewal form");
+      return;
+    }
+    if (
+      checkType === "renewal" &&
+      unsatisfactoryCount === 0 &&
+      !authoritySubmissionConfirmed
+    ) {
+      toast.error("Confirm the completed renewal was supplied to RAAus");
+      return;
+    }
+    if (unsatisfactoryCount === 0 && flightMinutes < 60) {
+      toast.error("A satisfactory RAAus instructor check needs at least 60 minutes in flight");
       return;
     }
     if (unsatisfactoryCount > 0 && !developmentPlan.trim()) {
@@ -205,15 +275,20 @@ export const InstructorComplianceRecordForm: React.FC<
       return;
     }
 
+    let formUpload: { path: string; name: string } | undefined;
+    let recordSaved = false;
+    let saveStage: InstructorComplianceSaveStage = "record-save";
+
     try {
       setSubmitting(true);
-      let formUpload: { path: string; name: string } | undefined;
       if (renewalForm) {
+        saveStage = "form-upload";
         formUpload = await uploadRenewalForm(candidate.id, renewalForm);
       }
 
       const outcome =
         unsatisfactoryCount > 0 ? "unsatisfactory" : "satisfactory";
+      saveStage = "record-save";
       await saveRecord({
         courseId: course.id,
         candidateInstructorId: candidate.id,
@@ -230,6 +305,8 @@ export const InstructorComplianceRecordForm: React.FC<
         briefingLesson: briefingLesson.trim(),
         emergencyControlPlanConfirmed,
         medicalSighted,
+        logbookEntriesConfirmed,
+        authoritySubmissionConfirmed,
         checklist: applicableItems.map(
           (item) =>
             results[item.id] || {
@@ -247,7 +324,9 @@ export const InstructorComplianceRecordForm: React.FC<
         raausFormPath: formUpload?.path,
         raausFormName: formUpload?.name,
       });
+      recordSaved = true;
 
+      saveStage = "flight-finalise";
       await onCompleted();
       toast.success(
         outcome === "satisfactory"
@@ -260,11 +339,15 @@ export const InstructorComplianceRecordForm: React.FC<
         "Failed to save instructor compliance record:",
         submitError,
       );
-      toast.error(
-        submitError instanceof Error
-          ? submitError.message
-          : "Failed to save instructor check",
-      );
+      if (!recordSaved && formUpload) {
+        try {
+          await deleteRenewalForm(formUpload.path);
+        } catch (cleanupError) {
+          console.error("Failed to clean up unused renewal form:", cleanupError);
+        }
+      }
+      toast.error(instructorComplianceSaveFailureMessage(submitError, saveStage));
+      if (recordSaved) onClose();
     } finally {
       setSubmitting(false);
     }
@@ -276,7 +359,7 @@ export const InstructorComplianceRecordForm: React.FC<
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-cyan-200">
-              <ShieldCheck className="h-4 w-4" /> CFI protected record
+              <ShieldCheck className="h-4 w-4" /> CFI/DCFI protected record
             </div>
             <h2 className="mt-2 text-xl font-bold">
               {checkType === "renewal"
@@ -304,7 +387,7 @@ export const InstructorComplianceRecordForm: React.FC<
         <div className="flex min-h-72 flex-col items-center justify-center gap-3 p-8 text-gray-600 dark:text-gray-300">
           <Loader2 className="h-8 w-8 animate-spin text-cyan-600" />
           <p className="font-semibold">
-            Loading the protected CFI checklist...
+            Loading the protected CFI/DCFI checklist...
           </p>
         </div>
       ) : error ? (
@@ -316,7 +399,7 @@ export const InstructorComplianceRecordForm: React.FC<
           <section className="grid gap-4 rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-[#343943] dark:bg-[#11141a] md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             <label className="block text-sm font-semibold text-gray-800 dark:text-gray-100">
               Review form
-              <select
+              <SearchableSelect
                 value={course?.id || ""}
                 onChange={(event) => setCourseId(event.target.value)}
                 className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 font-normal dark:border-[#3b414c] dark:bg-[#171a21]"
@@ -326,7 +409,7 @@ export const InstructorComplianceRecordForm: React.FC<
                     {item.name}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
             </label>
             <div className="rounded-md border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm dark:border-cyan-400/20 dark:bg-cyan-500/10">
               <span className="block text-xs font-bold uppercase text-cyan-700 dark:text-cyan-300">
@@ -384,8 +467,8 @@ export const InstructorComplianceRecordForm: React.FC<
           <section className="rounded-lg border border-cyan-200 bg-cyan-50 p-4 text-sm text-cyan-950 dark:border-cyan-400/20 dark:bg-cyan-950/20 dark:text-cyan-100">
             <p className="font-semibold">RAAP 7 planning note</p>
             <p className="mt-1 leading-6">
-              Initial issue and renewal should be a substantial assessment,
-              commonly 3-4 hours overall with at least one hour in flight. A
+              A renewal is a substantial assessment that may take 3-4 hours
+              overall and includes at least one hour in flight. A
               routine S&amp;P remains a genuine competence and standardisation
               check, not a circuit-only review.
             </p>
@@ -446,13 +529,22 @@ export const InstructorComplianceRecordForm: React.FC<
               />
               Real-emergency control plan agreed
             </label>
+            <label className="flex min-h-12 items-center gap-3 rounded-lg border border-gray-200 px-4 py-3 text-sm font-semibold text-gray-800 dark:border-[#343943] dark:text-gray-100 md:col-span-2">
+              <input
+                type="checkbox"
+                checked={logbookEntriesConfirmed}
+                onChange={(event) => setLogbookEntriesConfirmed(event.target.checked)}
+                className="h-5 w-5 rounded border-gray-300 text-cyan-600"
+              />
+              Result entered in both the candidate and CFI/DCFI logbooks
+            </label>
           </section>
 
           <section>
             <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
               <div>
                 <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">
-                  CFI checklist
+                  CFI/DCFI checklist
                 </h3>
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                   {course?.name} &middot; version {course?.version}
@@ -563,7 +655,7 @@ export const InstructorComplianceRecordForm: React.FC<
               />
             </label>
             <label className="block text-sm font-semibold text-gray-800 dark:text-gray-100">
-              CFI comments
+              CFI/DCFI comments
               <textarea
                 value={cfiComments}
                 onChange={(event) => setCfiComments(event.target.value)}
@@ -594,6 +686,22 @@ export const InstructorComplianceRecordForm: React.FC<
                   />
                 </span>
               </label>
+              <label className="mt-4 flex items-start gap-3 rounded-lg border border-amber-300 bg-white px-4 py-3 text-sm font-semibold text-amber-950 dark:border-amber-400/30 dark:bg-[#11141a] dark:text-amber-100">
+                <input
+                  type="checkbox"
+                  checked={authoritySubmissionConfirmed}
+                  onChange={(event) =>
+                    setAuthoritySubmissionConfirmed(event.target.checked)
+                  }
+                  className="mt-0.5 h-5 w-5 rounded border-amber-400 text-amber-600"
+                />
+                <span>
+                  Completed renewal supplied to RAAus for processing
+                  <span className="mt-1 block text-xs font-normal leading-5 text-amber-800 dark:text-amber-200">
+                    Required for a satisfactory result. Attaching it to the CRM alone does not submit it to RAAus.
+                  </span>
+                </span>
+              </label>
             </section>
           )}
 
@@ -617,6 +725,23 @@ export const InstructorComplianceRecordForm: React.FC<
                   {requiredIncomplete.length === 1 ? "" : "s"} remaining;{" "}
                   {unsatisfactoryCount} below standard.
                 </p>
+                {unsatisfactoryCount > 0 ? (
+                  <p className="mt-2 text-sm font-semibold text-red-800 dark:text-red-200">
+                    The instructor must not conduct instructional duties until a CFI/DCFI reviewer records a satisfactory result.
+                  </p>
+                ) : (
+                  <p className="mt-2 text-sm font-semibold text-emerald-800 dark:text-emerald-200">
+                    S&amp;P current to {formatCurrencyDate(projectedCurrency.nextSpCheckDue)}
+                    {checkType === "renewal" && (
+                      <>; rating current to {formatCurrencyDate(projectedCurrency.nextRenewalDue)}; BFR reset to {formatCurrencyDate(projectedCurrency.bfrResetDate)}</>
+                    )}.
+                    {checkType === "renewal" && previousRenewalDue && (
+                      <span className="mt-1 block text-xs font-normal">
+                        RAAus may retain the existing {formatCurrencyDate(previousRenewalDue)} rating anniversary when this renewal falls within its permitted 90-day window; the CRM applies that rule on completion.
+                      </span>
+                    )}
+                  </p>
+                )}
               </div>
             </div>
           </section>

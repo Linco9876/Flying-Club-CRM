@@ -6,8 +6,13 @@ import { useAuth } from '../../context/AuthContext';
 import { useUsers } from '../../hooks/useUsers';
 import { useInstructorCompliance, type InstructorComplianceRecord } from '../../hooks/useInstructorCompliance';
 import { hasRole } from '../../utils/rbac';
+import {
+  getInstructorOperationalStatus,
+  type InstructorCurrencyStatus,
+} from '../../utils/instructorComplianceCurrency';
+import { isActiveSafetyMember } from '../../utils/safetyMemberVisibility';
 
-type CurrencyStatus = 'no_record' | 'overdue' | 'due_soon' | 'current' | 'remedial';
+type CurrencyStatus = InstructorCurrencyStatus;
 
 interface InstructorRegisterRow {
   id: string;
@@ -19,6 +24,7 @@ interface InstructorRegisterRow {
   renewalDue?: Date;
   spStatus: CurrencyStatus;
   renewalStatus: CurrencyStatus;
+  operationalStatus: CurrencyStatus;
   latestRecord?: InstructorComplianceRecord;
   records: InstructorComplianceRecord[];
 }
@@ -66,7 +72,7 @@ export const InstructorApprovalsTab: React.FC = () => {
   const register = useMemo<InstructorRegisterRow[]>(() => {
     const instructors = users.filter(candidate => {
       const roles = candidate.roles?.length ? candidate.roles : [candidate.role];
-      return candidate.isActive !== false && roles.some(role => role === 'instructor' || role === 'senior_instructor');
+      return isActiveSafetyMember(candidate) && roles.some(role => role === 'instructor' || role === 'senior_instructor');
     });
 
     return instructors.map(instructor => {
@@ -93,6 +99,12 @@ export const InstructorApprovalsTab: React.FC = () => {
           : addMonths(parseISO(latestRenewal.checkDate), 24)
         : undefined;
       const hasUnresolvedFailure = latestRecord?.outcome === 'unsatisfactory';
+      const spStatus = hasUnresolvedFailure ? 'remedial' : getDateStatus(spDue);
+      const renewalStatus = getDateStatus(renewalDue);
+      const operationalStatus = getInstructorOperationalStatus(
+        spStatus,
+        renewalStatus,
+      );
 
       return {
         id: instructor.id,
@@ -102,14 +114,15 @@ export const InstructorApprovalsTab: React.FC = () => {
         intervalLabel: isSenior ? '12 months' : '90 days',
         spDue,
         renewalDue,
-        spStatus: hasUnresolvedFailure ? 'remedial' : getDateStatus(spDue),
-        renewalStatus: getDateStatus(renewalDue),
+        spStatus,
+        renewalStatus,
+        operationalStatus,
         latestRecord,
         records: candidateRecords,
       };
     }).sort((a, b) => {
       const order: Record<CurrencyStatus, number> = { remedial: 0, overdue: 1, no_record: 2, due_soon: 3, current: 4 };
-      return order[a.spStatus] - order[b.spStatus] || a.name.localeCompare(b.name);
+      return order[a.operationalStatus] - order[b.operationalStatus] || a.name.localeCompare(b.name);
     });
   }, [records, users]);
 
@@ -120,15 +133,16 @@ export const InstructorApprovalsTab: React.FC = () => {
   }, [register, searchTerm]);
 
   const summary = useMemo(() => ({
-    current: register.filter(row => row.spStatus === 'current').length,
-    dueSoon: register.filter(row => row.spStatus === 'due_soon').length,
-    action: register.filter(row => ['no_record', 'overdue', 'remedial'].includes(row.spStatus)).length,
+    current: register.filter(row => row.operationalStatus === 'current').length,
+    dueSoon: register.filter(row => row.operationalStatus === 'due_soon').length,
+    action: register.filter(row => ['no_record', 'overdue', 'remedial'].includes(row.operationalStatus)).length,
   }), [register]);
 
   const exportRegister = () => {
     const rows = register.map(row => [
       row.name,
       row.level,
+      statusLabel[row.operationalStatus],
       row.intervalLabel,
       statusLabel[row.spStatus],
       row.spDue ? format(row.spDue, 'yyyy-MM-dd') : '',
@@ -138,7 +152,7 @@ export const InstructorApprovalsTab: React.FC = () => {
       row.latestRecord?.outcome || '',
     ]);
     const csv = [
-      ['Instructor', 'Level', 'S&P interval', 'S&P status', 'S&P due', 'Renewal status', 'Renewal due', 'Latest check', 'Latest outcome'],
+      ['Instructor', 'Level', 'Operational status', 'S&P interval', 'S&P status', 'S&P due', 'Renewal status', 'Renewal due', 'Latest check', 'Latest outcome'],
       ...rows,
     ].map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(',')).join('\n');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
@@ -163,8 +177,8 @@ export const InstructorApprovalsTab: React.FC = () => {
     return (
       <div className="rounded-xl border border-gray-200 bg-white p-8 text-center shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
         <LockKeyhole className="mx-auto h-10 w-10 text-gray-400" />
-        <h2 className="mt-3 text-lg font-bold text-gray-900 dark:text-gray-100">CFI access required</h2>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Instructor compliance records are not available to an admin or instructor unless they also hold the CFI role.</p>
+        <h2 className="mt-3 text-lg font-bold text-gray-900 dark:text-gray-100">CFI/DCFI review access required</h2>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Instructor compliance records are available only to the named instructor and users holding the protected CFI/DCFI review authority.</p>
       </div>
     );
   }
@@ -183,7 +197,7 @@ export const InstructorApprovalsTab: React.FC = () => {
         <div className="p-5 sm:p-7">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-cyan-200"><ShieldCheck className="h-4 w-4" /> CFI-only register</div>
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-cyan-200"><ShieldCheck className="h-4 w-4" /> CFI/DCFI protected register</div>
               <h2 className="mt-2 text-2xl font-bold">Instructor Standards &amp; Proficiency</h2>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-cyan-100">Routine S&amp;P is due every 90 days for Instructors and every 12 months for Senior Instructors. Both ratings require renewal every two years.</p>
             </div>
@@ -211,7 +225,7 @@ export const InstructorApprovalsTab: React.FC = () => {
             <article key={row.id} className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
               <button type="button" onClick={() => setExpandedInstructorId(expanded ? null : row.id)} className="flex w-full flex-col gap-4 p-4 text-left sm:p-5 lg:flex-row lg:items-center lg:justify-between">
                 <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2"><h3 className="font-bold text-gray-900 dark:text-gray-100">{row.name}</h3><span className="rounded-full bg-cyan-100 px-2 py-0.5 text-xs font-bold text-cyan-900 dark:bg-cyan-950/50 dark:text-cyan-200">{row.level}</span></div>
+                  <div className="flex flex-wrap items-center gap-2"><h3 className="font-bold text-gray-900 dark:text-gray-100">{row.name}</h3><span className="rounded-full bg-cyan-100 px-2 py-0.5 text-xs font-bold text-cyan-900 dark:bg-cyan-950/50 dark:text-cyan-200">{row.level}</span><span className={`rounded-full border px-2 py-0.5 text-xs font-bold ${statusStyles[row.operationalStatus]}`}>{row.operationalStatus === 'current' || row.operationalStatus === 'due_soon' ? 'Cleared to instruct' : statusLabel[row.operationalStatus]}</span></div>
                   <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{row.email} &middot; S&amp;P every {row.intervalLabel}</p>
                 </div>
                 <div className="grid w-full gap-2 sm:grid-cols-2 lg:w-auto lg:min-w-[520px]">
@@ -225,7 +239,7 @@ export const InstructorApprovalsTab: React.FC = () => {
                 <div className="border-t border-gray-200 bg-gray-50 p-4 dark:border-[#343943] dark:bg-[#11141a] sm:p-5">
                   <h4 className="text-sm font-bold text-gray-900 dark:text-gray-100">Protected check history</h4>
                   {row.records.length === 0 ? (
-                    <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-400/20 dark:bg-amber-950/20 dark:text-amber-100"><AlertTriangle className="mr-2 inline h-4 w-4" />No CFI compliance record has been completed for this instructor.</div>
+                    <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-400/20 dark:bg-amber-950/20 dark:text-amber-100"><AlertTriangle className="mr-2 inline h-4 w-4" />No CFI/DCFI compliance record has been completed for this instructor.</div>
                   ) : (
                     <div className="mt-3 space-y-2">
                       {row.records.map(record => (
@@ -250,7 +264,7 @@ export const InstructorApprovalsTab: React.FC = () => {
 
       <section className="rounded-xl border border-cyan-200 bg-cyan-50 p-4 text-sm leading-6 text-cyan-950 dark:border-cyan-400/20 dark:bg-cyan-950/20 dark:text-cyan-100">
         <p className="font-bold"><Clock className="mr-2 inline h-4 w-4" />How records enter this register</p>
-        <p className="mt-1">Book the instructor as the pilot/student with a CFI as the instructor, log the flight, then complete the protected S&amp;P or renewal checklist from Outstanding Records. An ordinary admin cannot open this register or its attached forms unless they also hold the CFI role.</p>
+        <p className="mt-1">Book the instructor as the pilot/student with an authorised CFI or DCFI as the instructor, log the flight, then complete the protected S&amp;P or renewal checklist from Outstanding Records. Access requires the CFI/DCFI review authority.</p>
       </section>
     </div>
   );

@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useState, useMemo } from 'react';
 import { Download, Search, ChevronUp, ChevronDown, ChevronsUpDown, Loader, CheckCircle, AlertTriangle } from 'lucide-react';
 import { useReportsData } from '../../hooks/useReportsData';
@@ -201,7 +202,7 @@ export const AircraftStatisticsTab: React.FC = () => {
 
           <div>
             <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Instructor</label>
-            <select
+            <SearchableSelect
               value={instructorFilter}
               onChange={e => setInstructorFilter(e.target.value)}
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -210,12 +211,12 @@ export const AircraftStatisticsTab: React.FC = () => {
               {instructors.map(i => (
                 <option key={i.id} value={i.id}>{i.name}</option>
               ))}
-            </select>
+            </SearchableSelect>
           </div>
 
           <div>
             <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Pilot</label>
-            <select
+            <SearchableSelect
               value={pilotFilter}
               onChange={e => setPilotFilter(e.target.value)}
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -224,7 +225,7 @@ export const AircraftStatisticsTab: React.FC = () => {
               {pilots.map(p => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
-            </select>
+            </SearchableSelect>
           </div>
         </div>
 

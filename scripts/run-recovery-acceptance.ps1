@@ -3,7 +3,9 @@ param(
   [string]$Project,
   [string]$Grep,
   [string]$SupabaseAccessToken = $env:SUPABASE_ACCESS_TOKEN,
-  [switch]$BrowserStack
+  [switch]$BrowserStack,
+  [switch]$WakeInactiveProject,
+  [switch]$RecoverStaleTestOrigin
 )
 
 $ErrorActionPreference = 'Stop'
@@ -73,21 +75,17 @@ $token = if ($SupabaseAccessToken) {
   Get-SupabaseManagementToken
 }
 $managementHeaders = @{ Authorization = "Bearer $token" }
-$keys = Invoke-RestMethod `
-  -Uri "https://api.supabase.com/v1/projects/$RecoveryProjectRef/api-keys" `
+$recoveryProjectState = Invoke-RestMethod `
+  -Uri "https://api.supabase.com/v1/projects/$RecoveryProjectRef" `
   -Headers $managementHeaders
-$serviceKey = [string](@($keys) | Where-Object { $_.name -eq 'service_role' } | Select-Object -First 1).api_key
-$anonKey = [string](@($keys) | Where-Object { $_.name -eq 'anon' } | Select-Object -First 1).api_key
-if (-not $serviceKey -or -not $anonKey) {
-  throw 'Recovery API keys were not returned by Supabase.'
+$recoveryWasInactive = $recoveryProjectState.status -eq 'INACTIVE'
+$recoveryShouldPause = $WakeInactiveProject -and $recoveryProjectState.status -ne 'ACTIVE_HEALTHY'
+if ($recoveryProjectState.status -ne 'ACTIVE_HEALTHY' -and -not $WakeInactiveProject) {
+  throw "Recovery project $RecoveryProjectRef is not ready (status: $($recoveryProjectState.status)). Start the isolated recovery project before running acceptance tests."
 }
-
 $projectUrl = "https://$RecoveryProjectRef.supabase.co"
-$serviceHeaders = @{
-  apikey = $serviceKey
-  Authorization = "Bearer $serviceKey"
-  'Content-Type' = 'application/json'
-}
+$serviceHeaders = $null
+$anonKey = $null
 $roles = @('admin', 'cfi', 'senior_instructor', 'instructor', 'pilot', 'student')
 $devices = if ($BrowserStack) {
   @('real-iphone', 'real-android')
@@ -101,11 +99,79 @@ $temporaryOriginsConfigured = $false
 $previousSupabaseAccessToken = $env:SUPABASE_ACCESS_TOKEN
 
 try {
+  if ($recoveryWasInactive) {
+    Write-Output "Starting isolated recovery project $RecoveryProjectRef for mobile acceptance..."
+    try {
+      Invoke-RestMethod `
+        -Method Post `
+        -Uri "https://api.supabase.com/v1/projects/$RecoveryProjectRef/restore" `
+        -Headers $managementHeaders `
+        -TimeoutSec 30 |
+        Out-Null
+    } catch {
+      # Supabase can keep the restore response open while the project starts.
+      # Treat a timed-out response as accepted only when the project has
+      # actually left INACTIVE; all other errors must still stop the run.
+      $recoveryProjectState = Invoke-RestMethod `
+        -Uri "https://api.supabase.com/v1/projects/$RecoveryProjectRef" `
+        -Headers $managementHeaders `
+        -TimeoutSec 30
+      if ($recoveryProjectState.status -eq 'INACTIVE') {
+        throw
+      }
+    }
+
+  }
+  if ($recoveryProjectState.status -ne 'ACTIVE_HEALTHY') {
+    $recoveryReady = $false
+    for ($attempt = 1; $attempt -le 90; $attempt += 1) {
+      Start-Sleep -Seconds 5
+      $recoveryProjectState = Invoke-RestMethod `
+        -Uri "https://api.supabase.com/v1/projects/$RecoveryProjectRef" `
+        -Headers $managementHeaders
+      if ($recoveryProjectState.status -eq 'ACTIVE_HEALTHY') {
+        $recoveryReady = $true
+        break
+      }
+    }
+    if (-not $recoveryReady) {
+      throw "Recovery project $RecoveryProjectRef did not become healthy within 7.5 minutes."
+    }
+  }
+
+  $keys = Invoke-RestMethod `
+    -Uri "https://api.supabase.com/v1/projects/$RecoveryProjectRef/api-keys" `
+    -Headers $managementHeaders
+  $serviceKeyRecord = @($keys) |
+    Where-Object { $_.name -eq 'service_role' -or $_.type -eq 'secret' } |
+    Select-Object -First 1
+  $anonKeyRecord = @($keys) |
+    Where-Object { $_.name -eq 'anon' -or $_.type -eq 'publishable' } |
+    Select-Object -First 1
+  $serviceKey = [string]$(
+    if ($serviceKeyRecord.api_key) { $serviceKeyRecord.api_key }
+    elseif ($serviceKeyRecord.apiKey) { $serviceKeyRecord.apiKey }
+    else { $serviceKeyRecord.key }
+  )
+  $anonKey = [string]$(
+    if ($anonKeyRecord.api_key) { $anonKeyRecord.api_key }
+    elseif ($anonKeyRecord.apiKey) { $anonKeyRecord.apiKey }
+    else { $anonKeyRecord.key }
+  )
+  if (-not $serviceKey -or -not $anonKey) {
+    throw 'Recovery browser/server API keys were not returned by Supabase.'
+  }
+  $serviceHeaders = @{
+    apikey = $serviceKey
+    Authorization = "Bearer $serviceKey"
+    'Content-Type' = 'application/json'
+  }
+
   $existingSecrets = npx supabase secrets list `
     --project-ref $RecoveryProjectRef `
     --output json 2>$null |
     ConvertFrom-Json
-  if ($existingSecrets | Where-Object { $_.name -eq 'ADDITIONAL_ALLOWED_ORIGINS' }) {
+  if (($existingSecrets | Where-Object { $_.name -eq 'ADDITIONAL_ALLOWED_ORIGINS' }) -and -not $RecoverStaleTestOrigin) {
     throw 'The acceptance project already has ADDITIONAL_ALLOWED_ORIGINS configured; refusing to overwrite it.'
   }
   $env:SUPABASE_ACCESS_TOKEN = $token
@@ -142,6 +208,19 @@ try {
   }
   if (-not $corsReady) {
     throw 'The temporary acceptance-test browser origins did not become active.'
+  }
+
+  $restPreflight = Invoke-WebRequest `
+    -Method Options `
+    -Uri "$projectUrl/rest/v1/portal_ux_settings?select=id&limit=1" `
+    -Headers @{
+      Origin = $corsOrigin
+      'Access-Control-Request-Method' = 'GET'
+      'Access-Control-Request-Headers' = 'authorization,apikey'
+    } `
+    -UseBasicParsing
+  if ($restPreflight.Headers['Access-Control-Allow-Origin'] -notin @('*', $corsOrigin)) {
+    throw 'The recovery REST API did not allow the acceptance-test browser origin.'
   }
 
   $providerStatus = $null
@@ -297,7 +376,19 @@ try {
   } else {
     Remove-Item Env:SUPABASE_ACCESS_TOKEN -ErrorAction SilentlyContinue
   }
+  if ($recoveryShouldPause) {
+    try {
+      Invoke-RestMethod `
+        -Method Post `
+        -Uri "https://api.supabase.com/v1/projects/$RecoveryProjectRef/pause" `
+        -Headers $managementHeaders |
+        Out-Null
+      Write-Output "Paused isolated recovery project $RecoveryProjectRef after mobile acceptance."
+    } catch {
+      Write-Warning "The mobile acceptance run finished, but recovery project $RecoveryProjectRef could not be paused automatically."
+    }
+  }
   if (-not $originCleanupSucceeded) {
-    throw 'Acceptance completed, but the temporary browser-origin secret could not be removed after five attempts.'
+    throw 'Acceptance completed and the recovery project was paused, but the temporary browser-origin secret could not be removed after five attempts.'
   }
 }

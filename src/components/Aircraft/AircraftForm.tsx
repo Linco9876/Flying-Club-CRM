@@ -1,3 +1,5 @@
+import { SearchableSelect } from '../common/SearchableSelect';
+import { SearchableSuggestionInput } from '../common/SearchableSuggestionInput';
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, Plane, Save, Upload, Plus, Trash2, DollarSign, ShieldCheck, Link2, RefreshCw, CheckCircle2, AlertTriangle, Info } from 'lucide-react';
 import { Aircraft, AircraftRate } from '../../types';
@@ -727,7 +729,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Aircraft Type {isFieldRequired('type') && '*'}
                 </label>
-                <select
+                <SearchableSelect
                   value={formData.type}
                   onChange={(e) => setFormData(prev => ({ ...prev, type: e.target.value as any }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -735,7 +737,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
                   <option value="single-engine">Single Engine</option>
                   <option value="multi-engine">Multi Engine</option>
                   <option value="helicopter">Helicopter</option>
-                </select>
+                </SearchableSelect>
               </div>}
 
               {isFieldVisible('tachStart') && <div>
@@ -996,23 +998,17 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Tracking category name
                 </label>
-                <input
-                  list="aircraft-xero-tracking-categories"
-                  type="text"
+                <SearchableSuggestionInput
+                  options={xeroTrackingCategories.map(category => category.name)}
                   value={formData.xeroTrackingCategoryName}
-                  onChange={(e) => setFormData(prev => ({
+                  onValueChange={value => setFormData(prev => ({
                     ...prev,
                     xeroTrackingCategoryId: '',
-                    xeroTrackingCategoryName: e.target.value,
+                    xeroTrackingCategoryName: value,
                   }))}
                   className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Aircraft"
                 />
-                <datalist id="aircraft-xero-tracking-categories">
-                  {xeroTrackingCategories.map(category => (
-                    <option key={category.trackingCategoryId} value={category.name} />
-                  ))}
-                </datalist>
                 <p className="mt-2 text-xs text-gray-500">
                   If the category does not exist yet, the link button can create it in Xero.
                 </p>
@@ -1117,7 +1113,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
                           <label className="block text-sm font-medium text-gray-700 mb-2">
                             Charge Type *
                           </label>
-                          <select
+                          <SearchableSelect
                             value={rate.chargeType}
                             onChange={(e) => {
                               const newRates = [...aircraftRates];
@@ -1131,7 +1127,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
                             <option value="flat">Flat Price</option>
                             <option value="per_pax">Price Per Passenger</option>
                             <option value="free">Free</option>
-                          </select>
+                          </SearchableSelect>
                         </div>
 
                         {rate.chargeType !== 'not_used' && rate.chargeType !== 'free' && (
@@ -1213,7 +1209,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
                               <label className="block text-sm font-medium text-gray-700 mb-2">
                                 Default Payment Method
                               </label>
-                              <select
+                              <SearchableSelect
                                 value={rate.defaultPaymentMethodId || ''}
                                 onChange={(e) => {
                                   const newRates = [...aircraftRates];
@@ -1226,7 +1222,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
                                 {paymentMethods.filter(pm => pm.active).map(pm => (
                                   <option key={pm.id} value={pm.id}>{pm.name}</option>
                                 ))}
-                              </select>
+                              </SearchableSelect>
                             </div>
                           </>
                         )}
@@ -1256,14 +1252,14 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
                   />
                 </div>
                 <div>
-                  <select
+                  <SearchableSelect
                     value={newMilestone.dueCondition}
                     onChange={(e) => setNewMilestone(prev => ({ ...prev, dueCondition: e.target.value as MaintenanceMilestone['dueCondition'] }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="hours">Hours</option>
                     <option value="date">Date</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
                 <div className="flex space-x-2">
                   <input
@@ -1344,7 +1340,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
                   {uploadedFiles.map((upload, index) => (
                     <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
                       <span className="text-sm text-gray-700 flex-1 truncate">{upload.file.name}</span>
-                      <select
+                      <SearchableSelect
                         value={upload.documentType}
                         onChange={(event) => setUploadedFiles(current => current.map((item, itemIndex) =>
                           itemIndex === index ? { ...item, documentType: event.target.value } : item
@@ -1352,7 +1348,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
                         className="mx-3 px-2 py-1 text-sm border border-gray-300 rounded-md"
                       >
                         {documentTypes.map(type => <option key={type.id} value={type.id}>{type.name}</option>)}
-                      </select>
+                      </SearchableSelect>
                       <button
                         type="button"
                         onClick={() => removeFile(index)}

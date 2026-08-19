@@ -1,7 +1,14 @@
-import { Student, UserRole } from '../types';
-import { SafetyComplianceSettings } from '../hooks/useSafetySettings';
-import { FlightLog } from '../hooks/useFlightLogs';
-import { getFlightReviewDueDate } from './pilotReviewCurrency';
+import type { Student, UserRole } from '../types';
+import type { SafetyComplianceSettings } from '../hooks/useSafetySettings';
+import type { FlightLog } from '../hooks/useFlightLogs';
+import { getFlightReviewDueDate } from './pilotReviewCurrency.ts';
+import { bfrLapseSeverity, credentialLapseSeverity } from './safetyComplianceRules.ts';
+import { calculateLogbookRoleHours } from './logbookEntries.ts';
+import {
+  isIncludedInLogbookBaseline,
+  type ExternalLogbookEntry,
+  type LogbookBaseline,
+} from './externalLogbook.ts';
 
 export type SafetyConcernType = 'recency' | 'medical' | 'licence' | 'bfr';
 export type SafetyConcernSeverity = 'warning' | 'lapsed' | 'blocked';
@@ -26,7 +33,22 @@ export interface SafetyComplianceSummary {
 
 type SafetyMessagePerspective = 'named' | 'firstPerson';
 
-type MinimalFlightLog = Pick<FlightLog, 'student_id' | 'instructor_id' | 'start_time' | 'solo_time' | 'flight_duration'>;
+type MinimalFlightLog = Pick<FlightLog, 'student_id' | 'start_time' | 'solo_time' | 'dual_time' | 'flight_duration'> & {
+  instructor_id?: string | null;
+};
+type MinimalBaseline = Pick<LogbookBaseline, 'user_id' | 'as_of_date' | 'last_flight_date' | 'pic_hours'>;
+type MinimalExternalEntry = Pick<ExternalLogbookEntry, 'user_id' | 'flight_date' | 'pic_hours'>;
+
+export interface SafetyLogbookSupplement {
+  baselines?: MinimalBaseline[];
+  externalEntries?: MinimalExternalEntry[];
+  timeZone?: string;
+}
+
+export interface SafetyComplianceOptions extends SafetyLogbookSupplement {
+  hasInstructor?: boolean;
+  perspective?: SafetyMessagePerspective;
+}
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
@@ -93,26 +115,52 @@ const lastFlightMessageFor = (
     : `${person.name}'s last logged flight was ${daysSinceLastFlight} days ago.`
 );
 
-export const getPilotInCommandHours = (personId: string, flightLogs: MinimalFlightLog[]) =>
-  flightLogs
-    .reduce((total, log) => {
-      if (log.instructor_id === personId) {
-        return total + Number(log.flight_duration || 0);
-      }
-      if (log.student_id === personId && !log.instructor_id) {
-        return total + Number(log.solo_time || log.flight_duration || 0);
-      }
-      return total;
-    }, 0);
+const baselineFor = (personId: string, baselines: MinimalBaseline[] = []) =>
+  baselines.find(baseline => baseline.user_id === personId) || null;
 
-export const getLastCurrencyFlightDate = (personId: string, flightLogs: MinimalFlightLog[]) => {
-  const relevantLogs = flightLogs.filter((log) =>
-    log.student_id === personId || log.instructor_id === personId
-  );
+export const getPilotInCommandHours = (
+  personId: string,
+  flightLogs: MinimalFlightLog[],
+  supplement: SafetyLogbookSupplement = {},
+) => {
+  const baseline = baselineFor(personId, supplement.baselines);
+  const portalPic = flightLogs.reduce((total, log) => {
+    if (isIncludedInLogbookBaseline(log.start_time, baseline, supplement.timeZone)) return total;
+    return total + calculateLogbookRoleHours(log, personId).picHours;
+  }, 0);
+  const externalPic = (supplement.externalEntries || []).reduce((total, entry) => {
+    if (
+      entry.user_id !== personId
+      || isIncludedInLogbookBaseline(entry.flight_date, baseline, supplement.timeZone)
+    ) return total;
+    return total + Number(entry.pic_hours || 0);
+  }, 0);
+  return Number(baseline?.pic_hours || 0) + portalPic + externalPic;
+};
 
-  if (relevantLogs.length === 0) return null;
+export const getLastCurrencyFlightDate = (
+  personId: string,
+  flightLogs: MinimalFlightLog[],
+  supplement: SafetyLogbookSupplement = {},
+) => {
+  const dates = flightLogs
+    .filter((log) => log.student_id === personId || log.instructor_id === personId)
+    .map(log => new Date(log.start_time).getTime())
+    .filter(Number.isFinite);
+  const baseline = baselineFor(personId, supplement.baselines);
+  if (baseline?.last_flight_date) {
+    dates.push(new Date(`${baseline.last_flight_date}T12:00:00`).getTime());
+  }
+  for (const entry of supplement.externalEntries || []) {
+    if (entry.user_id === personId) {
+      dates.push(new Date(`${entry.flight_date}T12:00:00`).getTime());
+    }
+  }
 
-  return new Date(Math.max(...relevantLogs.map((log) => new Date(log.start_time).getTime())));
+  const validDates = dates.filter(Number.isFinite);
+  if (validDates.length === 0) return null;
+
+  return new Date(Math.max(...validDates));
 };
 
 export const isStudentOnly = (person: Pick<Student, 'role' | 'roles'>) => {
@@ -128,18 +176,24 @@ export const buildSafetyComplianceSummary = (
   person: Student,
   settings: SafetyComplianceSettings,
   flightLogs: MinimalFlightLog[],
-  options: { hasInstructor?: boolean; perspective?: SafetyMessagePerspective } = {}
+  options: SafetyComplianceOptions = {}
 ): SafetyComplianceSummary => {
   const perspective = options.perspective ?? 'named';
+  const hasInstructor = Boolean(options.hasInstructor);
   const studentOnly = isStudentOnly(person);
-  const lastFlightDate = getLastCurrencyFlightDate(person.id, flightLogs);
+  const supplement = {
+    baselines: options.baselines,
+    externalEntries: options.externalEntries,
+    timeZone: options.timeZone,
+  };
+  const lastFlightDate = getLastCurrencyFlightDate(person.id, flightLogs, supplement);
   const daysSinceLastFlight = lastFlightDate
     ? Math.floor((startOfToday().getTime() - lastFlightDate.getTime()) / MS_PER_DAY)
     : null;
-  const picHours = getPilotInCommandHours(person.id, flightLogs);
+  const picHours = getPilotInCommandHours(person.id, flightLogs, supplement);
   const concerns: SafetyConcern[] = [];
 
-  if (!studentOnly && (daysSinceLastFlight === null || daysSinceLastFlight > settings.recencyDays)) {
+  if (!studentOnly && !hasInstructor && (daysSinceLastFlight === null || daysSinceLastFlight > settings.recencyDays)) {
     concerns.push({
       type: 'recency',
       severity: 'warning',
@@ -155,7 +209,7 @@ export const buildSafetyComplianceSummary = (
   if (medicalDays !== null && medicalDays < 0) {
     concerns.push({
       type: 'medical',
-      severity: 'lapsed',
+      severity: credentialLapseSeverity(settings.autoBlockExpiredMedical),
       label: 'Medical expired',
       days: medicalDays,
       message: `${subjectFor(person, perspective)} medical expired on ${formatDate(person.medicalExpiry)}.`
@@ -174,7 +228,7 @@ export const buildSafetyComplianceSummary = (
   if (licenceDays !== null && licenceDays < 0) {
     concerns.push({
       type: 'licence',
-      severity: 'lapsed',
+      severity: credentialLapseSeverity(settings.autoBlockExpiredLicence),
       label: 'RAAus membership expired',
       days: licenceDays,
       message: `${subjectFor(person, perspective)} RAAus membership expired on ${formatDate(person.licenceExpiry)}.`
@@ -194,7 +248,7 @@ export const buildSafetyComplianceSummary = (
   if (!studentOnly && bfrDays !== null && bfrDays < 0) {
     concerns.push({
       type: 'bfr',
-      severity: options.hasInstructor ? 'lapsed' : 'blocked',
+      severity: bfrLapseSeverity(settings.requireBfrForSolo, hasInstructor),
       label: 'BFR lapsed',
       days: bfrDays,
       message: `${subjectFor(person, perspective)} BFR was due on ${formatDate(bfrDue)}. Aircraft bookings without an instructor are not permitted.`

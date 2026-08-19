@@ -1,3 +1,4 @@
+import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, ExternalLink, FileText, Loader2, RefreshCw, Settings2, Sparkles, Unlink, X } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -571,13 +572,19 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
   };
 
   const saveSettings = async () => {
+    if (statusLoadError) {
+      const message = 'Refresh Xero status before saving accounting settings.';
+      toast.error(message);
+      throw new Error(message);
+    }
     if (!canEdit) return;
     if (
       form.syncAccountTopups &&
       !hasSelectedActiveXeroBankAccount(accounts, form.topupReceiptAccountCode)
     ) {
-      toast.error('Select an existing active Xero bank account for member top-up receipts.');
-      return;
+      const message = 'Select an existing active Xero bank account for member top-up receipts.';
+      toast.error(message);
+      throw new Error(message);
     }
     setSaving(true);
     try {
@@ -592,6 +599,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
     } catch (error: any) {
       console.error('Error saving Xero settings:', error);
       toast.error(error?.message || 'Failed to save Xero settings');
+      throw error;
     } finally {
       setSaving(false);
     }
@@ -710,7 +718,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
                 <button
                   type="button"
                   onClick={connectXero}
-                  disabled={xeroLoading || Boolean(xeroStatus) && !configured}
+                  disabled={xeroLoading || Boolean(statusLoadError) || Boolean(xeroStatus) && !configured}
                   className="inline-flex items-center gap-2 rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {xeroLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
@@ -732,7 +740,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
                 <button
                   type="button"
                   onClick={connectXero}
-                  disabled={xeroLoading || Boolean(xeroStatus) && !configured}
+                  disabled={xeroLoading || Boolean(statusLoadError) || Boolean(xeroStatus) && !configured}
                   className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {xeroLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
@@ -793,7 +801,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
             <label className="mt-4 block font-medium" htmlFor="xero-tenant-selection">
               Xero organisation
             </label>
-            <select
+            <SearchableSelect
               id="xero-tenant-selection"
               value={selectedTenantId}
               onChange={event => {
@@ -808,7 +816,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
                   {organisation.tenantName} ({organisation.tenantType})
                 </option>
               ))}
-            </select>
+            </SearchableSelect>
             {selectedOrganisation && (
               <>
                 <label className="mt-3 block font-medium" htmlFor="xero-tenant-confirmation">
@@ -979,7 +987,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
           <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             <div>
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Default sync mode</label>
-              <select
+              <SearchableSelect
                 value={form.defaultSyncMode}
                 disabled={!canEdit || xeroStatus?.contained}
                 onChange={event => updateForm('defaultSyncMode', event.target.value)}
@@ -988,12 +996,12 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
                 <option value="manual-review">Manual review before sync</option>
                 <option value="auto-draft">Auto-create draft invoices</option>
                 <option value="auto-approved">Auto-create approved invoices</option>
-              </select>
+              </SearchableSelect>
             </div>
 
             <div>
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Default Xero invoice status</label>
-              <select
+              <SearchableSelect
                 value={form.defaultInvoiceStatus}
                 disabled={!canEdit || xeroStatus?.contained}
                 onChange={event => updateForm('defaultInvoiceStatus', event.target.value)}
@@ -1002,7 +1010,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
                 <option value="DRAFT">Draft</option>
                 <option value="SUBMITTED">Awaiting approval</option>
                 <option value="AUTHORISED">Approved</option>
-              </select>
+              </SearchableSelect>
             </div>
 
             <div>
@@ -1019,7 +1027,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
 
             <div>
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Flight revenue account</label>
-              <select
+              <SearchableSelect
                 value={form.revenueAccountCode}
                 disabled={!canEdit}
                 onChange={event => updateForm('revenueAccountCode', event.target.value)}
@@ -1031,12 +1039,12 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
                     {account.code} · {account.name}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
             </div>
 
             <div>
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Member prepaid liability account</label>
-              <select
+              <SearchableSelect
                 value={form.topupAccountCode}
                 disabled={!canEdit}
                 onChange={event => updateForm('topupAccountCode', event.target.value)}
@@ -1048,12 +1056,12 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
                     {account.code} · {account.name}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
             </div>
 
             <div>
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Member top-up receipt account</label>
-              <select
+              <SearchableSelect
                 value={form.topupReceiptAccountCode}
                 disabled={!canEdit}
                 onChange={event => updateForm('topupReceiptAccountCode', event.target.value)}
@@ -1065,7 +1073,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
                     {account.code} · {account.name}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
               <p className="mt-1 text-xs text-gray-500">
                 Required for top-up syncing. Choose an existing Xero bank account, such as 605 Operating Account.
               </p>
@@ -1078,7 +1086,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
 
             <div>
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Gift voucher liability account</label>
-              <select
+              <SearchableSelect
                 value={form.voucherAccountCode}
                 disabled={!canEdit}
                 onChange={event => updateForm('voucherAccountCode', event.target.value)}
@@ -1090,12 +1098,12 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
                     {account.code} · {account.name}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
             </div>
 
             <div>
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Stripe payment clearing account</label>
-              <select
+              <SearchableSelect
                 value={form.stripePaymentAccountCode}
                 disabled={!canEdit}
                 onChange={event => updateForm('stripePaymentAccountCode', event.target.value)}
@@ -1107,12 +1115,12 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
                     {account.code} · {account.name}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
             </div>
 
             <div>
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Prepaid payment clearing account</label>
-              <select
+              <SearchableSelect
                 value={form.prepaidPaymentAccountCode}
                 disabled={!canEdit}
                 onChange={event => updateForm('prepaidPaymentAccountCode', event.target.value)}
@@ -1124,12 +1132,12 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
                     {account.code} · {account.name}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
             </div>
 
             <div>
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Stripe fees expense account</label>
-              <select
+              <SearchableSelect
                 value={form.stripeFeeExpenseAccountCode}
                 disabled={!canEdit}
                 onChange={event => updateForm('stripeFeeExpenseAccountCode', event.target.value)}
@@ -1141,7 +1149,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
                     {account.code} · {account.name}
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
             </div>
           </div>
         </div>
@@ -1171,7 +1179,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
               {mappingPurposes.map(purpose => (
                 <label key={purpose.key} className="block rounded-lg border border-gray-200 bg-white p-3">
                   <span className="text-xs font-semibold text-gray-800">{purpose.label}</span>
-                  <select
+                  <SearchableSelect
                     value={mappingSelections[purpose.key] || ''}
                     onChange={event => setMappingSelections(previous => ({
                       ...previous,
@@ -1186,7 +1194,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
                         {account.code} · {account.name} ({account.type})
                       </option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                 </label>
               ))}
             </div>
