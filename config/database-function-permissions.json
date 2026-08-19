@@ -1886,6 +1886,15 @@
       "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
     },
     {
+      "signature": "public.touch_external_logbook_updated_at()",
+      "name": "touch_external_logbook_updated_at",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": false,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by the external logbook update triggers; client EXECUTE is unnecessary."
+    },
+    {
       "signature": "public.training_record_audit_entry(p_action text, p_changes jsonb)",
       "name": "training_record_audit_entry",
       "classification": "authenticated_self_service",
