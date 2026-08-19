@@ -12,6 +12,14 @@ export interface GuestBookingEmailDetails {
   calendarUrl: string;
   contactEmail?: string;
   contactPhone?: string;
+  previousStartTime?: string | null;
+  previousEndTime?: string | null;
+}
+
+export interface BookingScheduleChangeRow {
+  label: "Date" | "Time";
+  before: string;
+  after: string;
 }
 
 const DEFAULT_CONTACT_EMAIL = "bfc@bendigoflyingclub.com.au";
@@ -42,6 +50,43 @@ const timeLabel = (value: string) =>
     timeZone: "Australia/Sydney",
   }).format(new Date(value));
 
+const validInstant = (value: string | null | undefined) => {
+  if (!value) return null;
+  const instant = new Date(value);
+  return Number.isFinite(instant.getTime()) ? value : null;
+};
+
+const scheduleDateLabel = (startTime: string, endTime: string) => {
+  const startDate = dateLabel(startTime);
+  const endDate = dateLabel(endTime);
+  return startDate === endDate ? startDate : `${startDate} - ${endDate}`;
+};
+
+const scheduleTimeLabel = (startTime: string, endTime: string) =>
+  `${timeLabel(startTime)} - ${timeLabel(endTime)}`;
+
+export const buildBookingScheduleChangeRows = ({
+  previousStartTime,
+  previousEndTime,
+  startTime,
+  endTime,
+}: Pick<GuestBookingEmailDetails, "previousStartTime" | "previousEndTime" | "startTime" | "endTime">): BookingScheduleChangeRow[] => {
+  const previousStart = validInstant(previousStartTime);
+  const previousEnd = validInstant(previousEndTime);
+  const currentStart = validInstant(startTime);
+  const currentEnd = validInstant(endTime);
+  if (!previousStart || !previousEnd || !currentStart || !currentEnd) return [];
+
+  const previousDate = scheduleDateLabel(previousStart, previousEnd);
+  const currentDate = scheduleDateLabel(currentStart, currentEnd);
+  const previousTime = scheduleTimeLabel(previousStart, previousEnd);
+  const currentTime = scheduleTimeLabel(currentStart, currentEnd);
+  return [
+    ...(previousDate === currentDate ? [] : [{ label: "Date" as const, before: previousDate, after: currentDate }]),
+    ...(previousTime === currentTime ? [] : [{ label: "Time" as const, before: previousTime, after: currentTime }]),
+  ];
+};
+
 const isPending = (status: string) => status.startsWith("pending_");
 
 export const guestBookingEmailRetryDelaySeconds = (attempt: number) => {
@@ -66,6 +111,7 @@ export const buildGuestBookingEmail = (details: GuestBookingEmailDetails) => {
   const date = dateLabel(details.startTime);
   const start = timeLabel(details.startTime);
   const end = timeLabel(details.endTime);
+  const scheduleChanges = bookingUpdate ? buildBookingScheduleChangeRows(details) : [];
   const headline = reminder
     ? "Your flight is tomorrow"
     : bookingUpdate
@@ -113,11 +159,26 @@ export const buildGuestBookingEmail = (details: GuestBookingEmailDetails) => {
     ["Status", statusLabel],
   ];
 
+  const textChangeSummary = scheduleChanges.length > 0
+    ? [
+      "What changed:",
+      ...scheduleChanges.flatMap((change) => [
+        `${change.label}:`,
+        `  Was: ${change.before}`,
+        `  Now: ${change.after}`,
+      ]),
+      "",
+      "Updated booking details:",
+      "",
+    ]
+    : [];
+
   const text = [
     `Hi ${details.guestName || "there"},`,
     "",
     intro,
     "",
+    ...textChangeSummary,
     ...rows.map(([label, value]) => `${label}: ${value}`),
     "",
     `View or add the booking to your calendar: ${details.calendarUrl}`,
@@ -130,6 +191,18 @@ export const buildGuestBookingEmail = (details: GuestBookingEmailDetails) => {
       <td style="padding:10px 0;color:#64748b;font-size:13px;font-weight:700;vertical-align:top;width:110px;">${escapeHtml(label)}</td>
       <td style="padding:10px 0;color:#0f172a;font-size:15px;font-weight:700;vertical-align:top;">${escapeHtml(value)}</td>
     </tr>`).join("");
+  const htmlChangeSummary = scheduleChanges.length > 0
+    ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 20px;border:1px solid #bfdbfe;border-radius:14px;background:#eff6ff;">
+        <tr><td style="padding:18px;">
+          <p style="margin:0 0 12px;color:#1e3a8a;font-size:14px;font-weight:800;">What changed</p>
+          ${scheduleChanges.map((change) => `<div style="margin-top:10px;padding-top:10px;border-top:1px solid #dbeafe;">
+            <p style="margin:0 0 5px;color:#334155;font-size:13px;font-weight:800;">${escapeHtml(change.label)}</p>
+            <p style="margin:0 0 3px;color:#64748b;font-size:13px;line-height:1.5;"><strong>Was:</strong> ${escapeHtml(change.before)}</p>
+            <p style="margin:0;color:#0f172a;font-size:14px;line-height:1.5;"><strong>Now:</strong> ${escapeHtml(change.after)}</p>
+          </div>`).join("")}
+        </td></tr>
+      </table>`
+    : "";
 
   const html = `<!doctype html>
 <html lang="en">
@@ -146,6 +219,7 @@ export const buildGuestBookingEmail = (details: GuestBookingEmailDetails) => {
           <tr><td style="padding:28px;">
             <p style="margin:0 0 14px;font-size:16px;line-height:1.6;">Hi ${escapeHtml(details.guestName || "there")},</p>
             <p style="margin:0 0 20px;color:#334155;font-size:15px;line-height:1.65;">${escapeHtml(intro)}</p>
+            ${htmlChangeSummary}
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;">${htmlRows}</table>
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:24px;">
               <tr><td align="center" style="border-radius:13px;background:#2563eb;">
