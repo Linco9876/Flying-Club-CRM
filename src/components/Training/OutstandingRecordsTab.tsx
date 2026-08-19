@@ -33,6 +33,9 @@ import { StudentFileLink } from '../Students/StudentFileLink';
 import { userCanConductReview } from '../../utils/reviewerRoleRules';
 import {
   FORMAL_REVIEW_FINDINGS_LABEL,
+  flightReviewErrorMessage,
+  isContinuableFlightReview,
+  isFinalFlightReviewOutcome,
   requiresFormalReviewFindings,
 } from '../../utils/flightReviewFindings';
 import {
@@ -691,7 +694,7 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
     });
   }, [flightReviews.templates, user]);
   const reviewForActiveFlight = useMemo(
-    () => flightReviews.records.find(record => record.status !== 'cancelled' && reviewMatchesDraftOrFlight(record, {
+    () => flightReviews.records.find(record => isContinuableFlightReview(record.status) && reviewMatchesDraftOrFlight(record, {
       activeFlightLogId: isDraftSession ? undefined : activeLog?.id,
       draftTrainingRecordId: activeDraftRecord?.id,
     })) ?? null,
@@ -1319,6 +1322,20 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
       setActiveReviewRecordId(record.id);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to start review or test');
+    } finally {
+      setStartingReview(false);
+    }
+  }
+
+  async function handleChangeReviewForm(recordId: string) {
+    if (!user?.id) return;
+    setStartingReview(true);
+    try {
+      await flightReviews.updateReview(recordId, {
+        status: 'cancelled',
+        updatedBy: user.id,
+      });
+      setActiveReviewRecordId(null);
     } finally {
       setStartingReview(false);
     }
@@ -2332,10 +2349,26 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
                       user,
                       reviewForActiveFlight.templateSnapshot.review_configuration?.allowed_reviewer_roles,
                     ) ? (
-                      <button type="button" onClick={() => setActiveReviewRecordId(reviewForActiveFlight.id)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700">
-                        Continue record
-                        <ChevronRight className="h-4 w-4" />
-                      </button>
+                      <div className="flex flex-col gap-2 sm:items-end">
+                        <button type="button" onClick={() => setActiveReviewRecordId(reviewForActiveFlight.id)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700">
+                          Continue record
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
+                        {(reviewForActiveFlight.status === 'draft' || reviewForActiveFlight.status === 'in_progress') && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void handleChangeReviewForm(reviewForActiveFlight.id).catch((error) => {
+                                toast.error(flightReviewErrorMessage(error, 'Could not change review form'));
+                              });
+                            }}
+                            disabled={startingReview}
+                            className="min-h-10 rounded-lg px-3 py-2 text-sm font-semibold text-blue-800 underline decoration-blue-300 underline-offset-4 hover:text-blue-950 disabled:opacity-50 dark:text-blue-200 dark:hover:text-white"
+                          >
+                            Cancel draft and choose a different form
+                          </button>
+                        )}
+                      </div>
                     ) : (
                       <p className="max-w-xs text-xs font-semibold text-blue-800 dark:text-blue-200">
                         Assigned for completion by a user holding one of the template's authorised CRM roles.
@@ -3357,13 +3390,15 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
             flightMinutes: Math.max(0, Math.round(((activeLog.dual_time ?? 0) + (activeLog.solo_time ?? 0)) * 60)),
           } : undefined}
           onClose={() => setActiveReviewRecordId(null)}
+          onChangeForm={() => handleChangeReviewForm(activeReviewRecord.id)}
           onUpdateRecord={async (id, input) => {
             const updateInput = !isDraftSession && !activeReviewRecord.flightLogId
               ? { ...input, flightLogId: activeLog.id }
               : input;
             const updated = await flightReviews.updateReview(id, updateInput);
-            if (input.status === 'completed' && !isDraftSession) {
-              await markRecorded(activeLog.id);
+            if (isFinalFlightReviewOutcome(input.status)) {
+              if (!isDraftSession) await markRecorded(activeLog.id);
+              closePanel();
               await refetch();
             }
             return updated;

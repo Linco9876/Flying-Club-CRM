@@ -1245,9 +1245,9 @@
       "name": "protect_candidate_flight_review_update",
       "classification": "trigger_internal",
       "allowed_roles": [],
-      "security_definer": false,
+      "security_definer": true,
       "fixed_search_path": true,
-      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+      "rationale": "Trigger-only candidate update guard; runs as its owner so it can call protected private role helpers without exposing that schema to browser roles."
     },
     {
       "signature": "public.protect_flight_review_import_provenance()",

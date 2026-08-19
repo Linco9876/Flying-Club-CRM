@@ -10,8 +10,10 @@ alter function public.protect_candidate_flight_review_update()
   security definer;
 alter function public.protect_candidate_flight_review_update()
   set search_path = pg_catalog, public, private, pg_temp;
+
 revoke all on function public.protect_candidate_flight_review_update()
   from public, anon, authenticated, service_role;
+
 update private.function_permission_manifest
 set security_definer = true,
     fixed_search_path = true,
