@@ -159,6 +159,35 @@ grant select, insert, update, delete on public.logbook_baselines to authenticate
 grant select, insert, update, delete on public.external_logbook_entries to authenticated;
 grant all on public.logbook_baselines, public.external_logbook_entries to service_role;
 
-revoke all on function public.touch_external_logbook_updated_at() from public, anon, authenticated;
+revoke all on function public.touch_external_logbook_updated_at()
+  from public, anon, authenticated, service_role;
+
+insert into private.function_permission_manifest(
+  signature,
+  function_name,
+  classification,
+  allowed_roles,
+  security_definer,
+  fixed_search_path,
+  rationale,
+  reviewed_at
+) values (
+  'public.touch_external_logbook_updated_at()',
+  'touch_external_logbook_updated_at',
+  'trigger_internal',
+  array[]::text[],
+  false,
+  true,
+  'Invoked only by the external logbook update triggers; client EXECUTE is unnecessary.',
+  date '2026-08-19'
+)
+on conflict (signature) do update set
+  function_name = excluded.function_name,
+  classification = excluded.classification,
+  allowed_roles = excluded.allowed_roles,
+  security_definer = excluded.security_definer,
+  fixed_search_path = excluded.fixed_search_path,
+  rationale = excluded.rationale,
+  reviewed_at = excluded.reviewed_at;
 
 select private.assert_function_permission_manifest();

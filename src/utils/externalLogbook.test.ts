@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   calculateLifetimeLogbookTotals,
@@ -7,6 +8,16 @@ import {
   isIncludedInLogbookBaseline,
   type LogbookBaseline,
 } from './externalLogbook.ts';
+
+const externalLogbookMigration = readFileSync(
+  new URL('../../supabase/migrations/20260819100000_add_external_logbook_hours.sql', import.meta.url),
+  'utf8',
+).toLowerCase();
+
+const deploymentRepairMigration = readFileSync(
+  new URL('../../supabase/migrations/20260819104500_harden_single_guest_booking_relink.sql', import.meta.url),
+  'utf8',
+).toLowerCase();
 
 const baseline: LogbookBaseline = {
   user_id: 'pilot-1',
@@ -92,4 +103,17 @@ test('dual external entries identify the instructor or PIC', () => {
     dualHours: 1,
     picHours: 0,
   }), null);
+});
+
+test('external logbook trigger permissions are manifested for fresh and deployed databases', () => {
+  for (const migration of [externalLogbookMigration, deploymentRepairMigration]) {
+    assert.match(migration, /'public\.touch_external_logbook_updated_at\(\)'/);
+    assert.match(migration, /'trigger_internal'/);
+    assert.match(migration, /array\[\]::text\[\]/);
+    assert.match(
+      migration,
+      /revoke all on function public\.touch_external_logbook_updated_at\(\)[\s\S]*service_role/,
+    );
+    assert.match(migration, /select private\.assert_function_permission_manifest\(\)/);
+  }
 });

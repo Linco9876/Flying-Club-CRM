@@ -2,6 +2,41 @@
 -- Contact-wide Xero identity and promotion metadata may move only when staff
 -- explicitly promote the complete casual-contact history.
 
+-- The external-logbook migration was briefly applied before its trigger was
+-- registered in the permission manifest. Repair that deployed state before
+-- this migration runs the global permission assertion. This is idempotent for
+-- fresh databases where the corrected source migration already registered it.
+revoke all on function public.touch_external_logbook_updated_at()
+  from public, anon, authenticated, service_role;
+
+insert into private.function_permission_manifest(
+  signature,
+  function_name,
+  classification,
+  allowed_roles,
+  security_definer,
+  fixed_search_path,
+  rationale,
+  reviewed_at
+) values (
+  'public.touch_external_logbook_updated_at()',
+  'touch_external_logbook_updated_at',
+  'trigger_internal',
+  array[]::text[],
+  false,
+  true,
+  'Invoked only by the external logbook update triggers; client EXECUTE is unnecessary.',
+  date '2026-08-19'
+)
+on conflict (signature) do update set
+  function_name = excluded.function_name,
+  classification = excluded.classification,
+  allowed_roles = excluded.allowed_roles,
+  security_definer = excluded.security_definer,
+  fixed_search_path = excluded.fixed_search_path,
+  rationale = excluded.rationale,
+  reviewed_at = excluded.reviewed_at;
+
 create or replace function public.promote_casual_contact_history(
   p_booking_id uuid,
   p_target_user_id uuid,
