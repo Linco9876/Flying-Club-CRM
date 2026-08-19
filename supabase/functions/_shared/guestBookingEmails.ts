@@ -1,4 +1,4 @@
-export type GuestBookingEmailKind = "confirmation" | "day_prior_reminder";
+export type GuestBookingEmailKind = "confirmation" | "booking_update" | "day_prior_reminder";
 
 export interface GuestBookingEmailDetails {
   kind: GuestBookingEmailKind;
@@ -11,7 +11,11 @@ export interface GuestBookingEmailDetails {
   location: string;
   calendarUrl: string;
   contactEmail?: string;
+  contactPhone?: string;
 }
+
+const DEFAULT_CONTACT_EMAIL = "bfc@bendigoflyingclub.com.au";
+const DEFAULT_CONTACT_PHONE = "(03) 5443 8395";
 
 const escapeHtml = (value: unknown) =>
   String(value ?? "").replace(/[&<>'"]/g, (character) => ({
@@ -57,32 +61,49 @@ export const shouldSuppressGuestReminder = (
 
 export const buildGuestBookingEmail = (details: GuestBookingEmailDetails) => {
   const reminder = details.kind === "day_prior_reminder";
+  const bookingUpdate = details.kind === "booking_update";
   const pending = isPending(details.status);
   const date = dateLabel(details.startTime);
   const start = timeLabel(details.startTime);
   const end = timeLabel(details.endTime);
   const headline = reminder
     ? "Your flight is tomorrow"
+    : bookingUpdate
+    ? "Your booking has been updated"
     : pending
     ? "We received your booking request"
     : "Your flight is booked";
   const intro = reminder
     ? "This is a reminder of your Bendigo Flying Club booking tomorrow."
+    : bookingUpdate
+    ? "The date or time of your Bendigo Flying Club booking has changed. The updated details are below."
     : pending
     ? "Your booking is in the system and is waiting for final approval or supervision coverage."
     : "Your booking with Bendigo Flying Club is confirmed.";
   const subject = reminder
     ? `Reminder: your Bendigo Flying Club flight is tomorrow at ${start}`
+    : bookingUpdate
+    ? `Updated: your Bendigo Flying Club flight is now ${date} at ${start}`
     : pending
     ? "We received your Bendigo Flying Club booking request"
     : "Your Bendigo Flying Club flight is booked";
   const statusLabel = pending
     ? details.status === "pending_supervision" ? "Pending supervision" : "Pending approval"
     : "Confirmed";
-  const safeContactEmail = String(details.contactEmail || "").trim();
-  const contactSentence = safeContactEmail
-    ? `Need to make a change? Contact us at ${safeContactEmail}.`
-    : "Need to make a change? Please contact Bendigo Flying Club.";
+  const requestedContactEmail = String(details.contactEmail || "").trim();
+  const safeContactEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(requestedContactEmail)
+    ? requestedContactEmail
+    : DEFAULT_CONTACT_EMAIL;
+  const requestedContactPhone = String(details.contactPhone || "").trim();
+  const safeContactPhone = requestedContactPhone.replace(/\D/g, "").length >= 8
+    ? requestedContactPhone
+    : DEFAULT_CONTACT_PHONE;
+  const localPhoneDigits = safeContactPhone.replace(/\D/g, "");
+  const internationalPhone = localPhoneDigits.startsWith("0")
+    ? `+61${localPhoneDigits.slice(1)}`
+    : `+${localPhoneDigits}`;
+  const contactSentence = `Need to make a change? Email ${safeContactEmail} or call ${safeContactPhone}.`;
+  const contactHtml = `Need to make a change? Email <a href="mailto:${escapeHtml(safeContactEmail)}" style="color:#1d4ed8;font-weight:700;text-decoration:none;">${escapeHtml(safeContactEmail)}</a> or call <a href="tel:${escapeHtml(internationalPhone)}" style="color:#1d4ed8;font-weight:700;text-decoration:none;">${escapeHtml(safeContactPhone)}</a>.`;
   const rows = [
     ["Date", date],
     ["Time", `${start} – ${end}`],
@@ -131,7 +152,7 @@ export const buildGuestBookingEmail = (details: GuestBookingEmailDetails) => {
                 <a href="${escapeHtml(details.calendarUrl)}" style="display:block;padding:14px 18px;color:#ffffff;text-decoration:none;font-size:15px;font-weight:800;">View booking and add to calendar</a>
               </td></tr>
             </table>
-            <p style="margin:20px 0 0;color:#64748b;font-size:13px;line-height:1.6;">${escapeHtml(contactSentence)}</p>
+            <p style="margin:20px 0 0;color:#64748b;font-size:13px;line-height:1.6;">${contactHtml}</p>
           </td></tr>
         </table>
       </td></tr>
