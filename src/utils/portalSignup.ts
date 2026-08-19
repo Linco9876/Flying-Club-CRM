@@ -3,7 +3,7 @@ export type PortalSignupIntent = 'portal' | 'membership';
 export const getPortalSignupSteps = (intent: PortalSignupIntent) => (
   intent === 'membership'
     ? ['Start', 'Your details', 'Agreements', 'Payment']
-    : ['Start', 'Your details', 'Privacy']
+    : ['Your details']
 );
 
 interface PortalSignupMetadataInput {

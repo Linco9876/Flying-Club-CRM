@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronLeft, ChevronRight, CreditCard, Landmark, Loader2, Lock, Mail, Plane, ReceiptText, ShieldCheck, UserPlus } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, CreditCard, Landmark, Loader2, Lock, Mail, Plane, ReceiptText, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { publicSupabaseKey, publicSupabaseUrl, supabase } from '../../lib/supabase';
@@ -91,6 +91,7 @@ export const MembershipJoinPage: React.FC<MembershipJoinPageProps> = ({ intent }
     () => getPortalSignupSteps(wantsMembership ? 'membership' : 'portal'),
     [wantsMembership],
   );
+  const detailsStep = wantsMembership ? 1 : 0;
   const finalStep = steps.length - 1;
   const availablePaymentMethods = useMemo(() => {
     const methods: PaymentMethod[] = [];
@@ -214,7 +215,7 @@ export const MembershipJoinPage: React.FC<MembershipJoinPageProps> = ({ intent }
         return false;
       }
     }
-    if (step === 1) {
+    if (step === detailsStep) {
       if (!form.name.trim() || !form.email.trim()) {
         toast.error('Complete the required contact and account details');
         return false;
@@ -236,7 +237,8 @@ export const MembershipJoinPage: React.FC<MembershipJoinPageProps> = ({ intent }
         return false;
       }
     }
-    if (step === 2 && !privacyAccepted) {
+    const isPrivacyStep = wantsMembership ? step === 2 : step === detailsStep;
+    if (isPrivacyStep && !privacyAccepted) {
       toast.error('Please accept the portal privacy notice');
       return false;
     }
@@ -450,45 +452,34 @@ export const MembershipJoinPage: React.FC<MembershipJoinPageProps> = ({ intent }
         </div>
 
         <section className="rounded-3xl bg-white p-5 shadow-2xl sm:p-8">
-          <ol className="grid gap-2" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }} aria-label="Signup progress">
-            {steps.map((label, index) => (
-              <li key={label} aria-current={index === step ? 'step' : undefined} className={`border-t-4 pt-2 text-center text-[11px] font-semibold sm:text-xs ${index <= step ? 'border-blue-700 text-blue-800' : 'border-slate-300 text-slate-600'}`}>
-                <span className="hidden sm:inline">{index + 1}. </span>{label}
-              </li>
-            ))}
-          </ol>
+          {steps.length > 1 && <ol className="grid gap-2" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }} aria-label="Signup progress">
+              {steps.map((label, index) => (
+                <li key={label} aria-current={index === step ? 'step' : undefined} className={`border-t-4 pt-2 text-center text-[11px] font-semibold sm:text-xs ${index <= step ? 'border-blue-700 text-blue-800' : 'border-slate-300 text-slate-600'}`}>
+                  <span className="hidden sm:inline">{index + 1}. </span>{label}
+                </li>
+              ))}
+            </ol>}
 
           <div className="mt-7 min-h-[390px]">
-            {step === 0 && <div>
-              {!user && !wantsMembership && <>
-                <UserPlus className="h-9 w-9 text-blue-700" />
-                <h2 className="mt-3 text-xl font-bold">Portal account only</h2>
-                <p className="mt-1 text-sm leading-6 text-slate-600">Set up your login and portal profile. This does not submit a club membership application or create a payment.</p>
-              </>}
-              {wantsMembership ? <>
-                <h2 className="text-xl font-bold">Choose your membership</h2>
-                <p className="mt-1 text-sm text-slate-600">Fees are annual, include GST and the first year is prorated to 30 June when membership commences.</p>
-                <label className="mt-5 block text-sm font-medium">Date of birth <span className="text-red-600">*</span>
-                  <input required type="date" autoComplete="bday" value={form.dateOfBirth} onChange={e => update('dateOfBirth', e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3" />
-                  <span className="mt-1 block text-xs font-normal text-slate-500">
-                    {isUnder18 ? 'Full membership is not available to applicants under 18.' : 'Junior membership appears only for applicants under 18.'}
-                  </span>
-                </label>
-                <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                  {availableMembershipClasses.map(item => <button key={item.code} type="button" onClick={() => update('membershipClass', item.code)} className={`rounded-2xl border-2 p-4 text-left transition ${form.membershipClass === item.code ? 'border-blue-600 bg-blue-50' : 'border-slate-200 hover:border-blue-300'}`}>
-                    <span className="block font-bold">{item.name}</span><span className="mt-1 block text-2xl font-bold">${item.annualFee}<span className="text-xs font-normal text-slate-600">/year</span></span><span className="mt-2 block text-xs text-slate-600">{item.description}</span><span className="mt-2 block text-[11px] font-semibold text-blue-800">{[item.hasVotingRights ? 'Voting rights' : 'Non-voting', item.canSelfBookAircraft ? 'Aircraft self-booking included' : 'No aircraft self-booking'].join(' · ')}</span>
-                  </button>)}
-                </div>
-                <p className="mt-5 rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">Life membership is awarded by the club and is not available through online signup. RAAus membership is separate from club membership.</p>
-              </> : (
-                <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm leading-6 text-emerald-950">
-                  No membership application, invoice or automatic payment will be created. You can buy membership later from the Club Membership tab or by opening <a href="/membership-join" className="font-semibold text-emerald-900 underline">the membership signup page</a>.
-                </div>
-              )}
+            {step === 0 && wantsMembership && <div>
+              <h2 className="text-xl font-bold">Choose your membership</h2>
+              <p className="mt-1 text-sm text-slate-600">Fees are annual, include GST and the first year is prorated to 30 June when membership commences.</p>
+              <label className="mt-5 block text-sm font-medium">Date of birth <span className="text-red-600">*</span>
+                <input required type="date" autoComplete="bday" value={form.dateOfBirth} onChange={e => update('dateOfBirth', e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3" />
+                <span className="mt-1 block text-xs font-normal text-slate-500">
+                  {isUnder18 ? 'Full membership is not available to applicants under 18.' : 'Junior membership appears only for applicants under 18.'}
+                </span>
+              </label>
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                {availableMembershipClasses.map(item => <button key={item.code} type="button" onClick={() => update('membershipClass', item.code)} className={`rounded-2xl border-2 p-4 text-left transition ${form.membershipClass === item.code ? 'border-blue-600 bg-blue-50' : 'border-slate-200 hover:border-blue-300'}`}>
+                  <span className="block font-bold">{item.name}</span><span className="mt-1 block text-2xl font-bold">${item.annualFee}<span className="text-xs font-normal text-slate-600">/year</span></span><span className="mt-2 block text-xs text-slate-600">{item.description}</span><span className="mt-2 block text-[11px] font-semibold text-blue-800">{[item.hasVotingRights ? 'Voting rights' : 'Non-voting', item.canSelfBookAircraft ? 'Aircraft self-booking included' : 'No aircraft self-booking'].join(' · ')}</span>
+                </button>)}
+              </div>
+              <p className="mt-5 rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">Life membership is awarded by the club and is not available through online signup. RAAus membership is separate from club membership.</p>
             </div>}
 
-            {step === 1 && <div>
-              <h2 className="text-xl font-bold">Tell us about you</h2>
+            {step === detailsStep && <div>
+              <h2 className="text-xl font-bold">{wantsMembership ? 'Tell us about you' : 'Your details'}</h2>
               {user && <div className="mt-3 flex items-start gap-2 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-900"><Check className="mt-0.5 h-4 w-4 shrink-0" /><span>Your portal details are prefilled. Changes to your name, phone, date of birth or residential address will be saved to your profile when you submit this application.</span></div>}
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <label className="text-sm font-medium sm:col-span-2">Full name *<input autoComplete="name" value={form.name} onChange={e => update('name', e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3" /></label>
@@ -508,24 +499,24 @@ export const MembershipJoinPage: React.FC<MembershipJoinPageProps> = ({ intent }
                   {isUnder18 && <><label className="text-sm font-medium">Parent or guardian name *<input value={form.guardianName} onChange={e => update('guardianName', e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3" /></label><label className="flex items-center gap-2 self-end pb-3 text-sm"><input type="checkbox" checked={guardianConsent} onChange={e => setGuardianConsent(e.target.checked)} /> Guardian consent provided</label></>}
                 </>}
               </div>
+              {!wantsMembership && <>
+                <label className="mt-5 flex items-start gap-3 rounded-2xl border border-slate-200 p-4 text-sm leading-6 text-slate-800">
+                  <input required type="checkbox" checked={privacyAccepted} onChange={e => setPrivacyAccepted(e.target.checked)} className="mt-1 h-4 w-4" />
+                  <span>I have read the <a href="/privacy" target="_blank" rel="noreferrer" className="font-semibold text-blue-700 underline">portal privacy notice</a> and understand how my information is used for membership, bookings, safety, training, accounting and portal security.</span>
+                </label>
+                <p className="mt-4 text-xs leading-5 text-slate-600">This creates a portal account only. It does not create a membership application or payment obligation.</p>
+                {!user && <div className="mt-4"><TurnstileWidget onToken={setCaptchaToken} /></div>}
+              </>}
             </div>}
 
-            {step === 2 && <div>
+            {step === 2 && wantsMembership && <div>
               <ShieldCheck className="h-9 w-9 text-blue-600" />
-              <h2 className="mt-3 text-xl font-bold">{wantsMembership ? 'Membership agreements' : 'Portal privacy'}</h2>
-              {wantsMembership && <>
-                <p className="mt-2 text-sm leading-6 text-slate-600">Please read the club documents. Your acknowledgement is stored with the application.</p>
-                <div className="mt-4 rounded-2xl border border-slate-200 p-4"><MembershipDocumentLinks documents={membershipDocuments} loading={membershipDocumentsLoading} error={membershipDocumentsError} /></div>
-                <label className="mt-5 flex items-start gap-3 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-950"><input type="checkbox" disabled={!membershipDocumentsReady} checked={accepted} onChange={e => setAccepted(e.target.checked)} className="mt-1 h-4 w-4 disabled:opacity-50" /><span>I support the purposes of Bendigo Flying Club, accept the member guarantee, and confirm I have read and agree to each current membership document listed above. The document versions and my acknowledgement will be retained with my application.</span></label>
-              </>}
-              {!wantsMembership && <p className="mt-2 text-sm leading-6 text-slate-600">Review how the club protects and uses the information in your portal account.</p>}
+              <h2 className="mt-3 text-xl font-bold">Membership agreements</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">Please read the club documents. Your acknowledgement is stored with the application.</p>
+              <div className="mt-4 rounded-2xl border border-slate-200 p-4"><MembershipDocumentLinks documents={membershipDocuments} loading={membershipDocumentsLoading} error={membershipDocumentsError} /></div>
+              <label className="mt-5 flex items-start gap-3 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-950"><input type="checkbox" disabled={!membershipDocumentsReady} checked={accepted} onChange={e => setAccepted(e.target.checked)} className="mt-1 h-4 w-4 disabled:opacity-50" /><span>I support the purposes of Bendigo Flying Club, accept the member guarantee, and confirm I have read and agree to each current membership document listed above. The document versions and my acknowledgement will be retained with my application.</span></label>
               <label className="mt-3 flex items-start gap-3 rounded-2xl border border-slate-200 p-4 text-sm leading-6 text-slate-800"><input type="checkbox" checked={privacyAccepted} onChange={e => setPrivacyAccepted(e.target.checked)} className="mt-1 h-4 w-4" /><span>I have read the <a href="/privacy" target="_blank" rel="noreferrer" className="font-semibold text-blue-700 underline">portal privacy notice</a> and understand how my information is used for membership, bookings, safety, training, accounting and portal security.</span></label>
-              <p className="mt-4 text-xs leading-5 text-slate-600">
-                {wantsMembership
-                  ? 'Membership commences when approved at a committee meeting, or automatically 30 days after a complete application is submitted. Your portal account can be used as soon as it is activated.'
-                  : 'This creates a portal account only. It does not create a membership application or payment obligation.'}
-              </p>
-              {!wantsMembership && !user && <div className="mt-4"><TurnstileWidget onToken={setCaptchaToken} /></div>}
+              <p className="mt-4 text-xs leading-5 text-slate-600">Membership commences when approved at a committee meeting, or automatically 30 days after a complete application is submitted. Your portal account can be used as soon as it is activated.</p>
             </div>}
 
             {step === 3 && wantsMembership && <div>

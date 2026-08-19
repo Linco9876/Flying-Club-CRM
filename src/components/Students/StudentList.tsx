@@ -10,8 +10,9 @@ import {
   User,
   Phone,
   Clock,
+  PlaneTakeoff,
+  Mail,
   AlertTriangle,
-  CheckCircle,
   Loader2,
   Search,
   UserPlus,
@@ -37,6 +38,11 @@ import { prefetchStudentProfile } from './studentProfileLoader';
 import { useAdminPasswordReset } from '../../hooks/useAdminPasswordReset';
 import { getActiveMemberSummaryCounts } from '../../utils/memberSummaryCounts';
 import { portalRolesUserMayCreate } from '../../utils/portalUserCreation';
+import { useMemberDirectoryMemberships } from '../../hooks/useMemberDirectoryMemberships';
+import {
+  memberCardAttentionItems,
+  memberCardMembershipPresentation,
+} from '../../utils/memberCardSummary';
 
 export const StudentList: React.FC = () => {
   const navigate = useNavigate();
@@ -46,6 +52,11 @@ export const StudentList: React.FC = () => {
   const { resettingUserId, sendPasswordReset } = useAdminPasswordReset();
   const { trainingRecords, loading: trainingRecordsLoading } = useTrainingRecords();
   const { flightLogs, loading: flightLogsLoading } = useFlightLogs();
+  const {
+    summariesByUserId: membershipSummaries,
+    loading: membershipSummariesLoading,
+    error: membershipSummariesError,
+  } = useMemberDirectoryMemberships();
   const [showStudentForm, setShowStudentForm] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showPastVisitorsModal, setShowPastVisitorsModal] = useState(false);
@@ -53,7 +64,7 @@ export const StudentList: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'instructor' | 'pilot' | 'student'>('all');
   const [statusFilter, setStatusFilter] = useState<'active' | 'archived' | 'all'>('active');
-  const [sortBy, setSortBy] = useState<'name' | 'role' | 'hours' | 'lastFlight'>('name');
+  const [sortBy, setSortBy] = useState<'name' | 'role' | 'membership' | 'lastFlight'>('name');
   const [viewMode, setViewMode] = useState<'detailed' | 'slim'>('detailed');
   const [openActionsId, setOpenActionsId] = useState<string | null>(null);
   const canManageMembers = user?.role === 'admin' || user?.roles?.includes('admin');
@@ -68,9 +79,9 @@ export const StudentList: React.FC = () => {
     user?.role === 'senior_instructor' ||
     user?.roles?.some(role => role === 'instructor' || role === 'senior_instructor');
   usePageLoadState(
-    loading || trainingRecordsLoading || flightLogsLoading,
+    loading || trainingRecordsLoading || flightLogsLoading || membershipSummariesLoading,
     'Loading members',
-    'Preparing member cards, roles, recent activity and training counts...'
+    'Preparing club membership, portal access, recent activity and member details...'
   );
 
   useEffect(() => {
@@ -114,28 +125,34 @@ export const StudentList: React.FC = () => {
         student.homePhone,
         student.workPhone,
         student.raausId,
-        student.casaId
+        student.casaId,
+        membershipSummaries.get(student.id)?.membershipClassName,
+        membershipSummaries.get(student.id)?.legalStatus,
+        membershipSummaries.get(student.id)?.applicationClassName,
       ].filter(Boolean).join(' '));
 
       return terms.every(term => haystack.includes(term));
     });
-  }, [matchesRoleFilter, searchTerm, statusFilter, students]);
+  }, [matchesRoleFilter, membershipSummaries, searchTerm, statusFilter, students]);
 
   const statsByStudent = useMemo(() => {
-    const stats = new Map<string, { totalHours: number; lessonCount: number; lastFlight?: Date }>();
+    const stats = new Map<string, { lessonCount: number; lastFlight?: Date }>();
 
     rawVisibleMembers.forEach(student => {
-      stats.set(student.id, { totalHours: 0, lessonCount: 0 });
+      stats.set(student.id, { lessonCount: 0 });
     });
 
     flightLogs.forEach(log => {
-      if (!stats.has(log.student_id)) return;
-      const current = stats.get(log.student_id)!;
       const flightDate = log.start_time ? new Date(log.start_time) : undefined;
-      stats.set(log.student_id, {
-        ...current,
-        totalHours: current.totalHours + Number(log.flight_duration || 0),
-        lastFlight: flightDate && (!current.lastFlight || flightDate > current.lastFlight) ? flightDate : current.lastFlight
+      const participantIds = new Set([log.student_id, log.instructor_id].filter(Boolean) as string[]);
+
+      participantIds.forEach(participantId => {
+        if (!stats.has(participantId)) return;
+        const current = stats.get(participantId)!;
+        stats.set(participantId, {
+          ...current,
+          lastFlight: flightDate && (!current.lastFlight || flightDate > current.lastFlight) ? flightDate : current.lastFlight
+        });
       });
     });
 
@@ -152,7 +169,7 @@ export const StudentList: React.FC = () => {
   }, [flightLogs, trainingRecords, rawVisibleMembers]);
 
   const getStudentStats = React.useCallback(
-    (studentId: string) => statsByStudent.get(studentId) || { totalHours: 0, lessonCount: 0 },
+    (studentId: string) => statsByStudent.get(studentId) || { lessonCount: 0 },
     [statsByStudent],
   );
 
@@ -174,8 +191,15 @@ export const StudentList: React.FC = () => {
         return (roleRank[a.role] || 99) - (roleRank[b.role] || 99) || a.name.localeCompare(b.name);
       }
 
-      if (sortBy === 'hours') {
-        return bStats.totalHours - aStats.totalHours || a.name.localeCompare(b.name);
+      if (sortBy === 'membership') {
+        const membershipRank = (student: Student) => {
+          const summary = membershipSummaries.get(student.id);
+          if (summary?.legalStatus === 'current') return 1;
+          if (summary?.applicationStatus === 'pending') return 2;
+          if (summary?.legalStatus) return 3;
+          return 4;
+        };
+        return membershipRank(a) - membershipRank(b) || a.name.localeCompare(b.name);
       }
 
       if (sortBy === 'lastFlight') {
@@ -186,7 +210,7 @@ export const StudentList: React.FC = () => {
 
       return a.name.localeCompare(b.name);
     });
-  }, [getStudentStats, rawVisibleMembers, sortBy]);
+  }, [getStudentStats, membershipSummaries, rawVisibleMembers, sortBy]);
 
   const roleFilters: { id: typeof roleFilter; label: string }[] = [
     { id: 'all', label: 'All' },
@@ -208,7 +232,7 @@ export const StudentList: React.FC = () => {
   const sortOptions: { id: typeof sortBy; label: string }[] = [
     { id: 'name', label: 'Name' },
     { id: 'role', label: 'Role' },
-    { id: 'hours', label: 'Hours' },
+    { id: 'membership', label: 'Club membership' },
     { id: 'lastFlight', label: 'Last flight' }
   ];
 
@@ -230,7 +254,45 @@ export const StudentList: React.FC = () => {
   };
 
   const getPrimaryPhone = (student: Student) =>
-    student.mobilePhone || student.phone || student.homePhone || student.workPhone || student.alternatePhone || 'No number';
+    student.mobilePhone || student.phone || student.homePhone || student.workPhone || student.alternatePhone || '';
+
+  const getMemberAttentionItems = (
+    student: Student,
+    stats: { lessonCount: number; lastFlight?: Date },
+  ) => memberCardAttentionItems({
+    email: student.email,
+    phone: getPrimaryPhone(student),
+    hasFlyingRecords: Boolean(
+      stats.lastFlight
+      || stats.lessonCount > 0
+      || student.raausId
+      || student.casaId
+      || student.endorsements.length > 0
+      || student.licences.length > 0
+    ),
+    raausId: student.raausId,
+    medicalExpiry: student.medicalExpiry,
+    raausMembershipExpiry: student.licenceExpiry,
+  });
+
+  const formatActivityDate = (date?: Date) => date
+    ? new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }).format(date)
+    : 'No portal flight';
+
+  const membershipToneClass = (tone: ReturnType<typeof memberCardMembershipPresentation>['tone']) => {
+    switch (tone) {
+      case 'current':
+        return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+      case 'pending':
+        return 'border-blue-200 bg-blue-50 text-blue-800';
+      case 'former':
+        return 'border-amber-200 bg-amber-50 text-amber-800';
+      case 'unavailable':
+        return 'border-gray-200 bg-gray-50 text-gray-600';
+      default:
+        return 'border-slate-200 bg-slate-50 text-slate-700';
+    }
+  };
 
   const renderAvatar = (student: Student, sizeClass: string, iconClass: string) => (
     <div className={`${sizeClass} flex-shrink-0 overflow-hidden rounded-full bg-blue-600 shadow-sm ring-2 ring-white`}>
@@ -247,60 +309,6 @@ export const StudentList: React.FC = () => {
       )}
     </div>
   );
-
-  const isExpiryNear = (date?: Date) => {
-    if (!date) return false;
-    const daysUntilExpiry = Math.ceil((date.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
-    return daysUntilExpiry <= 60;
-  };
-
-  const isExpired = (date?: Date) => {
-    if (!date) return false;
-    return date.getTime() < new Date().setHours(0, 0, 0, 0);
-  };
-
-  const getComplianceSummary = (student: Student) => {
-    const medicalMissing = !student.medicalExpiry;
-    const membershipMissing = !student.licenceExpiry;
-    const medicalExpired = isExpired(student.medicalExpiry);
-    const membershipExpired = isExpired(student.licenceExpiry);
-    const medicalNearExpiry = isExpiryNear(student.medicalExpiry);
-    const licenceNearExpiry = isExpiryNear(student.licenceExpiry);
-
-    if (medicalMissing || membershipMissing) {
-      return {
-        label: 'Incomplete',
-        detail: medicalMissing ? 'Medical not recorded' : 'RAAus membership not recorded',
-        className: 'border-gray-200 bg-gray-50 text-gray-700',
-        icon: AlertTriangle
-      };
-    }
-
-    if (medicalExpired || membershipExpired) {
-      return {
-        label: 'Expired',
-        detail: medicalExpired ? 'Medical expired' : 'RAAus membership expired',
-        className: 'border-red-200 bg-red-50 text-red-700',
-        icon: AlertTriangle
-      };
-    }
-
-    if (medicalNearExpiry || licenceNearExpiry) {
-      return {
-        label: 'Review',
-        detail: medicalNearExpiry ? 'Medical due soon' : 'RAAus membership due soon',
-        className: 'border-amber-200 bg-amber-50 text-amber-700',
-        icon: AlertTriangle
-      };
-    }
-
-    return {
-      label: 'Current',
-      detail: 'No alerts',
-      className: 'border-green-200 bg-green-50 text-green-700',
-      icon: CheckCircle
-    };
-  };
 
   const resetFilters = () => {
     setSearchTerm('');
@@ -324,29 +332,44 @@ export const StudentList: React.FC = () => {
       || roles.includes('senior_instructor');
   };
 
-  const renderActionsMenu = (student: Student, placement: 'mobile' | 'desktop') => {
+  const renderActionsMenu = (
+    student: Student,
+    placement: 'mobile' | 'desktop',
+    attentionItems: string[] = [],
+  ) => {
     const isArchived = student.isActive === false;
     const menuId = `${placement}-${student.id}`;
     const isOpen = openActionsId === menuId;
     const menuItemClass = 'flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-gray-700 hover:bg-gray-50';
 
     return (
-      <div className="relative">
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            setOpenActionsId(isOpen ? null : menuId);
-          }}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 shadow-sm hover:bg-gray-50"
-          aria-label={`Actions for ${student.name}`}
-          aria-expanded={isOpen}
-        >
-          <MoreVertical className="h-4 w-4" />
-        </button>
+      <div className="flex items-center gap-1.5">
+        {attentionItems.length > 0 && (
+          <span
+            className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-amber-50 text-amber-600"
+            title={attentionItems.join(' · ')}
+            aria-label={`Warnings for ${student.name}: ${attentionItems.join('. ')}`}
+            role="img"
+          >
+            <AlertTriangle className="h-4 w-4" />
+          </span>
+        )}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              setOpenActionsId(isOpen ? null : menuId);
+            }}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 shadow-sm hover:bg-gray-50"
+            aria-label={`Actions for ${student.name}`}
+            aria-expanded={isOpen}
+          >
+            <MoreVertical className="h-4 w-4" />
+          </button>
 
-        {isOpen && (
-          <div className="absolute right-0 top-9 z-30 w-44 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
+          {isOpen && (
+            <div className="absolute right-0 top-9 z-30 w-44 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
             <button type="button" onClick={() => runMemberAction(() => openViewDetails(student))} className={menuItemClass}>
               <Eye className="h-3.5 w-3.5 text-blue-600" />
               View file
@@ -392,8 +415,9 @@ export const StudentList: React.FC = () => {
                 )}
               </>
             )}
-          </div>
-        )}
+            </div>
+          )}
+        </div>
       </div>
     );
   };
@@ -680,24 +704,33 @@ export const StudentList: React.FC = () => {
 
       {viewMode === 'slim' ? (
         <div className="overflow-visible rounded-xl border border-gray-200 bg-white shadow-sm">
-          <div className="hidden grid-cols-[minmax(180px,1.2fr)_minmax(180px,1.4fr)_minmax(120px,0.8fr)_minmax(150px,1fr)_auto] gap-3 border-b border-gray-100 px-4 py-2 text-xs font-bold uppercase tracking-wide text-gray-500 md:grid">
+          <div className="hidden grid-cols-[minmax(150px,1.1fr)_minmax(190px,1.35fr)_minmax(145px,0.9fr)_minmax(135px,0.9fr)_minmax(115px,0.75fr)_auto] gap-3 border-b border-gray-100 px-4 py-2 text-xs font-bold uppercase tracking-wide text-gray-500 lg:grid">
             <span>Name</span>
-            <span>Email</span>
-            <span>Number</span>
-            <span>Role</span>
+            <span>Contact</span>
+            <span>Club membership</span>
+            <span>Portal roles</span>
+            <span>Last flight</span>
             <span className="sr-only">Actions</span>
           </div>
           <div className="divide-y divide-gray-100">
             {visibleMembers.map(student => {
               const memberRoles = getMemberRoles(student);
               const isArchived = student.isActive === false;
+              const stats = getStudentStats(student.id);
+              const phone = getPrimaryPhone(student);
+              const attentionItems = getMemberAttentionItems(student, stats);
+              const membership = memberCardMembershipPresentation(
+                membershipSummaries.get(student.id),
+                membershipSummariesLoading,
+                Boolean(membershipSummariesError),
+              );
 
               return (
                 <div
                   key={student.id}
                   onPointerEnter={prefetchStudentProfile}
                   onFocusCapture={prefetchStudentProfile}
-                  className="relative grid gap-2 px-3 py-3 pr-14 transition-colors hover:bg-gray-50 md:grid-cols-[minmax(180px,1.2fr)_minmax(180px,1.4fr)_minmax(120px,0.8fr)_minmax(150px,1fr)_auto] md:items-center md:gap-3 md:px-4"
+                  className="relative grid gap-3 px-3 py-3 pr-14 transition-colors hover:bg-gray-50 sm:grid-cols-2 lg:grid-cols-[minmax(150px,1.1fr)_minmax(190px,1.35fr)_minmax(145px,0.9fr)_minmax(135px,0.9fr)_minmax(115px,0.75fr)_auto] lg:items-center lg:gap-3 lg:px-4"
                 >
                   <button
                     type="button"
@@ -713,14 +746,16 @@ export const StudentList: React.FC = () => {
                       )}
                     </div>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => openViewDetails(student)}
-                    className="truncate text-left text-sm text-gray-600"
-                  >
-                    {student.email}
-                  </button>
-                  <p className="truncate text-sm text-gray-700">{getPrimaryPhone(student)}</p>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm text-gray-700">{student.email || 'Email not recorded'}</p>
+                    <p className={`truncate text-xs ${phone ? 'text-gray-500' : 'font-semibold text-amber-700'}`}>{phone || 'Phone not recorded'}</p>
+                  </div>
+                  <div className="min-w-0">
+                    <span className={`inline-flex max-w-full rounded-full border px-2 py-0.5 text-[11px] font-semibold ${membershipToneClass(membership.tone)}`}>
+                      <span className="truncate">{membership.label}</span>
+                    </span>
+                    <p className="mt-1 truncate text-xs text-gray-600">{membership.detail}</p>
+                  </div>
                   <div className="flex flex-wrap gap-1">
                     {memberRoles.map(role => (
                       <span key={role} className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${roleBadgeClass(role)}`}>
@@ -728,8 +763,12 @@ export const StudentList: React.FC = () => {
                       </span>
                     ))}
                   </div>
-                  <div className="absolute right-3 top-3 md:static">
-                    {renderActionsMenu(student, 'desktop')}
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">{formatActivityDate(stats.lastFlight)}</p>
+                    <p className="text-xs text-gray-500">{stats.lessonCount} student record{stats.lessonCount === 1 ? '' : 's'}</p>
+                  </div>
+                  <div className="absolute right-3 top-3 lg:static">
+                    {renderActionsMenu(student, 'desktop', attentionItems)}
                   </div>
                 </div>
               );
@@ -745,13 +784,15 @@ export const StudentList: React.FC = () => {
       <div className="grid gap-2 lg:grid-cols-2">
         {visibleMembers.map(student => {
           const stats = getStudentStats(student.id);
-          const medicalNearExpiry = isExpiryNear(student.medicalExpiry);
-          const licenceNearExpiry = isExpiryNear(student.licenceExpiry);
-          const activeEndorsements = student.endorsements.filter(e => e.isActive).length;
           const memberRoles = getMemberRoles(student);
           const isArchived = student.isActive === false;
-          const compliance = getComplianceSummary(student);
-          const ComplianceIcon = compliance.icon;
+          const phone = getPrimaryPhone(student);
+          const membership = memberCardMembershipPresentation(
+            membershipSummaries.get(student.id),
+            membershipSummariesLoading,
+            Boolean(membershipSummariesError),
+          );
+          const attentionItems = getMemberAttentionItems(student, stats);
 
           return (
             <article
@@ -760,24 +801,18 @@ export const StudentList: React.FC = () => {
               onFocusCapture={prefetchStudentProfile}
               className="overflow-visible rounded-xl border border-gray-200 bg-white shadow-sm"
             >
-              <div className="flex items-start gap-3 px-3 py-3">
+              <div className="flex items-start gap-2.5 px-3 py-2.5">
                 <button
                   type="button"
                   onClick={() => openViewDetails(student)}
-                  className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                  className="flex min-w-0 flex-1 items-start gap-2.5 text-left"
                 >
-                  {renderAvatar(student, 'h-10 w-10', 'h-4 w-4')}
+                  {renderAvatar(student, 'h-9 w-9', 'h-4 w-4')}
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center gap-1.5">
                       <h2 className="truncate text-sm font-semibold text-gray-900">{student.name}</h2>
-                      {isArchived && (
-                        <span className="flex-shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-700">
-                          Archived
-                        </span>
-                      )}
                     </div>
-                    <p className="truncate text-xs text-gray-500">{student.email}</p>
-                    <div className="mt-1 flex flex-wrap gap-1">
+                    <div className="mt-0.5 flex flex-wrap gap-1">
                       {memberRoles.slice(0, 3).map(role => (
                         <span key={role} className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${roleBadgeClass(role)}`}>
                           {roleLabels[role]}
@@ -786,67 +821,43 @@ export const StudentList: React.FC = () => {
                     </div>
                   </div>
                 </button>
-                {renderActionsMenu(student, 'mobile')}
+                {renderActionsMenu(student, 'mobile', attentionItems)}
               </div>
 
-              <button
-                type="button"
-                onClick={() => openViewDetails(student)}
-                className="block w-full border-t border-gray-100 px-3 py-2 text-left transition-colors hover:bg-gray-50"
-              >
-                <div className="grid grid-cols-3 gap-2 text-[11px]">
-                  <div>
-                    <p className="font-medium text-gray-500">Hours</p>
-                    <p className="text-sm font-semibold text-gray-900">{stats.totalHours.toFixed(1)}</p>
-                  </div>
-                  <div>
-                    <p className="font-medium text-gray-500">Lessons</p>
-                    <p className="text-sm font-semibold text-gray-900">{stats.lessonCount}</p>
-                  </div>
-                  <div>
-                    <p className="font-medium text-gray-500">Status</p>
-                    <p className={`truncate text-sm font-semibold ${
-                      compliance.label === 'Expired' ? 'text-red-700' : compliance.label === 'Review' ? 'text-amber-700' : compliance.label === 'Incomplete' ? 'text-gray-700' : 'text-green-700'
-                    }`}>{compliance.label}</p>
-                  </div>
-                </div>
-              </button>
-
-              <div className="space-y-1.5 border-t border-gray-100 px-3 py-2">
-                <div className="flex flex-wrap gap-1">
-                  {student.raausId && (
-                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700">
-                      RAAus {student.raausId}
-                    </span>
-                  )}
-                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
-                    {stats.lessonCount} lesson{stats.lessonCount === 1 ? '' : 's'}
-                  </span>
-                  <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                    {activeEndorsements} endorsement{activeEndorsements === 1 ? '' : 's'}
-                  </span>
-                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${compliance.className}`}>
-                    <ComplianceIcon className="mr-1 h-3 w-3" />
-                    {compliance.detail}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-gray-100 bg-slate-50/70 px-3 py-2 text-[11px]">
+                <div className="flex min-w-0 items-center gap-1.5" title="Club membership">
+                  <span className="truncate font-semibold text-gray-800">{membership.detail}</span>
+                  <span className={`inline-flex max-w-full rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${membershipToneClass(membership.tone)}`}>
+                    <span className="truncate">{membership.label}</span>
                   </span>
                 </div>
-
-                <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-600">
-                  <span className={medicalNearExpiry ? 'text-yellow-700' : 'text-gray-600'}>
-                    Medical {student.medicalExpiry?.toLocaleDateString() || 'not set'}
-                  </span>
-                  <span className={licenceNearExpiry ? 'text-yellow-700' : 'text-gray-600'}>
-                    RAAus membership {student.licenceExpiry?.toLocaleDateString() || 'not set'}
-                  </span>
-                  {student.phone && (
-                    <span className="inline-flex items-center text-gray-600">
-                      <Phone className="mr-1 h-3 w-3 text-gray-400" />
-                      {student.phone}
-                    </span>
-                  )}
+                <div className={`font-semibold ${isArchived ? 'text-gray-600' : 'text-emerald-700'}`} title="Portal profile">
+                  Portal {isArchived ? 'archived' : 'active'}
                 </div>
-
+                <div className="inline-flex items-center gap-1 text-gray-600" title="Last portal flight as student or instructor">
+                  <PlaneTakeoff className="h-3.5 w-3.5 text-gray-400" />
+                  <span>{formatActivityDate(stats.lastFlight)}</span>
+                </div>
+                <div className="inline-flex items-center gap-1 text-gray-600" title="Training records as the student">
+                  <FileText className="h-3.5 w-3.5 text-gray-400" />
+                  <span>{stats.lessonCount} record{stats.lessonCount === 1 ? '' : 's'}</span>
+                </div>
               </div>
+
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-gray-100 px-3 py-2 text-[11px]">
+                <span className={`flex min-w-0 items-center gap-1 ${student.email ? 'text-gray-600' : 'font-semibold text-amber-700'}`}>
+                  <Mail className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
+                  <span className="max-w-[220px] truncate">{student.email || 'Email not recorded'}</span>
+                </span>
+                <span className={`flex min-w-0 items-center gap-1 ${phone ? 'text-gray-600' : 'font-semibold text-amber-700'}`}>
+                  <Phone className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
+                  <span className="truncate">{phone || 'Phone not recorded'}</span>
+                </span>
+                {student.raausId && <span className="rounded-full bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-700">RAAus {student.raausId}</span>}
+                {student.casaId && <span className="rounded-full bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-700">CASA {student.casaId}</span>}
+                {!student.raausId && !student.casaId && <span className="text-gray-400">No aviation ID</span>}
+              </div>
+
             </article>
           );
         })}
