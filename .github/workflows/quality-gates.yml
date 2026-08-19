@@ -59,7 +59,7 @@ jobs:
           set -euo pipefail
           mapfile -t tests < <(find supabase/functions -name '*.test.ts' -print | sort)
           test "${#tests[@]}" -gt 0
-          npx --yes deno test --node-modules-dir=false "${tests[@]}"
+          npx --yes deno test --allow-read --node-modules-dir=false "${tests[@]}"
 
   code-security:
     runs-on: ubuntu-latest

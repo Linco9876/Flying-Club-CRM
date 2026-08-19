@@ -13,6 +13,11 @@ dist
 dist-ssr
 *.local
 
+# The audited image-size security backport is a vendored package whose runtime
+# entrypoint is compiled into its own dist directory.
+!apps/duty-clock/vendor/image-size/dist/
+!apps/duty-clock/vendor/image-size/dist/**
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
