@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StudentForm } from './StudentForm';
 import { InviteUserModal } from './InviteUserModal';
+import { PastVisitorsModal } from './PastVisitorsModal';
 import { Student, UserRole } from '../../types';
 import {
   User,
@@ -23,7 +24,8 @@ import {
   FileText,
   ArrowUpDown,
   X,
-  MoreVertical
+  MoreVertical,
+  History,
 } from 'lucide-react';
 import { useStudents } from '../../hooks/useStudents';
 import { InviteUserResult, useInvitations } from '../../hooks/useInvitations';
@@ -46,6 +48,7 @@ export const StudentList: React.FC = () => {
   const { flightLogs, loading: flightLogsLoading } = useFlightLogs();
   const [showStudentForm, setShowStudentForm] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showPastVisitorsModal, setShowPastVisitorsModal] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'instructor' | 'pilot' | 'student'>('all');
@@ -516,13 +519,22 @@ export const StudentList: React.FC = () => {
                 ))}
               </div>
               {canAddPortalUsers && (
-                <button
-                  onClick={() => setShowInviteModal(true)}
-                  className="inline-flex self-start items-center justify-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-slate-950 shadow-sm transition-colors hover:bg-blue-50 sm:self-auto sm:px-3"
-                >
-                  <UserPlus className="h-4 w-4" />
-                  Add user
-                </button>
+                <>
+                  <button
+                    onClick={() => setShowPastVisitorsModal(true)}
+                    className="inline-flex self-start items-center justify-center gap-2 rounded-lg border border-white/25 bg-white/10 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-white/20 sm:self-auto"
+                  >
+                    <History className="h-4 w-4" />
+                    Past visitors
+                  </button>
+                  <button
+                    onClick={() => setShowInviteModal(true)}
+                    className="inline-flex self-start items-center justify-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-slate-950 shadow-sm transition-colors hover:bg-blue-50 sm:self-auto sm:px-3"
+                  >
+                    <UserPlus className="h-4 w-4" />
+                    Add user
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -869,6 +881,17 @@ export const StudentList: React.FC = () => {
           allowedRoles={allowedPortalUserRoles}
         />
       )}
+
+      <PastVisitorsModal
+        isOpen={showPastVisitorsModal}
+        users={students}
+        onClose={() => setShowPastVisitorsModal(false)}
+        onOpenProfile={(memberId) => {
+          setShowPastVisitorsModal(false);
+          navigate(`/students/${memberId}`);
+        }}
+        onMembersChanged={refetch}
+      />
     </div>
   );
 };

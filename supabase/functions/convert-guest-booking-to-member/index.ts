@@ -98,35 +98,149 @@ Deno.serve(async (req: Request) => {
 
     const body = await req.json();
     const bookingId = cleanText(body.bookingId);
+    const casualContactId = cleanText(body.casualContactId);
     const requestedTargetUserId = cleanText(body.targetUserId);
     const role = body.role === "pilot" ? "pilot" : "student";
     const linkAll = body.linkAll !== false;
     const sendInvitation = body.sendInvitation === true;
+    const reactivateProfile = body.reactivateProfile === true;
     const redirectTo = cleanText(body.redirectTo) || `${Deno.env.get("PORTAL_ORIGIN") || "https://portal.bendigoflyingclub.com.au"}/reset-password`;
 
-    if (!uuidPattern.test(bookingId)) return json({ error: "A valid booking is required" }, 400);
+    if (!bookingId && !casualContactId) {
+      return json({ error: "A booking or past visitor is required" }, 400);
+    }
+    if (bookingId && !uuidPattern.test(bookingId)) return json({ error: "A valid booking is required" }, 400);
+    if (casualContactId && !uuidPattern.test(casualContactId)) {
+      return json({ error: "A valid past visitor is required" }, 400);
+    }
     if (requestedTargetUserId && !uuidPattern.test(requestedTargetUserId)) {
       return json({ error: "A valid target profile is required" }, 400);
     }
     const access = provisioningAccessFor(callerRoles, [role]);
     if (!access.allowed) return json({ error: access.error || "Only staff can promote casual contacts" }, 403);
 
-    const { data: booking, error: bookingError } = await adminClient
-      .from("bookings")
-      .select("id,is_guest_booking,guest_name,guest_email,guest_phone,casual_contact_id")
-      .eq("id", bookingId)
-      .maybeSingle();
-    if (bookingError) throw bookingError;
-    if (!booking) return json({ error: "Booking not found" }, 404);
+    const reactivatePortalProfile = async (targetUserId: string) => {
+      const { data: target, error: targetError } = await adminClient
+        .from("users")
+        .select("id,is_active,portal_access_scope")
+        .eq("id", targetUserId)
+        .maybeSingle();
+      if (targetError) throw targetError;
+      if (!target || target.portal_access_scope === "guest_placeholder") {
+        throw new Error("The linked portal profile is not available");
+      }
+
+      const needsActivation = target.is_active === false;
+      const needsFullAccess = target.portal_access_scope === "trial_voucher";
+      if (!reactivateProfile || (!needsActivation && !needsFullAccess)) return false;
+
+      const { data: updatedRows, error: updateError } = await adminClient
+        .from("users")
+        .update({
+          is_active: true,
+          portal_access_scope: needsFullAccess ? "full" : target.portal_access_scope,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", targetUserId)
+        .select("id,is_active,portal_access_scope");
+      if (updateError) throw updateError;
+      const updated = updatedRows?.[0];
+      if (!updated || updated.is_active !== true || updated.portal_access_scope === "guest_placeholder") {
+        throw new Error("The portal profile could not be restored");
+      }
+      return true;
+    };
+
+    let contact: {
+      id: string;
+      name: string;
+      email: string;
+      phone: string | null;
+      status: string;
+      promoted_to_user_id: string | null;
+    } | null = null;
+
+    if (casualContactId) {
+      const { data, error } = await adminClient
+        .from("casual_contacts")
+        .select("id,name,email,phone,status,promoted_to_user_id")
+        .eq("id", casualContactId)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data || data.status === "merged") return json({ error: "Past visitor not found" }, 404);
+      contact = data;
+
+      if (contact.promoted_to_user_id) {
+        if (requestedTargetUserId && requestedTargetUserId !== contact.promoted_to_user_id) {
+          return json({ error: "This visitor is already linked to a different portal profile" }, 409);
+        }
+        const profileReactivated = await reactivatePortalProfile(contact.promoted_to_user_id);
+        const { error: pilotFileError } = await adminClient
+          .from("students")
+          .upsert({ id: contact.promoted_to_user_id });
+        if (pilotFileError) throw pilotFileError;
+        return json({
+          ok: true,
+          action: profileReactivated ? "reactivated_profile" : "profile_already_active",
+          memberId: contact.promoted_to_user_id,
+          memberEmail: contact.email,
+          emailSent: false,
+          manualLink: null,
+          linkAll: true,
+          profileReactivated,
+          transferred: {
+            bookingCount: 0,
+            flightLogCount: 0,
+            trainingRecordCount: 0,
+            reviewCount: 0,
+          },
+        });
+      }
+    }
+
+    let booking: {
+      id: string;
+      is_guest_booking: boolean;
+      guest_name: string | null;
+      guest_email: string | null;
+      guest_phone: string | null;
+      casual_contact_id: string | null;
+    } | null = null;
+
+    if (bookingId) {
+      const { data, error } = await adminClient
+        .from("bookings")
+        .select("id,is_guest_booking,guest_name,guest_email,guest_phone,casual_contact_id")
+        .eq("id", bookingId)
+        .maybeSingle();
+      if (error) throw error;
+      booking = data;
+    } else if (contact) {
+      const { data, error } = await adminClient
+        .from("bookings")
+        .select("id,is_guest_booking,guest_name,guest_email,guest_phone,casual_contact_id")
+        .eq("casual_contact_id", contact.id)
+        .eq("is_guest_booking", true)
+        .order("start_time", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      booking = data;
+    }
+
+    if (!booking) return json({ error: "No transferable visitor booking was found" }, 404);
     if (!booking.is_guest_booking) return json({ error: "This booking is already attached to a portal profile" }, 409);
     if (!booking.casual_contact_id) {
       return json({ error: "This booking needs the casual-contact database upgrade before it can be promoted" }, 409);
     }
+    if (contact && booking.casual_contact_id !== contact.id) {
+      return json({ error: "The booking does not belong to the selected visitor" }, 409);
+    }
 
     const guest = {
-      name: cleanText(booking.guest_name),
-      email: cleanText(booking.guest_email).toLowerCase(),
-      phone: cleanText(booking.guest_phone),
+      name: cleanText(contact?.name || booking.guest_name),
+      email: cleanText(contact?.email || booking.guest_email).toLowerCase(),
+      phone: cleanText(contact?.phone || booking.guest_phone),
     };
     if (!guest.name || !guest.email) return json({ error: "Guest name and email are required" }, 409);
 
@@ -176,6 +290,8 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    const profileReactivated = await reactivatePortalProfile(targetUserId);
+
     const { error: pilotFileError } = await adminClient
       .from("students")
       .upsert({ id: targetUserId });
@@ -184,7 +300,7 @@ Deno.serve(async (req: Request) => {
     const { data: transfer, error: transferError } = await adminClient.rpc(
       "promote_casual_contact_history",
       {
-        p_booking_id: bookingId,
+        p_booking_id: booking.id,
         p_target_user_id: targetUserId,
         p_link_all: linkAll,
         p_actor_id: callerUser.id,
@@ -200,6 +316,7 @@ Deno.serve(async (req: Request) => {
       emailSent: Boolean(provisioning?.emailSent),
       manualLink: provisioning?.manualLink || null,
       linkAll,
+      profileReactivated,
       transferred: transfer,
     });
   } catch (error) {
