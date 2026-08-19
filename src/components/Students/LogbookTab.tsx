@@ -22,6 +22,7 @@ import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
 import { useLogbookDetails } from '../../hooks/useLogbookDetails';
 import { useExternalLogbook } from '../../hooks/useExternalLogbook';
+import { useOrganisationSettings } from '../../hooks/useSettings';
 import {
   ExternalLogbookDialog,
   type ExternalLogbookEditorState,
@@ -40,6 +41,7 @@ import {
 } from '../../utils/logbookEntries';
 import {
   calculateLifetimeLogbookTotals,
+  DEFAULT_LOGBOOK_TIME_ZONE,
   isIncludedInLogbookBaseline,
 } from '../../utils/externalLogbook';
 
@@ -154,6 +156,8 @@ const PersonLinkList: React.FC<{ people: LogbookPerson[] }> = ({ people }) => (
 
 export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInstructor }) => {
   const { flightLogs, loading, error: flightLogError, refetch } = useFlightLogs(userId);
+  const { settings: organisationSettings } = useOrganisationSettings();
+  const logbookTimeZone = organisationSettings?.timezone || DEFAULT_LOGBOOK_TIME_ZONE;
   const {
     baseline,
     entries: externalEntries,
@@ -215,7 +219,7 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
       ...log,
       source: 'portal' as const,
       externalEntry: null,
-      includedInBaseline: isIncludedInLogbookBaseline(log.start_time, baseline),
+      includedInBaseline: isIncludedInLogbookBaseline(log.start_time, baseline, logbookTimeZone),
       aircraft,
       student,
       instructor,
@@ -237,7 +241,7 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
       }),
       personalNote: notesByFlightId[log.id] || '',
     };
-  }), [aircraftList, baseline, contextByFlightId, emptyContext, flightLogs, notesByFlightId, userId, users]);
+  }), [aircraftList, baseline, contextByFlightId, emptyContext, flightLogs, logbookTimeZone, notesByFlightId, userId, users]);
 
   const externalLogs = useMemo(() => externalEntries.map(entry => {
     const hasMixedAllocation = entry.dual_hours > 0 && entry.pic_hours > 0;
@@ -258,7 +262,7 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
       id: `external:${entry.id}`,
       source: 'external' as const,
       externalEntry: entry,
-      includedInBaseline: isIncludedInLogbookBaseline(entry.flight_date, baseline),
+      includedInBaseline: isIncludedInLogbookBaseline(entry.flight_date, baseline, logbookTimeZone),
       booking_id: undefined,
       aircraft_id: '',
       student_id: userId,
@@ -296,7 +300,7 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
       lessonDestination: null,
       personalNote: entry.notes,
     };
-  }), [baseline, externalEntries, userId, userName]);
+  }), [baseline, externalEntries, logbookTimeZone, userId, userName]);
 
   const allLogs = useMemo(() => [...enrichedLogs, ...externalLogs], [enrichedLogs, externalLogs]);
 
@@ -351,7 +355,8 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
       takeoffs: log.takeoffs || 0,
       landings: log.landings || 0,
     })),
-  ), [allLogs, baseline]);
+    logbookTimeZone,
+  ), [allLogs, baseline, logbookTimeZone]);
 
   const formatHours = (hours: number) => hours.toFixed(1);
   const formatDate = (dateStr: string) => {

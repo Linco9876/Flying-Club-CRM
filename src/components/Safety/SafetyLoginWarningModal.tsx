@@ -6,6 +6,7 @@ import { useStudents } from '../../hooks/useStudents';
 import { useFlightLogs } from '../../hooks/useFlightLogs';
 import { useExternalLogbook } from '../../hooks/useExternalLogbook';
 import { useSafetySettings } from '../../hooks/useSafetySettings';
+import { useOrganisationSettings } from '../../hooks/useSettings';
 import {
   buildSafetyComplianceSummary,
   type SafetyComplianceSummary,
@@ -34,6 +35,7 @@ export const SafetyLoginWarningModal: React.FC = () => {
     error: externalLogbookError,
   } = useExternalLogbook(user?.id);
   const { settings, loading: safetySettingsLoading } = useSafetySettings();
+  const { settings: organisationSettings, loading: organisationSettingsLoading } = useOrganisationSettings();
   const [dismissedUserId, setDismissedUserId] = React.useState<string | null>(null);
   const [displayedWarning, setDisplayedWarning] = React.useState<{
     userId: string;
@@ -47,9 +49,10 @@ export const SafetyLoginWarningModal: React.FC = () => {
           perspective: 'firstPerson',
           baselines: logbookBaselines,
           externalEntries: externalLogbookEntries,
+          timeZone: organisationSettings?.timezone,
         })
       : null,
-    [externalLogbookEntries, flightLogs, logbookBaselines, settings, student]
+    [externalLogbookEntries, flightLogs, logbookBaselines, organisationSettings?.timezone, settings, student]
   );
   const storageKey = user ? `safety-login-warning-dismissed:${user.id}` : '';
   const dismissed = Boolean(
@@ -59,6 +62,7 @@ export const SafetyLoginWarningModal: React.FC = () => {
     && !flightLogsLoading
     && !externalLogbookLoading
     && !safetySettingsLoading
+    && !organisationSettingsLoading
     && !studentsError
     && !flightLogsError
     && !externalLogbookError;

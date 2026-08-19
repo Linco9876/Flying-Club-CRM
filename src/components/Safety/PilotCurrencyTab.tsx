@@ -5,6 +5,7 @@ import { useStudents } from '../../hooks/useStudents';
 import { useSafetySettings } from '../../hooks/useSafetySettings';
 import type { FlightLog } from '../../hooks/useFlightLogs';
 import { useExternalLogbook } from '../../hooks/useExternalLogbook';
+import { useOrganisationSettings } from '../../hooks/useSettings';
 import { buildSafetyComplianceSummary, getBfrDueDate, isStudentOnly } from '../../utils/safetyCompliance';
 import { Download, Search, AlertTriangle, CheckCircle, Clock, CalendarDays, ShieldCheck, Loader2 } from 'lucide-react';
 import { hasAnyRole } from '../../utils/rbac';
@@ -35,6 +36,7 @@ export const PilotCurrencyTab: React.FC = () => {
   const [flightLogsLoading, setFlightLogsLoading] = useState(true);
   const [flightLogsError, setFlightLogsError] = useState<string | null>(null);
   const { settings } = useSafetySettings();
+  const { settings: organisationSettings } = useOrganisationSettings();
   const {
     baselines: logbookBaselines,
     entries: externalLogbookEntries,
@@ -94,6 +96,7 @@ export const PilotCurrencyTab: React.FC = () => {
       const summary = buildSafetyComplianceSummary(pilot, settings, flightLogs, {
         baselines: logbookBaselines,
         externalEntries: externalLogbookEntries,
+        timeZone: organisationSettings?.timezone,
       });
       const bfrDue = getBfrDueDate(pilot);
 

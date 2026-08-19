@@ -79,15 +79,34 @@ const finiteNonNegative = (value: unknown) => {
   return Number.isFinite(number) && number >= 0 ? number : 0;
 };
 
-export const toLogbookDateOnly = (value: string) => {
-  const match = String(value || '').match(/^(\d{4}-\d{2}-\d{2})/);
-  if (match) return match[1];
-  const parsed = new Date(value);
+export const DEFAULT_LOGBOOK_TIME_ZONE = 'Australia/Melbourne';
+
+const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;
+
+const zonedDateOnly = (date: Date, timeZone: string) => {
+  const parts = new Intl.DateTimeFormat('en-AU', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+};
+
+export const toLogbookDateOnly = (
+  value: string,
+  timeZone = DEFAULT_LOGBOOK_TIME_ZONE,
+) => {
+  const trimmed = String(value || '').trim();
+  if (dateOnlyPattern.test(trimmed)) return trimmed;
+  const parsed = new Date(trimmed);
   if (Number.isNaN(parsed.getTime())) return '';
-  const year = parsed.getFullYear();
-  const month = String(parsed.getMonth() + 1).padStart(2, '0');
-  const day = String(parsed.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  try {
+    return zonedDateOnly(parsed, timeZone);
+  } catch {
+    return zonedDateOnly(parsed, DEFAULT_LOGBOOK_TIME_ZONE);
+  }
 };
 
 export const todayDateOnly = () => {
@@ -101,11 +120,13 @@ export const todayDateOnly = () => {
 export const isIncludedInLogbookBaseline = (
   date: string,
   baseline?: Pick<LogbookBaseline, 'as_of_date'> | null,
-) => Boolean(baseline?.as_of_date && toLogbookDateOnly(date) <= baseline.as_of_date);
+  timeZone = DEFAULT_LOGBOOK_TIME_ZONE,
+) => Boolean(baseline?.as_of_date && toLogbookDateOnly(date, timeZone) <= baseline.as_of_date);
 
 export const calculateLifetimeLogbookTotals = (
   baseline: LogbookBaseline | null | undefined,
   entries: DatedLogbookHours[],
+  timeZone = DEFAULT_LOGBOOK_TIME_ZONE,
 ): LogbookTotals => {
   const totals: LogbookTotals = {
     totalHours: finiteNonNegative(baseline?.total_hours),
@@ -116,7 +137,7 @@ export const calculateLifetimeLogbookTotals = (
   };
 
   for (const entry of entries) {
-    if (isIncludedInLogbookBaseline(entry.date, baseline)) continue;
+    if (isIncludedInLogbookBaseline(entry.date, baseline, timeZone)) continue;
     totals.totalHours += finiteNonNegative(entry.totalHours);
     totals.picHours += finiteNonNegative(entry.picHours);
     totals.dualHours += finiteNonNegative(entry.dualHours);

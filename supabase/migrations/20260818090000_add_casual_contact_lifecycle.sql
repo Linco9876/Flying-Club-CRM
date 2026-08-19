@@ -370,26 +370,35 @@ begin
     where user_id = v_booking.student_id
       and booking_id = any(v_booking_ids);
 
-  update public.users target
-  set xero_contact_id = case
-        when target.xero_contact_id is null
-          and v_contact.xero_contact_id is not null
-          and not exists (select 1 from public.users other where other.id <> target.id and other.xero_contact_id = v_contact.xero_contact_id)
-        then v_contact.xero_contact_id else target.xero_contact_id end,
-      xero_contact_name = coalesce(target.xero_contact_name, v_contact.xero_contact_name),
-      xero_contact_email = coalesce(target.xero_contact_email, v_contact.xero_contact_email),
-      xero_contact_linked_at = case when target.xero_contact_id is null and v_contact.xero_contact_id is not null then coalesce(v_contact.xero_contact_linked_at, now()) else target.xero_contact_linked_at end
-  where target.id = p_target_user_id;
+  -- Contact-level identity belongs to the person represented by the complete
+  -- casual contact. A single-booking correction must never attach that other
+  -- person's Xero identity or promotion state to the selected member.
+  if p_link_all then
+    update public.users target
+    set xero_contact_id = case
+          when target.xero_contact_id is null
+            and v_contact.xero_contact_id is not null
+            and not exists (select 1 from public.users other where other.id <> target.id and other.xero_contact_id = v_contact.xero_contact_id)
+          then v_contact.xero_contact_id else target.xero_contact_id end,
+        xero_contact_name = coalesce(target.xero_contact_name, v_contact.xero_contact_name),
+        xero_contact_email = coalesce(target.xero_contact_email, v_contact.xero_contact_email),
+        xero_contact_linked_at = case when target.xero_contact_id is null and v_contact.xero_contact_id is not null then coalesce(v_contact.xero_contact_linked_at, now()) else target.xero_contact_linked_at end
+    where target.id = p_target_user_id;
 
-  update public.casual_contacts
-  set status = case when not exists (select 1 from public.bookings where casual_contact_id = v_contact.id and is_guest_booking) then 'promoted' else 'active' end,
-      promoted_to_user_id = p_target_user_id,
-      promoted_at = now(),
-      updated_at = now()
-  where id = v_contact.id;
+    update public.casual_contacts
+    set status = 'promoted',
+        promoted_to_user_id = p_target_user_id,
+        promoted_at = now(),
+        updated_at = now()
+    where id = v_contact.id;
+  else
+    update public.casual_contacts
+    set updated_at = now()
+    where id = v_contact.id;
+  end if;
 
   insert into public.casual_contact_events(casual_contact_id, event_type, booking_id, target_user_id, actor_id, details)
-  values (v_contact.id, 'promoted', p_booking_id, p_target_user_id, p_actor_id, jsonb_build_object(
+  values (v_contact.id, case when p_link_all then 'promoted' else 'booking_linked' end, p_booking_id, p_target_user_id, p_actor_id, jsonb_build_object(
     'linkAll', p_link_all,
     'bookingCount', v_booking_count,
     'flightLogCount', v_flight_count,

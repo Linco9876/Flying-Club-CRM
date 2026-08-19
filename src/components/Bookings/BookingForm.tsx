@@ -1033,6 +1033,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
         hasInstructor: Boolean(data.instructorId),
         baselines: logbookBaselines,
         externalEntries: externalLogbookEntries,
+        timeZone: organisationSettings?.timezone,
       });
       const concerns = compliance.concerns;
 

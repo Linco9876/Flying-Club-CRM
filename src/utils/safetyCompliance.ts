@@ -42,6 +42,7 @@ type MinimalExternalEntry = Pick<ExternalLogbookEntry, 'user_id' | 'flight_date'
 export interface SafetyLogbookSupplement {
   baselines?: MinimalBaseline[];
   externalEntries?: MinimalExternalEntry[];
+  timeZone?: string;
 }
 
 export interface SafetyComplianceOptions extends SafetyLogbookSupplement {
@@ -124,11 +125,14 @@ export const getPilotInCommandHours = (
 ) => {
   const baseline = baselineFor(personId, supplement.baselines);
   const portalPic = flightLogs.reduce((total, log) => {
-    if (isIncludedInLogbookBaseline(log.start_time, baseline)) return total;
+    if (isIncludedInLogbookBaseline(log.start_time, baseline, supplement.timeZone)) return total;
     return total + calculateLogbookRoleHours(log, personId).picHours;
   }, 0);
   const externalPic = (supplement.externalEntries || []).reduce((total, entry) => {
-    if (entry.user_id !== personId || isIncludedInLogbookBaseline(entry.flight_date, baseline)) return total;
+    if (
+      entry.user_id !== personId
+      || isIncludedInLogbookBaseline(entry.flight_date, baseline, supplement.timeZone)
+    ) return total;
     return total + Number(entry.pic_hours || 0);
   }, 0);
   return Number(baseline?.pic_hours || 0) + portalPic + externalPic;
@@ -180,6 +184,7 @@ export const buildSafetyComplianceSummary = (
   const supplement = {
     baselines: options.baselines,
     externalEntries: options.externalEntries,
+    timeZone: options.timeZone,
   };
   const lastFlightDate = getLastCurrencyFlightDate(person.id, flightLogs, supplement);
   const daysSinceLastFlight = lastFlightDate

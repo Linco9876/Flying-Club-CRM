@@ -32,8 +32,21 @@ test('a baseline is combined only with entries after its inclusive cutoff', () =
     takeoffs: 122,
     landings: 120,
   });
-  assert.equal(isIncludedInLogbookBaseline('2026-06-30T23:00:00Z', baseline), true);
+  assert.equal(isIncludedInLogbookBaseline('2026-06-30T13:59:59Z', baseline), true);
+  assert.equal(isIncludedInLogbookBaseline('2026-06-30T14:00:00Z', baseline), false);
   assert.equal(isIncludedInLogbookBaseline('2026-07-01', baseline), false);
+});
+
+test('portal timestamps use the configured club timezone at the baseline boundary', () => {
+  assert.equal(
+    isIncludedInLogbookBaseline('2026-06-30T23:00:00Z', baseline, 'Australia/Melbourne'),
+    false,
+  );
+  assert.equal(
+    isIncludedInLogbookBaseline('2026-06-30T23:00:00Z', baseline, 'America/Los_Angeles'),
+    true,
+  );
+  assert.equal(isIncludedInLogbookBaseline('2026-06-30', baseline, 'Pacific/Auckland'), true);
 });
 
 test('all entries count when no baseline exists', () => {

@@ -10,6 +10,10 @@ const bookingEventForeignKeyRepair = readFileSync(
   new URL('../../supabase/migrations/20260819103000_defer_casual_contact_booking_event_fk.sql', import.meta.url),
   'utf8',
 ).toLowerCase();
+const singleBookingRelinkHardening = readFileSync(
+  new URL('../../supabase/migrations/20260819104500_harden_single_guest_booking_relink.sql', import.meta.url),
+  'utf8',
+).toLowerCase();
 
 test('casual contact migration keeps a reusable identity and booking snapshot link', () => {
   assert.match(migration, /create table if not exists public\.casual_contacts/);
@@ -51,4 +55,13 @@ test('formal reviews and tests cannot use a guest placeholder identity', () => {
   assert.match(migration, /external_flight_review/);
   assert.match(migration, /external_flight_test/);
   assert.match(migration, /revoke all on function public\.promote_casual_contact_history.*authenticated/);
+});
+
+test('a single-booking correction never transfers contact-wide Xero or promotion identity', () => {
+  for (const source of [migration, singleBookingRelinkHardening]) {
+    assert.match(source, /if p_link_all then\s+update public\.users target/);
+    assert.match(source, /case when p_link_all then 'promoted' else 'booking_linked' end/);
+    assert.match(source, /else\s+update public\.casual_contacts\s+set updated_at = now\(\)/);
+  }
+  assert.match(singleBookingRelinkHardening, /select private\.assert_function_permission_manifest\(\)/);
 });

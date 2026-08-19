@@ -89,3 +89,22 @@ test('an as-of date does not establish recency without an actual last-flight dat
     baselines: [{ user_id: pilot.id, as_of_date: '2026-08-01', last_flight_date: null, pic_hours: 55 }],
   }), null);
 });
+
+test('PIC after a baseline uses the configured local date rather than the UTC date', () => {
+  const logs = [
+    {
+      student_id: pilot.id,
+      instructor_id: null,
+      start_time: '2026-06-30T23:00:00Z',
+      solo_time: 1,
+      dual_time: 0,
+      flight_duration: 1,
+    },
+  ];
+  const supplement = {
+    baselines: [{ user_id: pilot.id, as_of_date: '2026-06-30', last_flight_date: null, pic_hours: 55 }],
+    timeZone: 'Australia/Melbourne',
+  };
+
+  assert.equal(getPilotInCommandHours(pilot.id, logs, supplement), 56);
+});
