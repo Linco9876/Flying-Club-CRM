@@ -36,6 +36,7 @@ import { useAuth } from '../../context/AuthContext';
 import { usePageLoadState } from '../../context/PageLoadContext';
 import { prefetchStudentProfile } from './studentProfileLoader';
 import { useAdminPasswordReset } from '../../hooks/useAdminPasswordReset';
+import { useAdminMfaReset } from '../../hooks/useAdminMfaReset';
 import { getActiveMemberSummaryCounts } from '../../utils/memberSummaryCounts';
 import { portalRolesUserMayCreate } from '../../utils/portalUserCreation';
 import { useMemberDirectoryMemberships } from '../../hooks/useMemberDirectoryMemberships';
@@ -50,6 +51,7 @@ export const StudentList: React.FC = () => {
   const { students, loading, addStudent, updateStudent, deleteStudent, setStudentActive, refetch } = useStudents();
   const { inviteUser } = useInvitations();
   const { resettingUserId, sendPasswordReset } = useAdminPasswordReset();
+  const { statusByUserId: mfaStatusByUserId, statusLoadingUserId, resettingMfaUserId, loadMfaStatus, resetMfa } = useAdminMfaReset();
   const { trainingRecords, loading: trainingRecordsLoading } = useTrainingRecords();
   const { flightLogs, loading: flightLogsLoading } = useFlightLogs();
   const {
@@ -886,6 +888,11 @@ export const StudentList: React.FC = () => {
           canEditEmail={!editingStudent || canManageMembers}
           onSendPasswordReset={editingStudent && canManageMembers ? sendPasswordReset : undefined}
           passwordResetting={Boolean(editingStudent && resettingUserId === editingStudent.id)}
+          mfaStatus={editingStudent ? mfaStatusByUserId[editingStudent.id] : undefined}
+          mfaStatusLoading={Boolean(editingStudent && statusLoadingUserId === editingStudent.id)}
+          mfaResetting={Boolean(editingStudent && resettingMfaUserId === editingStudent.id)}
+          onCheckMfaStatus={editingStudent && canManageMembers ? loadMfaStatus : undefined}
+          onResetMfa={editingStudent && canManageMembers ? resetMfa : undefined}
         />
       )}
 

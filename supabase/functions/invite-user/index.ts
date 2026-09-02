@@ -26,6 +26,7 @@ import {
   provisioningAccessFor,
   validProvisionedUserRoles,
 } from "../_shared/userProvisioningRules.ts";
+import { authenticateAal2AdminOrWorker } from "../_shared/edgeSecurity.ts";
 
 declare const EdgeRuntime: {
   waitUntil(promise: Promise<unknown>): void;
@@ -47,6 +48,18 @@ const jsonResponse = (body: Record<string, unknown>, status = 200) =>
   });
 
 const normaliseEmail = normalisePendingAccountEmail;
+
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const normaliseFactor = (factor: Record<string, unknown>) => ({
+  id: String(factor.id || ""),
+  type: String(factor.factor_type || factor.type || "unknown"),
+  status: String(factor.status || "unknown"),
+  friendlyName: typeof factor.friendly_name === "string"
+    ? factor.friendly_name
+    : null,
+});
 
 const getPrimaryRole = (roles: string[]) =>
   roles.includes("admin")
@@ -669,6 +682,62 @@ const removeProvisionedAuthUser = async (
   }
 };
 
+const getProfileAndMfaFactors = async (
+  adminClient: SupabaseClient,
+  targetUserId: string,
+) => {
+  if (!uuidPattern.test(targetUserId)) {
+    return { error: jsonResponse({ error: "A valid user is required" }, 400) };
+  }
+
+  const { data: targetProfile, error: targetError } = await adminClient
+    .from("users")
+    .select("id,email,name")
+    .eq("id", targetUserId)
+    .maybeSingle();
+  if (targetError) {
+    return { error: jsonResponse({ error: targetError.message }, 500) };
+  }
+  if (!targetProfile?.email) {
+    return {
+      error: jsonResponse(
+        { error: "This user does not have a CRM profile with a login email" },
+        404,
+      ),
+    };
+  }
+
+  const { data: authData, error: authError } = await adminClient.auth.admin
+    .getUserById(targetProfile.id);
+  const authUser = authData?.user || null;
+  if (authError || !authUser) {
+    return {
+      error: jsonResponse({
+        error: "This CRM profile does not have an authentication account",
+      }, 409),
+    };
+  }
+  if (normaliseEmail(authUser.email) !== normaliseEmail(targetProfile.email)) {
+    return {
+      error: jsonResponse({
+        error: "The CRM profile and authentication account email do not match",
+      }, 409),
+    };
+  }
+
+  const { data: factorsData, error: factorsError } = await adminClient.auth
+    .admin.mfa.listFactors({ userId: targetProfile.id });
+  if (factorsError) {
+    return { error: jsonResponse({ error: factorsError.message }, 500) };
+  }
+
+  const factors = (factorsData?.factors || [])
+    .map((factor: Record<string, unknown>) => normaliseFactor(factor))
+    .filter((factor) => factor.id);
+
+  return { targetProfile, factors };
+};
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -792,15 +861,89 @@ Deno.serve(async (req: Request) => {
     const callerRoleNames = (callerRoles || []).map((row) => String(row.role));
     const callerIsAdmin = callerRoleNames.includes("admin");
 
+    if (body.action === "get_mfa_status") {
+      if (!callerIsAdmin) {
+        return jsonResponse({ error: "Only admins can view 2FA status" }, 403);
+      }
+
+      const targetUserId = String(body.userId || "").trim();
+      const result = await getProfileAndMfaFactors(adminClient, targetUserId);
+      if (result.error) return result.error;
+
+      const verifiedFactorCount = result.factors.filter((factor) =>
+        factor.status === "verified"
+      ).length;
+      return jsonResponse({
+        userId: result.targetProfile!.id,
+        hasMfa: result.factors.length > 0,
+        factorCount: result.factors.length,
+        verifiedFactorCount,
+      });
+    }
+
+    if (body.action === "reset_mfa") {
+      const mfaAdmin = await authenticateAal2AdminOrWorker({
+        req,
+        supabaseUrl,
+        anonKey,
+        adminClient,
+        mfaPurpose: "resetting a member's 2FA",
+      });
+      if (!mfaAdmin.ok) {
+        return jsonResponse({ error: mfaAdmin.error }, mfaAdmin.status);
+      }
+
+      const targetUserId = String(body.userId || "").trim();
+      const result = await getProfileAndMfaFactors(adminClient, targetUserId);
+      if (result.error) return result.error;
+
+      const beforeFactors = result.factors;
+      for (const factor of beforeFactors) {
+        const { error: deleteFactorError } = await adminClient.auth.admin.mfa
+          .deleteFactor({
+            userId: result.targetProfile!.id,
+            id: factor.id,
+          });
+        if (deleteFactorError) {
+          return jsonResponse({ error: deleteFactorError.message }, 500);
+        }
+      }
+
+      await adminClient.from("operations_audit_events").insert({
+        entity_type: "user",
+        entity_id: result.targetProfile!.id,
+        action: "RESET_MFA",
+        actor_id: mfaAdmin.userId,
+        before_data: {
+          factors: beforeFactors.map((factor) => ({
+            type: factor.type,
+            status: factor.status,
+            friendlyName: factor.friendlyName,
+          })),
+        },
+        after_data: { factors: [] },
+        metadata: {
+          targetEmail: result.targetProfile!.email,
+          factorsRemoved: beforeFactors.length,
+        },
+      });
+
+      return jsonResponse({
+        reset: true,
+        userId: result.targetProfile!.id,
+        factorsRemoved: beforeFactors.length,
+        message: beforeFactors.length > 0
+          ? `2FA reset for ${result.targetProfile!.email}. They can enrol a new authenticator next time they sign in.`
+          : `No 2FA factors were found for ${result.targetProfile!.email}.`,
+      });
+    }
+
     if (body.action === "send_password_reset") {
       if (!callerIsAdmin) {
         return jsonResponse({ error: "Only admins can manage password resets" }, 403);
       }
       const targetUserId = String(body.userId || "").trim();
-      if (
-        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-          .test(targetUserId)
-      ) {
+      if (!uuidPattern.test(targetUserId)) {
         return jsonResponse({ error: "A valid user is required" }, 400);
       }
 
