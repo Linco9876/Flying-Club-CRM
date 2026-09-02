@@ -966,7 +966,7 @@ const MembershipAdminDashboard = ({
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
         <h2 className="font-extrabold text-slate-950 dark:text-white">Membership mix</h2><p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Current legal members by class.</p>
         <div className="mt-5 space-y-4">{summary.classBreakdown.length ? summary.classBreakdown.map(item => <div key={`${item.code}-${item.name}`}><div className="mb-1.5 flex items-center justify-between gap-3 text-sm"><span className="font-semibold text-slate-800 dark:text-slate-200">{item.name}</span><span className="font-bold text-slate-950 dark:text-white">{item.count} <span className="font-normal text-slate-500 dark:text-slate-400">({item.percentage}%)</span></span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full rounded-full bg-blue-600" style={{ width: `${item.percentage}%` }} /></div></div>) : <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600 dark:bg-slate-800 dark:text-slate-300">No current memberships are recorded.</p>}</div>
-        <button type="button" onClick={() => onOpenRegister('all')} className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-blue-700 hover:text-blue-900 dark:text-blue-300 dark:hover:text-blue-100">View membership register <ArrowRight className="h-4 w-4" /></button>
+        <button type="button" onClick={() => onOpenRegister('current')} className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-blue-700 hover:text-blue-900 dark:text-blue-300 dark:hover:text-blue-100">View membership register <ArrowRight className="h-4 w-4" /></button>
       </section>
     </div>
 
@@ -998,7 +998,7 @@ const JuniorEligibilityBadge = ({ membership }: { membership: ReturnType<typeof 
 
 const RegisterAdmin = ({
   membershipApi,
-  initialFocus = 'all',
+  initialFocus = 'current',
 }: {
   membershipApi: ReturnType<typeof useMembership>;
   initialFocus?: MembershipRegisterFocus;
@@ -1927,7 +1927,7 @@ const MembershipSettingsPanel = ({ membershipApi }: { membershipApi: ReturnType<
 export const MembershipDashboard: React.FC = () => {
   const membershipApi = useMembership();
   const [tab, setTab] = useState<MembershipTab>(() => membershipApi.isAdmin ? 'dashboard' : 'mine');
-  const [registerFocus, setRegisterFocus] = useState<MembershipRegisterFocus>('all');
+  const [registerFocus, setRegisterFocus] = useState<MembershipRegisterFocus>('current');
   if (membershipApi.loading) return <div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-blue-700" /></div>;
   if (membershipApi.error) return <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-red-800"><AlertTriangle className="mb-2 h-5 w-5" />{membershipApi.error}</div>;
   const pendingCount = membershipApi.applications.filter(item => item.status === 'pending').length
@@ -1945,7 +1945,7 @@ export const MembershipDashboard: React.FC = () => {
     setRegisterFocus(focus);
     setTab('register');
   };
-  return <div className="space-y-6 p-3 sm:p-6"><header><p className="text-sm font-bold uppercase tracking-[0.18em] text-blue-700 dark:text-blue-300">Bendigo Flying Club</p><h1 className="mt-1 text-2xl font-extrabold text-slate-950 dark:text-white sm:text-3xl">Club membership</h1><p className="mt-2 max-w-3xl text-sm text-slate-600 dark:text-slate-300">BFC membership, approvals and financial clearance. RAAus membership remains a separate aviation-compliance record.</p></header><nav className="flex gap-2 overflow-x-auto border-b border-slate-200 pb-2 dark:border-slate-700">{tabs.map(item => { const Icon = item.icon; return <button key={item.id} onClick={() => setTab(item.id)} className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold ${tab === item.id ? 'bg-blue-700 text-white' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}`}><Icon className="h-4 w-4" />{item.label}</button>; })}</nav>{tab === 'dashboard' && membershipApi.isAdmin && <MembershipAdminDashboard membershipApi={membershipApi} onOpenApplications={() => setTab('applications')} onOpenRegister={openRegister} />}{tab === 'mine' && <MyMembership membershipApi={membershipApi} />}{tab === 'applications' && membershipApi.isAdmin && <ApplicationsAdmin membershipApi={membershipApi} />}{tab === 'register' && membershipApi.isAdmin && <RegisterAdmin membershipApi={membershipApi} initialFocus={registerFocus} />}{tab === 'settings' && membershipApi.isAdmin && <MembershipSettingsPanel membershipApi={membershipApi} />}</div>;
+  return <div className="space-y-6 p-3 sm:p-6"><header><p className="text-sm font-bold uppercase tracking-[0.18em] text-blue-700 dark:text-blue-300">Bendigo Flying Club</p><h1 className="mt-1 text-2xl font-extrabold text-slate-950 dark:text-white sm:text-3xl">Club membership</h1><p className="mt-2 max-w-3xl text-sm text-slate-600 dark:text-slate-300">BFC membership, approvals and financial clearance. RAAus membership remains a separate aviation-compliance record.</p></header><nav className="flex gap-2 overflow-x-auto border-b border-slate-200 pb-2 dark:border-slate-700">{tabs.map(item => { const Icon = item.icon; return <button key={item.id} onClick={() => { if (item.id === 'register' && tab !== 'register') setRegisterFocus('current'); setTab(item.id); }} className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold ${tab === item.id ? 'bg-blue-700 text-white' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}`}><Icon className="h-4 w-4" />{item.label}</button>; })}</nav>{tab === 'dashboard' && membershipApi.isAdmin && <MembershipAdminDashboard membershipApi={membershipApi} onOpenApplications={() => setTab('applications')} onOpenRegister={openRegister} />}{tab === 'mine' && <MyMembership membershipApi={membershipApi} />}{tab === 'applications' && membershipApi.isAdmin && <ApplicationsAdmin membershipApi={membershipApi} />}{tab === 'register' && membershipApi.isAdmin && <RegisterAdmin membershipApi={membershipApi} initialFocus={registerFocus} />}{tab === 'settings' && membershipApi.isAdmin && <MembershipSettingsPanel membershipApi={membershipApi} />}</div>;
 };
 
 export default MembershipDashboard;

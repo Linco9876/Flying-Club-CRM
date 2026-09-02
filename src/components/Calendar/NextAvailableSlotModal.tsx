@@ -55,6 +55,7 @@ export const NextAvailableSlotModal: React.FC<NextAvailableSlotModalProps> = ({
   const [slots, setSlots] = React.useState<NextAvailableSlot[]>([]);
   const [searching, setSearching] = React.useState(false);
   const [searched, setSearched] = React.useState(false);
+  const [searchError, setSearchError] = React.useState('');
 
   React.useEffect(() => {
     if (!isOpen) return;
@@ -70,7 +71,17 @@ export const NextAvailableSlotModal: React.FC<NextAvailableSlotModalProps> = ({
     setLocationId(primaryLocation?.id || locations[0]?.id || '');
     setSlots([]);
     setSearched(false);
+    setSearchError('');
   }, [initialDate, isOpen, locations, primaryLocation?.id]);
+
+  React.useEffect(() => {
+    if (!isOpen) return undefined;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !searching) onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose, searching]);
 
   if (!isOpen) return null;
 
@@ -82,6 +93,7 @@ export const NextAvailableSlotModal: React.FC<NextAvailableSlotModalProps> = ({
     }
     setSearching(true);
     setSearched(true);
+    setSearchError('');
     try {
       const { data, error } = await supabase.rpc('find_next_available_slots', {
         p_after: after.toISOString(),
@@ -96,7 +108,14 @@ export const NextAvailableSlotModal: React.FC<NextAvailableSlotModalProps> = ({
       setSlots((data || []) as NextAvailableSlot[]);
     } catch (caught) {
       console.error('Available slot search failed:', caught);
-      toast.error('Availability could not be searched. Please try again.');
+      const errorCode = typeof caught === 'object' && caught && 'code' in caught
+        ? String((caught as { code?: unknown }).code || '')
+        : '';
+      const message = errorCode === '57014'
+        ? 'The availability search took too long. Narrow the aircraft or instructor and try again.'
+        : 'Availability could not be searched. Check your connection and try again.';
+      setSearchError(message);
+      toast.error(message);
       setSlots([]);
     } finally {
       setSearching(false);
@@ -171,7 +190,12 @@ export const NextAvailableSlotModal: React.FC<NextAvailableSlotModalProps> = ({
           </button>
 
           <div className="mt-5 space-y-2" aria-live="polite">
-            {!searching && searched && slots.length === 0 && (
+            {!searching && searchError && (
+              <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-5 text-center text-sm text-red-900 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200">
+                {searchError}
+              </div>
+            )}
+            {!searching && searched && !searchError && slots.length === 0 && (
               <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-5 text-center text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
                 No matching aircraft and instructor slot was found in the next 30 days.
               </div>

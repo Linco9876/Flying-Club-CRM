@@ -3,6 +3,11 @@ import { supabase } from '../lib/supabase';
 import { LessonGradingSystem } from '../types';
 import toast from 'react-hot-toast';
 import { DEFAULT_ENDORSEMENT_TYPES, DEFAULT_LICENCE_TYPES, normaliseEndorsementType, uniqueEndorsementTypes, uniqueLicenceTypes } from '../utils/pilotStatus';
+import {
+  DEFAULT_MEDICAL_TYPES,
+  normaliseMedicalTypes,
+  type MedicalTypeDefinition,
+} from '../utils/medicalRequirements';
 
 export type NextLessonRule = 'advance_on_pass' | 'always_advance' | 'manual';
 export type CourseCompletionRule = 'all_required_criteria' | 'all_lessons_attempted' | 'criteria_or_lessons';
@@ -26,6 +31,7 @@ export interface TrainingSyllabusSettingsData {
   showBestGradeGuidance: boolean;
   endorsementTypes: string[];
   licenceTypes: string[];
+  medicalTypes: MedicalTypeDefinition[];
 }
 
 export const DEFAULT_TRAINING_SETTINGS: TrainingSyllabusSettingsData = {
@@ -46,6 +52,7 @@ export const DEFAULT_TRAINING_SETTINGS: TrainingSyllabusSettingsData = {
   showBestGradeGuidance: true,
   endorsementTypes: DEFAULT_ENDORSEMENT_TYPES,
   licenceTypes: DEFAULT_LICENCE_TYPES,
+  medicalTypes: DEFAULT_MEDICAL_TYPES,
 };
 
 const TRAINING_SETTINGS_UPDATED_EVENT = 'training-syllabus-settings-updated';
@@ -72,11 +79,13 @@ const mapRow = (row: any): TrainingSyllabusSettingsData => ({
   showBestGradeGuidance: row.show_best_grade_guidance ?? DEFAULT_TRAINING_SETTINGS.showBestGradeGuidance,
   endorsementTypes: uniqueEndorsementTypes(row.endorsement_types || DEFAULT_TRAINING_SETTINGS.endorsementTypes),
   licenceTypes: uniqueLicenceTypes(row.licence_types || DEFAULT_TRAINING_SETTINGS.licenceTypes),
+  medicalTypes: normaliseMedicalTypes(row.medical_types),
 });
 
 const toRow = (settings: TrainingSyllabusSettingsData) => ({
   endorsement_types: uniqueEndorsementTypes(settings.endorsementTypes),
   licence_types: uniqueLicenceTypes(settings.licenceTypes),
+  medical_types: normaliseMedicalTypes(settings.medicalTypes),
   default_grading_system: settings.defaultGradingSystem,
   force_student_acknowledgement_for_all_courses: settings.forceStudentAcknowledgementForAllCourses,
   require_student_acknowledgement: settings.requireStudentAcknowledgement,
@@ -189,5 +198,28 @@ export function useTrainingSettings() {
     }
   };
 
-  return { settings, loading, error, updateSettings, renameEndorsementReferences, renameLicenceReferences, refetch: fetchSettings };
+  const renameMedicalReferences = async (renames: Array<{ from: string; to: string }>) => {
+    const cleanRenames = renames
+      .map(rename => ({ from: rename.from.trim(), to: rename.to.trim() }))
+      .filter(rename => rename.from && rename.to && rename.from.toLocaleLowerCase() !== rename.to.toLocaleLowerCase());
+
+    for (const rename of cleanRenames) {
+      const { error: studentsError } = await supabase
+        .from('students')
+        .update({ medical_type: rename.to })
+        .eq('medical_type', rename.from);
+      if (studentsError) throw studentsError;
+    }
+  };
+
+  return {
+    settings,
+    loading,
+    error,
+    updateSettings,
+    renameEndorsementReferences,
+    renameLicenceReferences,
+    renameMedicalReferences,
+    refetch: fetchSettings,
+  };
 }

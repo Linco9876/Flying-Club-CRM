@@ -7,6 +7,12 @@ import {
   isReconcileableOrphanEmailConflict,
   orphanEmailReconciliationPrompt,
 } from '../utils/accountEmailConflict';
+import {
+  DEFAULT_MEDICAL_TYPES,
+  findMedicalTypeDefinition,
+  normaliseMedicalTypes,
+  resolveMedicalRequirement,
+} from '../utils/medicalRequirements';
 
 const getErrorMessage = (error: unknown, fallback: string) => {
   if (error instanceof Error) return error.message;
@@ -91,20 +97,35 @@ export const useStudents = (options?: UseStudentsOptions) => {
       let endorsementsQuery = supabase.from('endorsements').select('*');
       let licencesQuery = supabase.from('licences').select('*');
       let rolesQuery = supabase.from('user_roles').select('user_id, role');
+      let courseEnrolmentsQuery = supabase
+        .from('student_course_enrolments')
+        .select('student_id,status,training_courses!inner(title,medical_requirement_mode,medical_requirement_age)')
+        .eq('status', 'active');
       if (scopeStudentId) {
         usersQuery = usersQuery.eq('id', scopeStudentId);
         studentsQuery = studentsQuery.eq('id', scopeStudentId);
         endorsementsQuery = endorsementsQuery.eq('student_id', scopeStudentId);
         licencesQuery = licencesQuery.eq('student_id', scopeStudentId);
         rolesQuery = rolesQuery.eq('user_id', scopeStudentId);
+        courseEnrolmentsQuery = courseEnrolmentsQuery.eq('student_id', scopeStudentId);
       }
 
-      const [usersResult, studentsResult, endorsementsResult, licencesResult, rolesResult] = await Promise.all([
+      const [
+        usersResult,
+        studentsResult,
+        endorsementsResult,
+        licencesResult,
+        rolesResult,
+        courseEnrolmentsResult,
+        trainingSettingsResult,
+      ] = await Promise.all([
         usersQuery,
         studentsQuery,
         endorsementsQuery,
         licencesQuery,
-        rolesQuery
+        rolesQuery,
+        courseEnrolmentsQuery,
+        supabase.from('training_syllabus_settings').select('medical_types').maybeSingle(),
       ]);
 
       const { data: usersData, error: usersError } = usersResult;
@@ -112,6 +133,8 @@ export const useStudents = (options?: UseStudentsOptions) => {
       const { data: endorsementsData, error: endorsementsError } = endorsementsResult;
       const { data: licencesData, error: licencesError } = licencesResult;
       const { data: rolesData, error: rolesError } = rolesResult;
+      const { data: courseEnrolmentsData, error: courseEnrolmentsError } = courseEnrolmentsResult;
+      const { data: trainingSettingsData, error: trainingSettingsError } = trainingSettingsResult;
 
       if (usersError) throw usersError;
       if (studentsError) throw studentsError;
@@ -119,6 +142,12 @@ export const useStudents = (options?: UseStudentsOptions) => {
       if (licencesError) throw licencesError;
       if (rolesError) {
         console.warn('Could not load member role assignments; falling back to primary roles.', rolesError);
+      }
+      if (courseEnrolmentsError) {
+        console.warn('Could not load course medical requirements; student medical warnings will remain suppressed.', courseEnrolmentsError);
+      }
+      if (trainingSettingsError) {
+        console.warn('Could not load medical type settings; using safe defaults.', trainingSettingsError);
       }
 
       const rolesMap = new Map<string, string[]>();
@@ -130,6 +159,28 @@ export const useStudents = (options?: UseStudentsOptions) => {
       const studentsMap = new Map(studentsData?.map(s => [s.id, s]) || []);
       const endorsementsMap = new Map<string, Endorsement[]>();
       const licencesMap = new Map<string, Licence[]>();
+      const activeMedicalCoursesByStudent = new Map<string, Array<{
+        title: string;
+        medicalRequirementMode: 'none' | 'required' | 'age_threshold';
+        medicalRequirementAge: number | null;
+      }>>();
+      const medicalTypes = normaliseMedicalTypes(trainingSettingsData?.medical_types || DEFAULT_MEDICAL_TYPES);
+
+      (courseEnrolmentsData || []).forEach((row: any) => {
+        const rawCourse = Array.isArray(row.training_courses)
+          ? row.training_courses[0]
+          : row.training_courses;
+        if (!rawCourse || !row.student_id) return;
+        const courses = activeMedicalCoursesByStudent.get(row.student_id) || [];
+        courses.push({
+          title: String(rawCourse.title || 'Active course'),
+          medicalRequirementMode: rawCourse.medical_requirement_mode || 'none',
+          medicalRequirementAge: rawCourse.medical_requirement_age === null || rawCourse.medical_requirement_age === undefined
+            ? null
+            : Number(rawCourse.medical_requirement_age),
+        });
+        activeMedicalCoursesByStudent.set(row.student_id, courses);
+      });
 
       endorsementsData?.forEach(e => {
         const studentEndorsements = endorsementsMap.get(e.student_id) || [];
@@ -176,6 +227,17 @@ export const useStudents = (options?: UseStudentsOptions) => {
                           : userRoles.includes('instructor') ? 'instructor'
                           : userRoles.includes('pilot') ? 'pilot'
                           : 'student';
+        const dateOfBirth = studentData?.date_of_birth
+          ? new Date(studentData.date_of_birth)
+          : user.date_of_birth
+            ? new Date(user.date_of_birth)
+            : undefined;
+        const medicalRequirement = resolveMedicalRequirement({
+          roles: userRoles as UserRole[],
+          dateOfBirth,
+          activeCourses: activeMedicalCoursesByStudent.get(user.id) || [],
+        });
+        const medicalDefinition = findMedicalTypeDefinition(studentData?.medical_type, medicalTypes);
         return {
           id: user.id,
           email: user.email,
@@ -193,6 +255,11 @@ export const useStudents = (options?: UseStudentsOptions) => {
           casaId: studentData?.casa_id,
           medicalType: studentData?.medical_type,
           medicalExpiry: studentData?.medical_expiry ? new Date(studentData.medical_expiry) : undefined,
+          medicalRequired: medicalRequirement.required,
+          medicalRequirementReason: medicalRequirement.reason,
+          medicalRequirementCourseTitle: medicalRequirement.courseTitle,
+          medicalValidityMode: medicalDefinition?.validityMode,
+          medicalValidUntilAge: medicalDefinition?.validUntilAge,
           licenceExpiry: studentData?.licence_expiry ? new Date(studentData.licence_expiry) : undefined,
           lastRaausBfrDate: studentData?.last_raaus_bfr_date ? new Date(studentData.last_raaus_bfr_date) : studentData?.last_flight_review ? new Date(studentData.last_flight_review) : undefined,
           lastCasaAfrDate: studentData?.last_casa_afr_date ? new Date(studentData.last_casa_afr_date) : undefined,
@@ -208,7 +275,7 @@ export const useStudents = (options?: UseStudentsOptions) => {
             phone: user.emergency_contact_phone || '',
             relationship: user.emergency_contact_relationship || ''
           } : undefined,
-          dateOfBirth: studentData?.date_of_birth ? new Date(studentData.date_of_birth) : user.date_of_birth ? new Date(user.date_of_birth) : undefined,
+          dateOfBirth,
           preferredAircraftId: user.preferred_aircraft_id,
           isSeniorInstructor: user.is_senior_instructor || userRoles.includes('senior_instructor'),
           isActive: user.is_active ?? true,

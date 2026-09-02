@@ -1,6 +1,6 @@
 import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useState } from 'react';
-import { Award, BookOpen, Check, CheckCircle, GraduationCap, Loader2, Lock, MessageSquare, Pencil, Plus, X } from 'lucide-react';
+import { Award, BookOpen, Check, CheckCircle, GraduationCap, Loader2, Lock, MessageSquare, Pencil, Plus, Stethoscope, X } from 'lucide-react';
 import { TrainingSyllabusSettingsData, useTrainingSettings } from '../../hooks/useTrainingSettings';
 import { uniqueEndorsementTypes } from '../../utils/pilotStatus';
 import { SettingsLoadError } from './SettingsLoadError';
@@ -48,7 +48,16 @@ function SettingToggle({
 }
 
 export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> = ({ canEdit, onFormChange }) => {
-  const { settings, loading, error, updateSettings, renameEndorsementReferences, renameLicenceReferences, refetch } = useTrainingSettings();
+  const {
+    settings,
+    loading,
+    error,
+    updateSettings,
+    renameEndorsementReferences,
+    renameLicenceReferences,
+    renameMedicalReferences,
+    refetch,
+  } = useTrainingSettings();
   const [formData, setFormData] = useState<TrainingSyllabusSettingsData>(settings);
   const [endorsementInput, setEndorsementInput] = useState('');
   const [editingEndorsement, setEditingEndorsement] = useState<string | null>(null);
@@ -58,6 +67,9 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
   const [editingLicence, setEditingLicence] = useState<string | null>(null);
   const [editingLicenceName, setEditingLicenceName] = useState('');
   const [licenceRenames, setLicenceRenames] = useState<Record<string, string>>({});
+  const [medicalInput, setMedicalInput] = useState('');
+  const [medicalValidityMode, setMedicalValidityMode] = useState<'expiry_date' | 'until_age'>('expiry_date');
+  const [medicalValidUntilAge, setMedicalValidUntilAge] = useState('75');
 
   useEffect(() => {
     setFormData(settings);
@@ -79,9 +91,16 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
       await renameLicenceReferences(
         Object.entries(licenceRenames).map(([from, to]) => ({ from, to }))
       );
+      await renameMedicalReferences(settings.medicalTypes.flatMap(original => {
+        const updated = formData.medicalTypes.find(item => item.id === original.id);
+        return updated && updated.name.trim() !== original.name.trim()
+          ? [{ from: original.name, to: updated.name }]
+          : [];
+      }));
       await updateSettings(formData);
       setEndorsementRenames({});
       setLicenceRenames({});
+      setMedicalInput('');
     };
     (window as any).__trainingSettingsCancel = () => {
       setFormData(settings);
@@ -96,7 +115,7 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
       delete (window as any).__trainingSettingsSave;
       delete (window as any).__trainingSettingsCancel;
     };
-  }, [endorsementRenames, formData, licenceRenames, renameEndorsementReferences, renameLicenceReferences, settings, updateSettings]);
+  }, [endorsementRenames, formData, licenceRenames, renameEndorsementReferences, renameLicenceReferences, renameMedicalReferences, settings, updateSettings]);
 
   const setField = <K extends keyof TrainingSyllabusSettingsData>(field: K, value: TrainingSyllabusSettingsData[K]) => {
     setFormData(current => ({ ...current, [field]: value }));
@@ -173,6 +192,29 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
     setLicenceRenames(current => ({ ...current, [oldType]: nextName }));
     setEditingLicence(null);
     setEditingLicenceName('');
+  };
+
+  const addMedicalType = () => {
+    const name = medicalInput.trim();
+    if (!name || formData.medicalTypes.some(item => item.name.trim().toLocaleLowerCase() === name.toLocaleLowerCase())) return;
+    const age = Number(medicalValidUntilAge);
+    if (medicalValidityMode === 'until_age' && (!Number.isInteger(age) || age < 1 || age > 120)) return;
+    setField('medicalTypes', [...formData.medicalTypes, {
+      id: crypto.randomUUID(),
+      name,
+      validityMode: medicalValidityMode,
+      validUntilAge: medicalValidityMode === 'until_age' ? age : null,
+      isActive: true,
+    }]);
+    setMedicalInput('');
+  };
+
+  const updateMedicalType = (id: string, updates: Partial<TrainingSyllabusSettingsData['medicalTypes'][number]>) => {
+    setField('medicalTypes', formData.medicalTypes.map(item => item.id === id ? { ...item, ...updates } : item));
+  };
+
+  const removeMedicalType = (id: string) => {
+    setField('medicalTypes', formData.medicalTypes.filter(item => item.id !== id));
   };
 
   if (loading) {
@@ -553,6 +595,136 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
               <button type="button" onClick={addLicence} className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"><Plus className="h-4 w-4" />Add licence</button>
             </div>
           )}
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <h3 className="flex items-center text-lg font-medium text-gray-900">
+          <Stethoscope className="mr-2 h-5 w-5 text-cyan-700" />
+          Medical Types
+        </h3>
+        <div className="rounded-lg border border-cyan-200 bg-white p-4">
+          <p className="text-sm text-gray-600">
+            Pilots and instructors select the medical they operate under. Expiry-date medicals use the date recorded on the member file; age-based medicals remain current until the configured birthday.
+          </p>
+          <div className="mt-4 space-y-3">
+            {formData.medicalTypes.map(medical => (
+              <div key={medical.id} className="grid gap-3 rounded-lg border border-gray-200 p-3 md:grid-cols-[minmax(0,1fr)_190px_120px_100px_auto] md:items-end">
+                <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Medical name
+                  <input
+                    type="text"
+                    value={medical.name}
+                    disabled={!canEdit}
+                    onChange={event => updateMedicalType(medical.id, { name: event.target.value })}
+                    className={`${inputClass} mt-1 text-sm font-normal normal-case tracking-normal`}
+                  />
+                </label>
+                <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Counted as current until
+                  <SearchableSelect
+                    value={medical.validityMode}
+                    disabled={!canEdit}
+                    onChange={event => updateMedicalType(medical.id, {
+                      validityMode: event.target.value as 'expiry_date' | 'until_age',
+                      validUntilAge: event.target.value === 'until_age' ? medical.validUntilAge || 75 : null,
+                    })}
+                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal focus:outline-none focus:ring-2 focus:ring-cyan-500 disabled:bg-gray-50"
+                  >
+                    <option value="expiry_date">Member-entered expiry date</option>
+                    <option value="until_age">Member reaches an age</option>
+                  </SearchableSelect>
+                </label>
+                {medical.validityMode === 'until_age' ? (
+                  <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Age
+                    <input
+                      type="number"
+                      min={1}
+                      max={120}
+                      inputMode="numeric"
+                      value={medical.validUntilAge ?? ''}
+                      disabled={!canEdit}
+                      onChange={event => updateMedicalType(medical.id, { validUntilAge: Number(event.target.value) })}
+                      className={`${inputClass} mt-1 text-sm font-normal normal-case tracking-normal`}
+                    />
+                  </label>
+                ) : <span />}
+                <label className="flex min-h-10 items-center gap-2 text-sm font-medium text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={medical.isActive}
+                    disabled={!canEdit}
+                    onChange={event => updateMedicalType(medical.id, { isActive: event.target.checked })}
+                    className={toggleClass}
+                  />
+                  Available
+                </label>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => removeMedicalType(medical.id)}
+                    disabled={formData.medicalTypes.length <= 1}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-md text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30"
+                    aria-label={`Remove ${medical.name}`}
+                    title={formData.medicalTypes.length <= 1 ? 'Keep at least one medical type' : `Remove ${medical.name}`}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+          {canEdit && (
+            <div className="mt-4 grid gap-3 rounded-lg bg-cyan-50 p-3 md:grid-cols-[minmax(0,1fr)_190px_120px_auto] md:items-end">
+              <label className="text-xs font-semibold uppercase tracking-wide text-cyan-900">
+                New medical name
+                <input
+                  value={medicalInput}
+                  onChange={event => setMedicalInput(event.target.value)}
+                  placeholder="e.g. RAAus Medical Declaration"
+                  className={`${inputClass} mt-1 bg-white text-sm font-normal normal-case tracking-normal`}
+                />
+              </label>
+              <label className="text-xs font-semibold uppercase tracking-wide text-cyan-900">
+                Validity rule
+                <SearchableSelect
+                  value={medicalValidityMode}
+                  onChange={event => setMedicalValidityMode(event.target.value as 'expiry_date' | 'until_age')}
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                >
+                  <option value="expiry_date">Member-entered expiry date</option>
+                  <option value="until_age">Member reaches an age</option>
+                </SearchableSelect>
+              </label>
+              {medicalValidityMode === 'until_age' ? (
+                <label className="text-xs font-semibold uppercase tracking-wide text-cyan-900">
+                  Age
+                  <input
+                    type="number"
+                    min={1}
+                    max={120}
+                    inputMode="numeric"
+                    value={medicalValidUntilAge}
+                    onChange={event => setMedicalValidUntilAge(event.target.value)}
+                    className={`${inputClass} mt-1 bg-white text-sm font-normal normal-case tracking-normal`}
+                  />
+                </label>
+              ) : <span />}
+              <button
+                type="button"
+                onClick={addMedicalType}
+                disabled={!medicalInput.trim()}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-cyan-700 px-4 text-sm font-semibold text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Plus className="h-4 w-4" />
+                Add medical
+              </button>
+            </div>
+          )}
+          <p className="mt-3 text-xs text-gray-500">
+            Example: set RAAus Medical Declaration to “Member reaches an age” and 75. It needs no expiry date before the member's 75th birthday.
+          </p>
         </div>
       </section>
 

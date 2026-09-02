@@ -20,6 +20,40 @@ type TrainingModulesContextValue = {
 
 const TrainingModulesContext = createContext<TrainingModulesContextValue | undefined>(undefined);
 
+type DatabaseErrorLike = {
+  code?: unknown;
+  details?: unknown;
+  hint?: unknown;
+  message?: unknown;
+};
+
+function courseSaveErrorMessage(error: unknown): string {
+  const databaseError = error && typeof error === 'object' ? error as DatabaseErrorLike : null;
+  const message = typeof databaseError?.message === 'string' ? databaseError.message.trim() : '';
+  const details = typeof databaseError?.details === 'string' ? databaseError.details.trim() : '';
+  const hint = typeof databaseError?.hint === 'string' ? databaseError.hint.trim() : '';
+  const code = typeof databaseError?.code === 'string' ? databaseError.code : '';
+  const diagnostic = [message, details, hint].filter(Boolean).join(' ');
+
+  if (/medical_requirement_(?:mode|age)|schema cache|column .* does not exist/i.test(diagnostic)) {
+    return 'Course medical settings are not available in the database yet. Refresh after the database update, then try again.';
+  }
+
+  if (code === '42501' || /row-level security|permission denied|not authorized|not authorised/i.test(diagnostic)) {
+    return 'You do not have permission to change this course. Sign in with an authorised training administrator account and retry.';
+  }
+
+  if (/failed to fetch|network|connection|offline/i.test(diagnostic)) {
+    return 'The course could not be saved because the portal lost its connection. Check your connection and retry; your form remains open.';
+  }
+
+  if (code === '23514' || /check constraint/i.test(diagnostic)) {
+    return 'The course contains an invalid setting. Check the medical requirement and age, then try again.';
+  }
+
+  return message ? `Course changes could not be saved: ${message}` : 'Course changes could not be saved. Your form remains open; refresh and retry.';
+}
+
 // ---- DB row → app type converters ----------------------------------------
 
 function dbCourseToModule(row: Record<string, unknown>, lessons: TrainingLesson[]): TrainingModule {
@@ -44,6 +78,10 @@ function dbCourseToModule(row: Record<string, unknown>, lessons: TrainingLesson[
       ? true
       : Boolean(row.requires_student_acknowledgement),
     twoOccasionCompetencyRuleEnabled: Boolean(row.two_occasion_competency_rule_enabled),
+    medicalRequirementMode: (row.medical_requirement_mode as TrainingModule['medicalRequirementMode']) ?? 'none',
+    medicalRequirementAge: row.medical_requirement_age === null || row.medical_requirement_age === undefined
+      ? null
+      : Number(row.medical_requirement_age),
     requiresFlyingDeclaration: Boolean(row.requires_flying_declaration),
     flyingDeclarationTitle: (row.flying_declaration_title as string) ?? 'Flying Declaration',
     flyingDeclarationText: (row.flying_declaration_text as string) ?? '',
@@ -137,6 +175,10 @@ function moduleToDbCourse(module: TrainingModule): Record<string, unknown> {
     assessment_criteria: module.assessmentCriteria,
     requires_student_acknowledgement: module.requiresStudentAcknowledgement ?? true,
     two_occasion_competency_rule_enabled: module.twoOccasionCompetencyRuleEnabled ?? false,
+    medical_requirement_mode: module.medicalRequirementMode ?? 'none',
+    medical_requirement_age: module.medicalRequirementMode === 'age_threshold'
+      ? module.medicalRequirementAge ?? null
+      : null,
     requires_flying_declaration: module.requiresFlyingDeclaration ?? false,
     flying_declaration_title: module.flyingDeclarationTitle || 'Flying Declaration',
     flying_declaration_text: module.flyingDeclarationText || '',
@@ -255,7 +297,8 @@ export const TrainingModulesProvider: React.FC<{ children: React.ReactNode }> = 
       .single();
 
     if (error) {
-      toast.error('Failed to save course');
+      console.error('Failed to save training course:', error);
+      toast.error(courseSaveErrorMessage(error), { duration: 8000 });
       throw error;
     }
 
@@ -282,6 +325,8 @@ export const TrainingModulesProvider: React.FC<{ children: React.ReactNode }> = 
       assessmentCriteria: [],
       requiresStudentAcknowledgement: true,
       twoOccasionCompetencyRuleEnabled: false,
+      medicalRequirementMode: 'none',
+      medicalRequirementAge: null,
       requiresFlyingDeclaration: false,
       flyingDeclarationTitle: 'Flying Declaration',
       flyingDeclarationText: '',
@@ -353,7 +398,8 @@ export const TrainingModulesProvider: React.FC<{ children: React.ReactNode }> = 
       .eq('id', moduleId);
 
     if (courseErr) {
-      toast.error('Failed to save changes');
+      console.error('Failed to update training course:', courseErr);
+      toast.error(courseSaveErrorMessage(courseErr), { duration: 8000 });
       throw courseErr;
     }
 

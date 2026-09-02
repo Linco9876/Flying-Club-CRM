@@ -66,7 +66,12 @@ export interface MemberCardAttentionInput {
   phone?: string | null;
   hasFlyingRecords: boolean;
   raausId?: string | null;
+  medicalRequired?: boolean;
+  medicalType?: string | null;
   medicalExpiry?: Date;
+  dateOfBirth?: Date;
+  medicalValidityMode?: 'expiry_date' | 'until_age';
+  medicalValidUntilAge?: number | null;
   raausMembershipExpiry?: Date;
   now?: Date;
 }
@@ -76,7 +81,12 @@ export const memberCardAttentionItems = ({
   phone,
   hasFlyingRecords,
   raausId,
+  medicalRequired = false,
+  medicalType,
   medicalExpiry,
+  dateOfBirth,
+  medicalValidityMode,
+  medicalValidUntilAge,
   raausMembershipExpiry,
   now = new Date(),
 }: MemberCardAttentionInput): string[] => {
@@ -96,12 +106,28 @@ export const memberCardAttentionItems = ({
 
   if (!raausId?.trim()) items.push('RAAus number not recorded');
 
-  if (!medicalExpiry) {
-    items.push('Medical expiry not recorded');
-  } else if (medicalExpiry < today) {
-    items.push(`Medical expired ${dateLabel(medicalExpiry)}`);
-  } else if (medicalExpiry <= reviewBy) {
-    items.push(`Medical due ${dateLabel(medicalExpiry)}`);
+  if (medicalRequired) {
+    const definitions: MedicalTypeDefinition[] = medicalType ? [{
+      id: 'member-medical',
+      name: medicalType,
+      validityMode: medicalValidityMode ?? 'expiry_date',
+      validUntilAge: medicalValidUntilAge,
+      isActive: true,
+    }] : [];
+    const medical = evaluateMedicalCurrency({
+      required: true,
+      medicalType,
+      medicalExpiry,
+      dateOfBirth,
+      definitions,
+      warningDays: 60,
+      at: today,
+    });
+    if (medical.state === 'missing_type') items.push('Operating medical not selected');
+    if (medical.state === 'missing_expiry') items.push('Medical expiry not recorded');
+    if (medical.state === 'missing_date_of_birth') items.push('Date of birth needed to confirm medical');
+    if (medical.state === 'expired' && medical.effectiveExpiry) items.push(`Medical expired ${dateLabel(medical.effectiveExpiry)}`);
+    if (medical.state === 'expiring' && medical.effectiveExpiry) items.push(`Medical due ${dateLabel(medical.effectiveExpiry)}`);
   }
 
   if (!raausMembershipExpiry) {
@@ -114,3 +140,4 @@ export const memberCardAttentionItems = ({
 
   return items;
 };
+import { evaluateMedicalCurrency, type MedicalTypeDefinition } from './medicalRequirements.ts';

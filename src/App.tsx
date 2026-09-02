@@ -727,7 +727,7 @@ const KioskAuthenticatedRoute: React.FC<{
   setBookingFormData,
 }) => {
   const { logout } = useAuth();
-  const { bookings, addBooking, updateBooking, deleteBooking, restoreBooking, approveBooking, refetch: refetchBookings } = useBookings(true);
+  const { bookings, addBooking, finaliseRecurringBookingSeries, updateRecurringBookingSeries, updateBooking, deleteBooking, restoreBooking, approveBooking, refetch: refetchBookings } = useBookings(true);
   const { settings: portalSettings } = usePortalUxSettings();
   const userRoles = user?.roles && user.roles.length > 0 ? user.roles : [user?.role];
   const isAdminUser = userRoles.includes('admin');
@@ -790,10 +790,10 @@ const KioskAuthenticatedRoute: React.FC<{
   const handleBookingSubmit = async (bookingData: any) => {
     const startTime = new Date(`${bookingData.date}T${bookingData.startTime}:00`);
     const endTime = new Date(`${bookingData.endDate}T${bookingData.endTime}:00`);
-    const bookingKind = bookingData.bookingKind === 'ground' || !bookingData.aircraftId ? 'ground' : 'flight';
+    const bookingKind: 'ground' | 'flight' = bookingData.bookingKind === 'ground' || !bookingData.aircraftId ? 'ground' : 'flight';
 
     if (editingBooking) {
-        await updateBooking(editingBooking.id, {
+        const bookingUpdates = {
           studentId: bookingData.studentId,
           instructorId: bookingData.instructorId || undefined,
           aircraftId: bookingKind === 'ground' ? undefined : bookingData.aircraftId,
@@ -815,14 +815,20 @@ const KioskAuthenticatedRoute: React.FC<{
           locationId: bookingData.locationId || undefined,
           dutyOverrideReason: bookingData.dutyOverrideReason || undefined,
           membershipOverrideReason: bookingData.membershipOverrideReason || undefined,
-        });
+        };
+        if (bookingData.recurringEditScope === 'future' && editingBooking.recurrenceSeriesId) {
+          await updateRecurringBookingSeries(editingBooking.id, bookingUpdates);
+        } else {
+          await updateBooking(editingBooking.id, bookingUpdates);
+        }
     } else {
       const recurrence = bookingData.recurrence;
       const occurrenceStarts = buildRecurringStartTimes(startTime, recurrence);
       const occurrenceCount = occurrenceStarts.length;
       const durationMs = endTime.getTime() - startTime.getTime();
+      const recurrenceSeriesId = occurrenceCount > 1 ? crypto.randomUUID() : undefined;
 
-      for (const occurrenceStart of occurrenceStarts) {
+      for (const [occurrenceIndex, occurrenceStart] of occurrenceStarts.entries()) {
         const occurrenceEnd = new Date(occurrenceStart.getTime() + durationMs);
           await addBooking({
             studentId: bookingData.studentId,
@@ -846,10 +852,23 @@ const KioskAuthenticatedRoute: React.FC<{
             locationId: bookingData.locationId || undefined,
             dutyOverrideReason: bookingData.dutyOverrideReason || undefined,
             membershipOverrideReason: bookingData.membershipOverrideReason || undefined,
-          }, { silent: occurrenceCount > 1 });
+          }, {
+            silent: occurrenceCount > 1,
+            recurrence: recurrenceSeriesId ? {
+              seriesId: recurrenceSeriesId,
+              occurrenceIndex: occurrenceIndex + 1,
+              occurrenceCount,
+            } : undefined,
+          });
         }
 
       if (occurrenceCount > 1) {
+        try {
+          await finaliseRecurringBookingSeries(recurrenceSeriesId!);
+        } catch (notificationError) {
+          console.error('Recurring booking notification summary could not be finalised:', notificationError);
+          toast.error('Bookings were created, but their notification summary could not be confirmed. No per-booking alerts were sent.');
+        }
         toast.success(`${occurrenceCount} recurring bookings created`);
       }
     }
@@ -967,7 +986,7 @@ const AuthenticatedApp: React.FC<{
   const location = useLocation();
   const activeView = getViewForPath(location.pathname);
   const bookingsEnabled = activeView === 'calendar' || showBookingForm || showTrainingRecordForm || Boolean(editingBooking || selectedBookingForRecord);
-  const { bookings, addBooking, updateBooking, deleteBooking, restoreBooking, approveBooking, refetch: refetchBookings } = useBookings(bookingsEnabled);
+  const { bookings, addBooking, finaliseRecurringBookingSeries, updateRecurringBookingSeries, updateBooking, deleteBooking, restoreBooking, approveBooking, refetch: refetchBookings } = useBookings(bookingsEnabled);
   const { settings: portalSettings, loading: portalSettingsLoading } = usePortalUxSettings();
   const { preferences: userPreferences, loading: userPreferencesLoading } = useUserPreferences(user?.id || '');
   const effectiveTheme = userPreferences?.theme || getStoredPortalTheme(user?.id) || 'auto';
@@ -1040,10 +1059,10 @@ const AuthenticatedApp: React.FC<{
       // Parse as local time by appending seconds — avoids UTC date-shift
       const startTime = new Date(`${bookingData.date}T${bookingData.startTime}:00`);
       const endTime = new Date(`${bookingData.endDate}T${bookingData.endTime}:00`);
-      const bookingKind = bookingData.bookingKind === 'ground' || !bookingData.aircraftId ? 'ground' : 'flight';
+      const bookingKind: 'ground' | 'flight' = bookingData.bookingKind === 'ground' || !bookingData.aircraftId ? 'ground' : 'flight';
 
       if (editingBooking) {
-        await updateBooking(editingBooking.id, {
+        const bookingUpdates = {
           studentId: bookingData.studentId,
           instructorId: bookingData.instructorId || undefined,
           aircraftId: bookingKind === 'ground' ? undefined : bookingData.aircraftId,
@@ -1065,14 +1084,20 @@ const AuthenticatedApp: React.FC<{
           locationId: bookingData.locationId || undefined,
           dutyOverrideReason: bookingData.dutyOverrideReason || undefined,
           membershipOverrideReason: bookingData.membershipOverrideReason || undefined,
-        });
+        };
+        if (bookingData.recurringEditScope === 'future' && editingBooking.recurrenceSeriesId) {
+          await updateRecurringBookingSeries(editingBooking.id, bookingUpdates);
+        } else {
+          await updateBooking(editingBooking.id, bookingUpdates);
+        }
     } else {
       const recurrence = bookingData.recurrence;
       const occurrenceStarts = buildRecurringStartTimes(startTime, recurrence);
       const occurrenceCount = occurrenceStarts.length;
       const durationMs = endTime.getTime() - startTime.getTime();
+      const recurrenceSeriesId = occurrenceCount > 1 ? crypto.randomUUID() : undefined;
 
-      for (const occurrenceStart of occurrenceStarts) {
+      for (const [occurrenceIndex, occurrenceStart] of occurrenceStarts.entries()) {
         const occurrenceEnd = new Date(occurrenceStart.getTime() + durationMs);
           await addBooking({
             studentId: bookingData.studentId,
@@ -1096,10 +1121,23 @@ const AuthenticatedApp: React.FC<{
             locationId: bookingData.locationId || undefined,
             dutyOverrideReason: bookingData.dutyOverrideReason || undefined,
             membershipOverrideReason: bookingData.membershipOverrideReason || undefined,
-          }, { silent: occurrenceCount > 1 });
+          }, {
+            silent: occurrenceCount > 1,
+            recurrence: recurrenceSeriesId ? {
+              seriesId: recurrenceSeriesId,
+              occurrenceIndex: occurrenceIndex + 1,
+              occurrenceCount,
+            } : undefined,
+          });
         }
 
         if (occurrenceCount > 1) {
+          try {
+            await finaliseRecurringBookingSeries(recurrenceSeriesId!);
+          } catch (notificationError) {
+            console.error('Recurring booking notification summary could not be finalised:', notificationError);
+            toast.error('Bookings were created, but their notification summary could not be confirmed. No per-booking alerts were sent.');
+          }
           toast.success(`${occurrenceCount} recurring bookings created`);
         }
       }

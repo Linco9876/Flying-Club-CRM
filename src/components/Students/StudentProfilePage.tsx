@@ -30,7 +30,7 @@ import { canAccessUploadedExamSheets, examResultColumnsForViewer } from '../../u
 import { cleanupInstructorComment, type CommentCleanupMode } from '../../utils/commentCleanup';
 import { buildTrainingCommentContext } from '../../utils/commentCleanupContext';
 import { getConsecutivePassReadiness, getTwoOccasionReadiness } from '../../utils/trainingReadiness';
-import { canStaffEditTrainingRecord, shouldAdvanceToNextLesson } from '../../utils/trainingSettingsRules';
+import { canStaffEditTrainingRecord, canStaffReassignTrainingRecord, shouldAdvanceToNextLesson } from '../../utils/trainingSettingsRules';
 import { formatRichTextContent, richTextToPlainText } from '../../utils/richText';
 import { InstructorComplianceProfilePanel } from '../Profile/InstructorComplianceProfilePanel';
 import { FlightReviewsTab } from './FlightReviewsTab';
@@ -73,6 +73,8 @@ import {
   examResultDraftValidationError,
   examResultSaveFailureMessage,
 } from '../../utils/examResultLogging';
+import { birthdayAtAge, findMedicalTypeDefinition } from '../../utils/medicalRequirements';
+import { TrainingRecordReassignmentModal } from './TrainingRecordReassignmentModal';
 
 interface StudentInfoForm {
   name: string;
@@ -139,14 +141,6 @@ interface ExamEditFormState {
 
 const EXAM_UPLOAD_BUCKET = 'student-exam-uploads';
 const LESSON_STUDY_BUCKET = 'training-lesson-assets';
-const MEDICAL_TYPE_OPTIONS = [
-  'Driver Licence Medical',
-  'RAAus Medical Declaration',
-  'CASA Basic Class 2',
-  'CASA Class 2',
-  'CASA Class 1',
-];
-
 const toDateInputValue = (date?: Date) => date ? date.toISOString().slice(0, 10) : '';
 
 const buildStudentInfoForm = (student: Student): StudentInfoForm => ({
@@ -440,6 +434,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     type: '', licenceNumber: '', dateObtained: '', expiryDate: '', issuingAuthority: '',
   });
   const [editingTrainingRecord, setEditingTrainingRecord] = useState<TrainingRecord | null>(null);
+  const [reassigningTrainingRecord, setReassigningTrainingRecord] = useState<TrainingRecord | null>(null);
   const [trainingEditForm, setTrainingEditForm] = useState<TrainingRecordEditForm | null>(null);
   const [commentCleanupLoading, setCommentCleanupLoading] = useState<CommentCleanupMode | null>(null);
   const [commentCleanupOriginal, setCommentCleanupOriginal] = useState<string | null>(null);
@@ -507,6 +502,14 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   const availableInfoEndorsementTypes = useMemo(
     () => availableCredentialOptions(trainingSettings.endorsementTypes, infoForm.endorsements),
     [infoForm.endorsements, trainingSettings.endorsementTypes],
+  );
+  const selectedInfoMedicalType = useMemo(
+    () => findMedicalTypeDefinition(infoForm.medicalType, trainingSettings.medicalTypes),
+    [infoForm.medicalType, trainingSettings.medicalTypes],
+  );
+  const availableInfoMedicalTypes = useMemo(
+    () => trainingSettings.medicalTypes.filter(type => type.isActive || type.name === infoForm.medicalType),
+    [infoForm.medicalType, trainingSettings.medicalTypes],
   );
   const billing = useBillingAccounts({
     enabled: loadPlan.invoices,
@@ -1303,7 +1306,9 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
           raaus_id: infoForm.raausId.trim() || null,
           licence_expiry: infoForm.membershipExpiry || null,
           medical_type: infoForm.medicalType.trim() || null,
-          medical_expiry: infoForm.medicalExpiry || null,
+          medical_expiry: selectedInfoMedicalType?.validityMode === 'until_age'
+            ? null
+            : infoForm.medicalExpiry || null,
           casa_id: infoForm.casaArn.trim() || null,
           date_of_birth: infoForm.dateOfBirth || null,
           emergency_contact_name: infoForm.emergencyContactName.trim() || null,
@@ -2143,11 +2148,36 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     const daysUntilExpiry = Math.ceil((date.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
     return daysUntilExpiry <= 60;
   };
+  const canManageAnyTrainingRecordReassignment = hasAnyRole(user, ['admin', 'cfi', 'senior_instructor']);
+  const canReassignRecord = (record: TrainingRecord) => {
+    if (!user) return false;
+    return canStaffReassignTrainingRecord({
+      isAdminOrCfi: canManageAnyTrainingRecordReassignment,
+      isRecordInstructor: record.instructorId === user.id,
+      recordStatus: record.status,
+      hasFlightLog: Boolean(record.flightLogId),
+    });
+  };
+  const medicalValidUntil = student.medicalValidityMode === 'until_age'
+    && student.dateOfBirth
+    && student.medicalValidUntilAge
+      ? birthdayAtAge(student.dateOfBirth, student.medicalValidUntilAge)
+      : student.medicalExpiry;
 
   const complianceItems = [
     { label: 'Pilot status', value: isPilot ? 'Pilot - solo hire permitted' : 'Student - instructor/approval required', warn: !isPilot },
     { label: 'RAAus membership', value: student.licenceExpiry?.toLocaleDateString() || 'Not recorded', warn: isExpiryNear(student.licenceExpiry) },
-    { label: 'Medical', value: student.medicalExpiry?.toLocaleDateString() || 'Not recorded', warn: isExpiryNear(student.medicalExpiry) },
+    {
+      label: 'Medical',
+      value: student.medicalRequired === false
+        ? 'Not required for active course'
+        : student.medicalType
+          ? student.medicalValidityMode === 'until_age'
+            ? `${student.medicalType} · until age ${student.medicalValidUntilAge}`
+            : medicalValidUntil?.toLocaleDateString() || 'Expiry not recorded'
+          : 'Not selected',
+      warn: student.medicalRequired !== false && (!student.medicalType || !medicalValidUntil || isExpiryNear(medicalValidUntil)),
+    },
     { label: 'Flight review', value: student.lastFlightReview ? new Date(student.lastFlightReview).toLocaleDateString() : 'Not recorded', warn: false },
     { label: 'Endorsements', value: `${student.endorsements.filter(e => e.isActive).length} active`, warn: false },
   ];
@@ -2221,16 +2251,16 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     });
   }
 
-  if (student.medicalExpiry) {
+  if (student.medicalRequired !== false && medicalValidUntil) {
     timelineEvents.push({
       id: 'medical-expiry',
-      date: new Date(student.medicalExpiry),
-      title: 'Medical expiry',
+      date: new Date(medicalValidUntil),
+      title: student.medicalValidityMode === 'until_age' ? 'Age-based medical validity ends' : 'Medical expiry',
       description: student.medicalType || 'Medical type not recorded',
       kind: 'Compliance',
-      badge: student.medicalExpiry >= todayStart ? 'Upcoming' : 'Expired',
-      colorClass: student.medicalExpiry >= todayStart ? 'bg-amber-500' : 'bg-red-600',
-      isFuture: student.medicalExpiry >= todayStart,
+      badge: medicalValidUntil >= todayStart ? 'Upcoming' : 'Expired',
+      colorClass: medicalValidUntil >= todayStart ? 'bg-amber-500' : 'bg-red-600',
+      isFuture: medicalValidUntil >= todayStart,
     });
   }
 
@@ -2581,11 +2611,13 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                 </div>
                 
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">Medical Certificate</label>
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">Operating Medical</label>
                   <p className="text-sm text-gray-900">{student.medicalType || 'Not recorded'}</p>
-                  {student.medicalExpiry && (
-                    <p className={`text-xs ${isExpiryNear(student.medicalExpiry) ? 'text-yellow-600' : 'text-gray-500'}`}>
-                      Expires: {student.medicalExpiry.toLocaleDateString()}
+                  {student.medicalType && (
+                    <p className={`text-xs ${medicalValidUntil && isExpiryNear(medicalValidUntil) ? 'text-yellow-600' : 'text-gray-500'}`}>
+                      {student.medicalValidityMode === 'until_age'
+                        ? `Current until age ${student.medicalValidUntilAge}${medicalValidUntil ? ` (${medicalValidUntil.toLocaleDateString()})` : ''}`
+                        : `Expires: ${student.medicalExpiry?.toLocaleDateString() || 'not recorded'}`}
                     </p>
                   )}
                 </div>
@@ -4132,6 +4164,16 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                                   Edit
                                 </button>
                               )}
+                              {canReassignRecord(record) && (
+                                <button
+                                  type="button"
+                                  onClick={() => setReassigningTrainingRecord(record)}
+                                  className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 px-3 py-1.5 text-sm font-medium text-blue-700 transition hover:bg-blue-50 dark:border-blue-400/30 dark:text-blue-200 dark:hover:bg-blue-950/25"
+                                >
+                                  <RotateCcw className="h-4 w-4" />
+                                  Reassign flight
+                                </button>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -4467,6 +4509,18 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
             </div>
           )}
         </div>
+      )}
+
+      {reassigningTrainingRecord && user && (
+        <TrainingRecordReassignmentModal
+          record={reassigningTrainingRecord}
+          currentUserId={user.id}
+          canManageAnyInstructor={canManageAnyTrainingRecordReassignment}
+          onClose={() => setReassigningTrainingRecord(null)}
+          onCompleted={async () => {
+            await refetchTrainingRecords();
+          }}
+        />
       )}
 
       {editingTrainingRecord && trainingEditForm && (
@@ -5045,18 +5099,33 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                     <input type="date" value={infoForm.membershipExpiry} onChange={event => updateInfoField('membershipExpiry', event.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </label>
                   <label className="block">
-                    <span className="block text-sm font-medium text-gray-700 mb-1">Medical Type</span>
-                    <SearchableSelect value={infoForm.medicalType} onChange={event => updateInfoField('medicalType', event.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <span className="block text-sm font-medium text-gray-700 mb-1">Operating Medical</span>
+                    <SearchableSelect
+                      value={infoForm.medicalType}
+                      onChange={event => {
+                        const definition = findMedicalTypeDefinition(event.target.value, trainingSettings.medicalTypes);
+                        setInfoForm(current => ({
+                          ...current,
+                          medicalType: event.target.value,
+                          medicalExpiry: definition?.validityMode === 'until_age' ? '' : current.medicalExpiry,
+                        }));
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
                       <option value="">Not recorded</option>
-                      {infoForm.medicalType && !MEDICAL_TYPE_OPTIONS.includes(infoForm.medicalType) && (
-                        <option value={infoForm.medicalType}>{infoForm.medicalType}</option>
-                      )}
-                      {MEDICAL_TYPE_OPTIONS.map(type => <option key={type} value={type}>{type}</option>)}
+                      {availableInfoMedicalTypes.map(type => <option key={type.id} value={type.name}>{type.name}</option>)}
                     </SearchableSelect>
+                    <span className="mt-1 block text-xs font-normal text-gray-500">Pilots and instructors select the medical they operate under.</span>
                   </label>
                   <label className="block">
                     <span className="block text-sm font-medium text-gray-700 mb-1">Medical Expiry</span>
-                    <input type="date" value={infoForm.medicalExpiry} onChange={event => updateInfoField('medicalExpiry', event.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    {selectedInfoMedicalType?.validityMode === 'until_age' ? (
+                      <span className="block rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                        Current until age {selectedInfoMedicalType.validUntilAge}. No expiry date is needed.
+                      </span>
+                    ) : (
+                      <input type="date" value={infoForm.medicalExpiry} onChange={event => updateInfoField('medicalExpiry', event.target.value)} disabled={!infoForm.medicalType} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50" />
+                    )}
                   </label>
                   <label className="block">
                     <span className="block text-sm font-medium text-gray-700 mb-1">CASA ARN</span>

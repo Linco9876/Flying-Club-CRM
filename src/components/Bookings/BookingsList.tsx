@@ -38,8 +38,12 @@ export const BookingsList: React.FC<BookingsListProps> = ({
   const { settings: portalSettings } = usePortalUxSettings();
   const {
     acceptBooking: acceptManualSupervision,
+    assignBooking: assignManualSupervision,
     acceptingBookingId,
+    assigningBookingId,
     canAcceptBooking: canAcceptManualSupervision,
+    canAssignBooking: canAssignManualSupervision,
+    getAssignableSupervisors,
   } = useManualBookingSupervision();
   const [showFlightLogForm, setShowFlightLogForm] = React.useState(false);
   const [showEditForm, setShowEditForm] = React.useState(false);
@@ -533,6 +537,21 @@ export const BookingsList: React.FC<BookingsListProps> = ({
                         }
                       : undefined}
                     acceptingSupervision={acceptingBookingId === booking.id}
+                    onAssignSupervisor={canAssignManualSupervision(booking)
+                      ? async (supervisorId) => {
+                          try {
+                            const result = await assignManualSupervision(booking, supervisorId);
+                            toast.success(`${result.supervisingInstructorName} has been allocated and notified`);
+                          } catch (error) {
+                            toast.error(error instanceof Error
+                              ? error.message
+                              : 'The supervisor could not be allocated.');
+                            throw error;
+                          }
+                        }
+                      : undefined}
+                    supervisorOptions={getAssignableSupervisors(booking)}
+                    assigningSupervisor={assigningBookingId === booking.id}
                     hasTrainingRecord={!!booking.flightLog}
                     canDelete={canCancelOwnBookings}
                     canApprove={user?.role === 'admin' || user?.role === 'instructor'}

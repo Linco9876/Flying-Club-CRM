@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useTrainingSettings } from '../../hooks/useTrainingSettings';
 import { availableCredentialOptions, hasCredentialType } from '../../utils/credentialDropdowns';
+import { findMedicalTypeDefinition } from '../../utils/medicalRequirements';
 
 interface StudentFormProps {
   isOpen: boolean;
@@ -82,6 +83,8 @@ export const StudentForm: React.FC<StudentFormProps> = ({
     trainingSettings.licenceTypes,
     formData.licences,
   );
+  const configuredMedicalTypes = trainingSettings.medicalTypes.filter(type => type.isActive || type.name === formData.medicalType);
+  const selectedMedicalType = findMedicalTypeDefinition(formData.medicalType, trainingSettings.medicalTypes);
   const [newLicence, setNewLicence] = useState({
     type: '',
     licenceNumber: '',
@@ -490,32 +493,43 @@ export const StudentForm: React.FC<StudentFormProps> = ({
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Medical Expiry
+                  Operating Medical
                 </label>
-                <input
-                  type="date"
-                  value={formData.medicalExpiry}
-                  onChange={(e) => setFormData(prev => ({ ...prev, medicalExpiry: e.target.value }))}
+                <SearchableSelect
+                  value={formData.medicalType}
+                  onChange={(e) => {
+                    const nextType = findMedicalTypeDefinition(e.target.value, trainingSettings.medicalTypes);
+                    setFormData(prev => ({
+                      ...prev,
+                      medicalType: e.target.value,
+                      medicalExpiry: nextType?.validityMode === 'until_age' ? '' : prev.medicalExpiry,
+                    }));
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                >
+                  <option value="">Not recorded</option>
+                  {configuredMedicalTypes.map(type => <option key={type.id} value={type.name}>{type.name}</option>)}
+                </SearchableSelect>
+                <p className="mt-1 text-xs text-gray-500">Pilots and instructors select the medical they operate under.</p>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Medical Type
+                  Medical Expiry
                 </label>
-                <SearchableSelect
-                  value={formData.medicalType}
-                  onChange={(e) => setFormData(prev => ({ ...prev, medicalType: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Not recorded</option>
-                  <option value="Driver Licence Medical">Driver Licence Medical</option>
-                  <option value="RAAus Medical Declaration">RAAus Medical Declaration</option>
-                  <option value="CASA Basic Class 2">CASA Basic Class 2</option>
-                  <option value="CASA Class 2">CASA Class 2</option>
-                  <option value="CASA Class 1">CASA Class 1</option>
-                </SearchableSelect>
+                {selectedMedicalType?.validityMode === 'until_age' ? (
+                  <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                    Current until age {selectedMedicalType.validUntilAge}. No expiry date is needed.
+                  </div>
+                ) : (
+                  <input
+                    type="date"
+                    value={formData.medicalExpiry}
+                    onChange={(e) => setFormData(prev => ({ ...prev, medicalExpiry: e.target.value }))}
+                    disabled={!formData.medicalType}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                  />
+                )}
               </div>
             </div>
           </div>

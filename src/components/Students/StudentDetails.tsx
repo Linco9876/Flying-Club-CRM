@@ -95,13 +95,15 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ isOpen, onClose,
                 <p className="text-sm text-gray-900 bg-gray-50 p-2 rounded">{student.casaId || 'Not provided'}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Medical Certificate Type</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Operating Medical</label>
                 <p className="text-sm text-gray-900 bg-gray-50 p-2 rounded">{student.medicalType || 'Not provided'}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Medical Certificate Expiry</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Medical Valid Until</label>
                 <p className="text-sm text-gray-900 bg-gray-50 p-2 rounded">
-                  {student.medicalExpiry?.toLocaleDateString() || 'Not provided'}
+                  {student.medicalValidityMode === 'until_age'
+                    ? `Age ${student.medicalValidUntilAge || 'not configured'}`
+                    : student.medicalExpiry?.toLocaleDateString() || 'Not provided'}
                 </p>
               </div>
               <div>

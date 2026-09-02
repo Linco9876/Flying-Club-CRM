@@ -18,6 +18,8 @@ interface PilotCurrency {
   name: string;
   lastFlightDate: Date | null;
   medicalExpiry: Date | null;
+  medicalType: string;
+  medicalStatusLabel: string;
   licenceExpiry: Date | null;
   bfrDue: Date | null;
   endorsements: string[];
@@ -101,9 +103,8 @@ export const PilotCurrencyTab: React.FC = () => {
       const bfrDue = getBfrDueDate(pilot);
 
       // Calculate days until expiry
-      const daysUntilMedicalExpiry = pilot.medicalExpiry 
-        ? Math.ceil((pilot.medicalExpiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-        : 999;
+      const medicalExpiry = summary.medicalStatus.effectiveExpiry;
+      const daysUntilMedicalExpiry = summary.medicalStatus.daysRemaining ?? 999;
       
       const daysUntilBfrDue = bfrDue 
         ? Math.ceil((bfrDue.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
@@ -132,7 +133,9 @@ export const PilotCurrencyTab: React.FC = () => {
         id: pilot.id,
         name: pilot.name,
         lastFlightDate: summary.lastFlightDate,
-        medicalExpiry: pilot.medicalExpiry || null,
+        medicalExpiry,
+        medicalType: pilot.medicalType || 'Not selected',
+        medicalStatusLabel: summary.medicalStatus.label,
         licenceExpiry: pilot.licenceExpiry || null,
         bfrDue,
         endorsements,
@@ -188,12 +191,13 @@ export const PilotCurrencyTab: React.FC = () => {
       pilot.name,
       pilot.urgencyLevel,
       formatDate(pilot.lastFlightDate),
+      pilot.medicalType,
       formatDate(pilot.medicalExpiry),
       formatDate(pilot.licenceExpiry),
       formatDate(pilot.bfrDue),
       pilot.endorsements.join('; ')
     ]);
-    const csv = [['Pilot', 'Status', 'Last Flight', 'Medical Expiry', 'RAAus Membership Expiry', 'BFR Due', 'Endorsements'], ...rows]
+    const csv = [['Pilot', 'Status', 'Last Flight', 'Operating Medical', 'Medical Valid Until', 'RAAus Membership Expiry', 'BFR Due', 'Endorsements'], ...rows]
       .map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(','))
       .join('\n');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
@@ -289,7 +293,7 @@ export const PilotCurrencyTab: React.FC = () => {
       {
         label: 'Medical',
         value: formatDate(pilot.medicalExpiry),
-        detail: formatDaysUntil(pilot.daysUntilMedicalExpiry),
+        detail: `${pilot.medicalType} · ${pilot.medicalStatusLabel}`,
         icon: <ShieldCheck className="h-5 w-5" />
       },
       {
@@ -461,7 +465,7 @@ export const PilotCurrencyTab: React.FC = () => {
                 <div className="rounded-lg bg-gray-50 p-3">
                   <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Medical</p>
                   <p className="mt-1 font-semibold text-gray-900">{formatDate(pilot.medicalExpiry)}</p>
-                  {pilot.medicalExpiry && <p className="text-xs text-gray-500">{formatDaysUntil(pilot.daysUntilMedicalExpiry)}</p>}
+                  <p className="text-xs text-gray-500">{pilot.medicalType} · {pilot.medicalStatusLabel}</p>
                 </div>
                 <div className="rounded-lg bg-gray-50 p-3">
                   <p className="text-xs font-medium uppercase tracking-wide text-gray-500">RAAus membership</p>
@@ -502,7 +506,7 @@ export const PilotCurrencyTab: React.FC = () => {
                   Last Flight Date
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Medical Expiry
+                  Operating Medical / Valid Until
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   RAAus Membership Expiry
@@ -535,11 +539,7 @@ export const PilotCurrencyTab: React.FC = () => {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     <div>
                       <div>{formatDate(pilot.medicalExpiry)}</div>
-                      {pilot.medicalExpiry && (
-                        <div className="text-xs text-gray-500">
-                          {formatDaysUntil(pilot.daysUntilMedicalExpiry)}
-                        </div>
-                      )}
+                      <div className="text-xs text-gray-500">{pilot.medicalType} · {pilot.medicalStatusLabel}</div>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">

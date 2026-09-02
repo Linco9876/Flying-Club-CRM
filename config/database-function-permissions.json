@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "reviewed_at": "2026-08-19",
+  "reviewed_at": "2026-09-02",
   "source_project": "Flying Club CRM Australia",
   "rules": {
     "anonymous_token_public": [
@@ -45,6 +45,18 @@
       "security_definer": true,
       "fixed_search_path": true,
       "rationale": "Authorised senior instructor self-service RPC. The function locks the booking and enforces current authorisation, scope, qualification, duty and capacity before recording an explicit supervision commitment."
+    },
+    {
+      "signature": "public.assign_booking_supervisor(p_booking_id uuid, p_supervisor_id uuid)",
+      "name": "assign_booking_supervisor",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "CFI/DCFI-only booking action. The function locks the booking and enforces target authorisation, scope, qualification, duty and capacity while deliberately bypassing roster availability."
     },
     {
       "signature": "public.acknowledge_booking_supervision(p_booking_id uuid)",
@@ -674,6 +686,18 @@
       "security_definer": true,
       "fixed_search_path": true,
       "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.reassign_training_record_flight(p_training_record_id uuid, p_target_flight_log_id uuid, p_reason text)",
+      "name": "reassign_training_record_flight",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Staff correction workflow. The function locks both flights, enforces same-student and vacant-target rules, limits ordinary instructors to their own flights, moves related review data, resets stale acknowledgement state and records a durable audit event."
     },
     {
       "signature": "public.get_member_directory_membership_summaries()",

@@ -9,6 +9,44 @@ const AVAILABILITY_UPDATED_EVENT = 'instructor-availability-updated';
 
 const normalizeTime = (time?: string | null) => time ? time.slice(0, 5) : undefined;
 
+type AvailabilityErrorLike = {
+  code?: unknown;
+  details?: unknown;
+  hint?: unknown;
+  message?: unknown;
+};
+
+const availabilityMutationErrorMessage = (
+  action: 'add' | 'update' | 'delete',
+  error: unknown
+) => {
+  const databaseError = error && typeof error === 'object' ? error as AvailabilityErrorLike : null;
+  const message = error instanceof Error
+    ? error.message.trim()
+    : typeof databaseError?.message === 'string'
+      ? databaseError.message.trim()
+      : '';
+  const details = typeof databaseError?.details === 'string' ? databaseError.details.trim() : '';
+  const hint = typeof databaseError?.hint === 'string' ? databaseError.hint.trim() : '';
+  const code = typeof databaseError?.code === 'string' ? databaseError.code : '';
+  const diagnostic = [message, details, hint].filter(Boolean).join(' ');
+
+  if (/updated_at|schema cache|column .* does not exist/i.test(diagnostic)) {
+    return 'Absence editing is not available in the database yet. Refresh after the database update, then retry.';
+  }
+  if (code === '42501' || /row-level security|permission denied|not authorized|not authorised/i.test(diagnostic)) {
+    return 'You do not have permission to change this instructor absence.';
+  }
+  if (/failed to fetch|network|connection|offline/i.test(diagnostic)) {
+    return `The absence could not be ${action === 'add' ? 'added' : action === 'update' ? 'updated' : 'deleted'} because the portal lost its connection. Check your connection and retry.`;
+  }
+  if (code === '23514' || /check constraint|end date|end time/i.test(diagnostic)) {
+    return 'The absence dates or times are invalid. Check the start and end values, then retry.';
+  }
+  if (message) return message;
+  return `The absence could not be ${action === 'add' ? 'added' : action === 'update' ? 'updated' : 'deleted'}. Refresh and retry.`;
+};
+
 let weeklySchedulesCache: WeeklySchedule[] | null = null;
 let absencesCache: Absence[] | null = null;
 let scheduleChangesCache: ScheduleChange[] | null = null;
@@ -104,7 +142,6 @@ export const useInstructorAvailability = (instructorId?: string) => {
     const message = isAdmin
       ? 'Select an instructor before saving the absence'
       : 'Instructors can only manage temporary absences for themselves';
-    toast.error(message);
     throw new Error(message);
   };
 
@@ -357,8 +394,82 @@ export const useInstructorAvailability = (instructorId?: string) => {
       toast.success('Absence added');
     } catch (error) {
       console.error('Error adding absence:', error);
-      toast.error('Failed to add absence');
+      toast.error(availabilityMutationErrorMessage('add', error), { duration: 8000 });
       throw error;
+    }
+  };
+
+  const updateAbsenceWithCopies = async (
+    id: string,
+    absence: Partial<Omit<Absence, 'id' | 'userId'>>,
+    copies: Omit<Absence, 'id'>[],
+  ) => {
+    const copyIds: string[] = [];
+    let originalUpdated = false;
+
+    try {
+      const ownerId = await getAbsenceOwner(id);
+      requireAbsencePermission(ownerId);
+      if (!ownerId) throw new Error('The downtime owner could not be found. Refresh and retry.');
+      if (copies.length === 0) throw new Error('Choose a recurrence that creates at least one new downtime period.');
+      if (copies.some(copy => copy.userId !== ownerId)) {
+        throw new Error('Recurring downtime copies must belong to the same instructor.');
+      }
+
+      await confirmSupervisionImpact(ownerId, 'This recurring absence');
+
+      const copyRows = copies.map(copy => {
+        const copyId = crypto.randomUUID();
+        copyIds.push(copyId);
+        return {
+          id: copyId,
+          user_id: copy.userId,
+          instructor_id: copy.userId,
+          start_date: copy.startDate,
+          end_date: copy.endDate,
+          start_time: copy.startTime || null,
+          end_time: copy.endTime || null,
+          reason: copy.reason,
+        };
+      });
+
+      const { error: copyError } = await supabase
+        .from('instructor_absences')
+        .insert(copyRows);
+      if (copyError) throw copyError;
+
+      const updateData: any = { updated_at: new Date().toISOString() };
+      if (absence.startDate) updateData.start_date = absence.startDate;
+      if (absence.endDate) updateData.end_date = absence.endDate;
+      if (absence.startTime !== undefined) updateData.start_time = absence.startTime || null;
+      if (absence.endTime !== undefined) updateData.end_time = absence.endTime || null;
+      if (absence.reason !== undefined) updateData.reason = absence.reason;
+
+      const { error: updateError } = await supabase
+        .from('instructor_absences')
+        .update(updateData)
+        .eq('id', id);
+      if (updateError) throw updateError;
+      originalUpdated = true;
+
+      await fetchAbsences(instructorId);
+      notifyAvailabilityUpdated();
+      toast.success(`Downtime updated and ${copies.length} recurring ${copies.length === 1 ? 'copy' : 'copies'} added`);
+    } catch (error) {
+      let reportedError = error;
+      if (copyIds.length > 0 && !originalUpdated) {
+        const { error: cleanupError } = await supabase
+          .from('instructor_absences')
+          .delete()
+          .in('id', copyIds);
+        if (cleanupError) {
+          reportedError = new Error('The original downtime could not be updated and some recurring copies may remain. Refresh the calendar before retrying.');
+        }
+      }
+
+      console.error('Error updating recurring absence:', reportedError);
+      toast.error(availabilityMutationErrorMessage('update', reportedError), { duration: 8000 });
+      throw reportedError;
     }
   };
 
@@ -388,7 +499,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
       toast.success('Absence updated');
     } catch (error) {
       console.error('Error updating absence:', error);
-      toast.error('Failed to update absence');
+      toast.error(availabilityMutationErrorMessage('update', error), { duration: 8000 });
       throw error;
     }
   };
@@ -411,7 +522,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
       toast.success('Absence deleted');
     } catch (error) {
       console.error('Error deleting absence:', error);
-      toast.error('Failed to delete absence');
+      toast.error(availabilityMutationErrorMessage('delete', error), { duration: 8000 });
       throw error;
     }
   };
@@ -621,6 +732,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
     upsertWeeklySchedules,
     deleteWeeklySchedule,
     addAbsence,
+    updateAbsenceWithCopies,
     updateAbsence,
     deleteAbsence,
     addScheduleChange,

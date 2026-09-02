@@ -9,6 +9,11 @@ import {
   type ExternalLogbookEntry,
   type LogbookBaseline,
 } from './externalLogbook.ts';
+import {
+  evaluateMedicalCurrency,
+  type MedicalCurrencyStatus,
+  type MedicalTypeDefinition,
+} from './medicalRequirements.ts';
 
 export type SafetyConcernType = 'recency' | 'medical' | 'licence' | 'bfr';
 export type SafetyConcernSeverity = 'warning' | 'lapsed' | 'blocked';
@@ -29,6 +34,7 @@ export interface SafetyComplianceSummary {
   lastFlightDate: Date | null;
   daysSinceLastFlight: number | null;
   picHours: number;
+  medicalStatus: MedicalCurrencyStatus;
 }
 
 type SafetyMessagePerspective = 'named' | 'firstPerson';
@@ -205,22 +211,70 @@ export const buildSafetyComplianceSummary = (
     });
   }
 
-  const medicalDays = daysUntil(person.medicalExpiry);
-  if (medicalDays !== null && medicalDays < 0) {
+  const personRoles = person.roles && person.roles.length > 0 ? person.roles : [person.role as UserRole];
+  const medicalRequired = person.medicalRequired ?? personRoles.some(role =>
+    ['pilot', 'instructor', 'senior_instructor', 'cfi'].includes(role)
+  );
+  const configuredMedicalDefinition: MedicalTypeDefinition[] = person.medicalType ? [{
+    id: `member-${person.id}`,
+    name: person.medicalType,
+    validityMode: person.medicalValidityMode ?? 'expiry_date',
+    validUntilAge: person.medicalValidUntilAge,
+    isActive: true,
+  }] : [];
+  const medicalStatus = evaluateMedicalCurrency({
+    required: medicalRequired,
+    medicalType: person.medicalType || (person.medicalExpiry ? 'Recorded medical' : null),
+    medicalExpiry: person.medicalExpiry,
+    dateOfBirth: person.dateOfBirth,
+    definitions: configuredMedicalDefinition,
+    warningDays: settings.medicalWarningDays,
+  });
+  const medicalSubject = subjectFor(person, perspective);
+  const medicalReason = person.medicalRequirementReason === 'course' && person.medicalRequirementCourseTitle
+    ? ` for ${person.medicalRequirementCourseTitle}`
+    : '';
+
+  if (medicalStatus.state === 'missing_type') {
+    concerns.push({
+      type: 'medical',
+      severity: credentialLapseSeverity(settings.autoBlockExpiredMedical),
+      label: 'Operating medical required',
+      message: `${medicalSubject} applicable operating medical has not been selected${medicalReason}.`,
+    });
+  } else if (medicalStatus.state === 'missing_expiry') {
+    concerns.push({
+      type: 'medical',
+      severity: credentialLapseSeverity(settings.autoBlockExpiredMedical),
+      label: 'Medical expiry required',
+      message: `${medicalSubject} ${medicalStatus.definition?.name || 'medical'} needs an expiry date.`,
+    });
+  } else if (medicalStatus.state === 'missing_date_of_birth') {
+    concerns.push({
+      type: 'medical',
+      severity: 'warning',
+      label: 'Date of birth required for medical',
+      message: `${medicalSubject} date of birth is needed to confirm the age-based ${medicalStatus.definition?.name || 'medical'}.`,
+    });
+  } else if (medicalStatus.state === 'expired') {
     concerns.push({
       type: 'medical',
       severity: credentialLapseSeverity(settings.autoBlockExpiredMedical),
       label: 'Medical expired',
-      days: medicalDays,
-      message: `${subjectFor(person, perspective)} medical expired on ${formatDate(person.medicalExpiry)}.`
+      days: medicalStatus.daysRemaining ?? undefined,
+      message: medicalStatus.definition?.validityMode === 'until_age'
+        ? `${medicalSubject} ${medicalStatus.definition.name} ceased to satisfy the requirement at age ${medicalStatus.definition.validUntilAge} on ${formatDate(medicalStatus.effectiveExpiry)}.`
+        : `${medicalSubject} medical expired on ${formatDate(medicalStatus.effectiveExpiry)}.`
     });
-  } else if (medicalDays !== null && medicalDays <= settings.medicalWarningDays) {
+  } else if (medicalStatus.state === 'expiring') {
     concerns.push({
       type: 'medical',
       severity: 'warning',
       label: 'Medical approaching expiry',
-      days: medicalDays,
-      message: `${subjectFor(person, perspective)} medical expires on ${formatDate(person.medicalExpiry)}.`
+      days: medicalStatus.daysRemaining ?? undefined,
+      message: medicalStatus.definition?.validityMode === 'until_age'
+        ? `${medicalSubject} ${medicalStatus.definition.name} remains current until age ${medicalStatus.definition.validUntilAge} on ${formatDate(medicalStatus.effectiveExpiry)}.`
+        : `${medicalSubject} medical expires on ${formatDate(medicalStatus.effectiveExpiry)}.`
     });
   }
 
@@ -273,6 +327,7 @@ export const buildSafetyComplianceSummary = (
     isStudentOnly: studentOnly,
     lastFlightDate,
     daysSinceLastFlight,
-    picHours
+    picHours,
+    medicalStatus,
   };
 };

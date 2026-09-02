@@ -51,6 +51,8 @@ test('limits pilot compliance warnings to members with flying records', () => {
     phone: '0400 000 000',
     hasFlyingRecords: true,
     raausId: '123456',
+    medicalRequired: true,
+    medicalType: 'CASA Class 2',
     medicalExpiry: new Date(2026, 7, 18),
     raausMembershipExpiry: new Date(2026, 9, 18),
     now: new Date(2026, 7, 19),
@@ -58,6 +60,18 @@ test('limits pilot compliance warnings to members with flying records', () => {
     'Medical expired 18 Aug 2026',
     'RAAus membership due 18 Oct 2026',
   ]);
+
+  assert.deepEqual(memberCardAttentionItems({
+    email: 'student@example.com',
+    phone: '0400 000 000',
+    hasFlyingRecords: true,
+    raausId: '654321',
+    medicalRequired: false,
+    medicalType: 'CASA Class 2',
+    medicalExpiry: new Date(2020, 0, 1),
+    raausMembershipExpiry: new Date(2027, 0, 1),
+    now: new Date(2026, 7, 19),
+  }), []);
 });
 
 test('staff directory RPC exposes membership status without financial or application details', () => {

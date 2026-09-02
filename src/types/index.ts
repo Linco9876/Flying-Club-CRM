@@ -39,6 +39,11 @@ export interface Student extends User {
   casaId?: string;
   medicalType?: string;
   medicalExpiry?: Date;
+  medicalRequired?: boolean;
+  medicalRequirementReason?: 'operating_role' | 'course' | 'not_required';
+  medicalRequirementCourseTitle?: string;
+  medicalValidityMode?: 'expiry_date' | 'until_age';
+  medicalValidUntilAge?: number | null;
   licenceExpiry?: Date;
   lastRaausBfrDate?: Date;
   lastCasaAfrDate?: Date;
@@ -165,6 +170,10 @@ export interface Booking {
   membershipOverriddenBy?: string;
   membershipOverriddenAt?: Date;
   membershipEligibilitySnapshot?: MembershipBookingAssessment;
+  recurrenceSeriesId?: string;
+  recurrenceOccurrenceIndex?: number;
+  recurrenceOccurrenceCount?: number;
+  recurrenceNotificationsFinalisedAt?: Date;
 }
 
 export type MembershipClassCode = string;
@@ -741,6 +750,7 @@ export interface TrainingLesson {
 }
 
 export type CoursePurpose = 'training' | 'flight_review' | 'flight_test' | 'proficiency_check' | 'instructor_compliance';
+export type CourseMedicalRequirementMode = 'none' | 'required' | 'age_threshold';
 
 export interface ReviewChecklistTemplateItem {
   key: string;
@@ -794,6 +804,8 @@ export interface TrainingModule {
   requiresStudentAcknowledgement?: boolean;
   /** Require repeated competency evidence before recommending solo or flight-test gate lessons */
   twoOccasionCompetencyRuleEnabled?: boolean;
+  medicalRequirementMode?: CourseMedicalRequirementMode;
+  medicalRequirementAge?: number | null;
   requiresFlyingDeclaration?: boolean;
   flyingDeclarationTitle?: string;
   flyingDeclarationText?: string;

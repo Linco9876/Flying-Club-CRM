@@ -104,8 +104,8 @@ export const MonthView: React.FC<MonthViewProps> = ({
   const columnCount = showWeekends ? 7 : 5;
 
   return (
-    <div className="p-6">
-      <div className="mb-6 bg-white border border-gray-200 rounded-lg p-4">
+    <div className="p-3 sm:p-6">
+      <div className="mb-4 rounded-lg border border-gray-200 bg-white p-3 sm:mb-6 sm:p-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Resource Type</label>
@@ -147,7 +147,7 @@ export const MonthView: React.FC<MonthViewProps> = ({
           </div>
         </div>
 
-        <div className="mt-4 flex items-center space-x-6 text-sm">
+        <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
           <div className="flex items-center space-x-2">
             <div className="w-4 h-4 bg-white border border-gray-300 rounded"></div>
             <span className="text-gray-600">Available</span>
@@ -178,12 +178,12 @@ export const MonthView: React.FC<MonthViewProps> = ({
           </p>
         </div>
       ) : (
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <div className="grid bg-gray-50 border-b border-gray-200" style={{ gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))` }}>
+        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <div className="grid border-b border-gray-200 bg-gray-50" style={{ gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))` }}>
             {visibleWeekDays.map(day => (
               <div
                 key={day}
-                className="p-3 text-center text-sm font-semibold text-gray-700 border-r border-gray-200 last:border-r-0"
+                className="border-r border-gray-200 p-2 text-center text-xs font-semibold text-gray-700 last:border-r-0 sm:p-3 sm:text-sm"
               >
                 {day}
               </div>
@@ -201,14 +201,22 @@ export const MonthView: React.FC<MonthViewProps> = ({
               return (
                 <div
                   key={day.toISOString()}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`${format(day, 'EEEE, d MMMM yyyy')}: ${bookingCount} booking${bookingCount === 1 ? '' : 's'}, ${availabilityStatus}`}
                   className={`
-                    min-h-[100px] p-2 border-r border-b border-gray-200 cursor-pointer transition-colors
+                    min-h-[74px] p-1 border-r border-b border-gray-200 cursor-pointer transition-colors sm:min-h-[100px] sm:p-2
                     ${getStatusColor(availabilityStatus)}
                     ${!isCurrentMonth ? 'opacity-40' : ''}
                     ${isTodayDate ? 'ring-2 ring-blue-500 ring-inset' : ''}
                     ${(index + 1) % columnCount === 0 ? 'border-r-0' : ''}
                   `}
                   onClick={() => onDayClick(day)}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return;
+                    event.preventDefault();
+                    onDayClick(day);
+                  }}
                 >
                   <div className="flex justify-between items-start mb-1">
                     <span

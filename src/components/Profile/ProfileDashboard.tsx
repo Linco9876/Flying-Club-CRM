@@ -29,6 +29,7 @@ import { usePortalUxSettings, useUserPreferences } from '../../hooks/useSettings
 import { useTrainingRecords } from '../../hooks/useTrainingRecords';
 import { useStudentCourseEnrolments } from '../../hooks/useStudentCourseEnrolments';
 import { useTrainingModules } from '../../context/TrainingModulesContext';
+import { useTrainingSettings } from '../../hooks/useTrainingSettings';
 import { usePageLoadState } from '../../context/PageLoadContext';
 import { useOwnMembershipSummary } from '../../hooks/useOwnMembershipSummary';
 import { supabase } from '../../lib/supabase';
@@ -37,12 +38,12 @@ import {
   getMembershipIdentityLabel,
   getOverallReadiness,
   getProfileReadinessDestination,
-  isSelfDeclaredMedical,
   requiresFlightReview,
   shouldShowMembershipAmountDue,
   type ProfileReadinessLevel,
   usesRaausCredentials,
 } from '../../utils/profileReadiness';
+import { evaluateMedicalCurrency, resolveMedicalRequirement } from '../../utils/medicalRequirements';
 import type { BrowserCalendarEvent } from '../../utils/calendar';
 import { profilePictureSettingsDestination } from '../../utils/profilePicture';
 import { safeImageSource } from '../../utils/imageSource';
@@ -152,6 +153,7 @@ export const ProfileDashboard: React.FC = () => {
   const { preferences: userPreferences, loading: preferencesLoading } = useUserPreferences(user?.id || '');
   const { trainingRecords, loading: trainingRecordsLoading } = useTrainingRecords(user?.id);
   const { modules: trainingCourses, loading: trainingCoursesLoading } = useTrainingModules();
+  const { settings: trainingSettings, loading: trainingSettingsLoading } = useTrainingSettings();
   const { enrolments: courseEnrolments, loading: courseEnrolmentsLoading } = useStudentCourseEnrolments(user?.id);
   const { summary: membership, loading: membershipLoading } = useOwnMembershipSummary(user?.id);
   const [studentDetails, setStudentDetails] = useState<ProfileStudentDetails | null>(null);
@@ -346,6 +348,7 @@ export const ProfileDashboard: React.FC = () => {
     preferencesLoading ||
     trainingRecordsLoading ||
     trainingCoursesLoading ||
+    trainingSettingsLoading ||
     courseEnrolmentsLoading ||
     studentDetailsLoading ||
     membershipLoading;
@@ -374,12 +377,33 @@ export const ProfileDashboard: React.FC = () => {
     raausId: studentDetails?.raausId,
     licences: studentDetails?.licences || [],
   }), [studentDetails?.licences, studentDetails?.raausId]);
-  const hasSelfDeclaredMedical = isSelfDeclaredMedical(studentDetails?.medicalType);
   const hasRecordedMedical = Boolean(studentDetails?.medicalType || studentDetails?.medicalExpiry);
-  const medicalStatus = useMemo(() => hasSelfDeclaredMedical
-    ? { level: 'ready' as const, label: 'Self-declared', daysRemaining: null }
-    : getDatedReadinessStatus(studentDetails?.medicalExpiry),
-  [hasSelfDeclaredMedical, studentDetails?.medicalExpiry]);
+  const medicalRequirement = useMemo(() => resolveMedicalRequirement({
+    roles,
+    dateOfBirth: user?.dateOfBirth,
+    activeCourses: activeCourseEnrolments.flatMap(enrolment => {
+      const course = trainingCourses.find(item => item.id === enrolment.courseId);
+      return course ? [course] : [];
+    }),
+  }), [activeCourseEnrolments, roles, trainingCourses, user?.dateOfBirth]);
+  const medicalCurrency = useMemo(() => evaluateMedicalCurrency({
+    required: medicalRequirement.required,
+    medicalType: studentDetails?.medicalType,
+    medicalExpiry: studentDetails?.medicalExpiry,
+    dateOfBirth: user?.dateOfBirth,
+    definitions: trainingSettings.medicalTypes,
+  }), [
+    medicalRequirement.required,
+    studentDetails?.medicalExpiry,
+    studentDetails?.medicalType,
+    trainingSettings.medicalTypes,
+    user?.dateOfBirth,
+  ]);
+  const medicalLevel: ProfileReadinessLevel = ['current', 'not_required'].includes(medicalCurrency.state)
+    ? 'ready'
+    : ['expiring', 'missing_date_of_birth'].includes(medicalCurrency.state)
+      ? 'warning'
+      : 'action';
   const needsFlightReview = requiresFlightReview(roles);
   const flightReviewDue = useMemo(() => studentDetails?.lastRaausBfrDate
     ? new Date(
@@ -463,11 +487,11 @@ export const ProfileDashboard: React.FC = () => {
         level: raausStatus.level,
         to: getProfileReadinessDestination('raaus'),
       }] : []),
-      ...(hasRecordedMedical ? [{
+      ...(medicalRequirement.required ? [{
         id: 'medical',
         label: 'Medical',
-        value: medicalStatus.label,
-        level: medicalStatus.level,
+        value: medicalCurrency.label,
+        level: medicalLevel,
         to: getProfileReadinessDestination('medical'),
       }] : []),
       ...(needsFlightReview ? [{
@@ -502,10 +526,10 @@ export const ProfileDashboard: React.FC = () => {
     billingLevel,
     flightReviewStatus.label,
     flightReviewStatus.level,
-    hasRecordedMedical,
+    medicalRequirement.required,
     isFlyingMember,
-    medicalStatus.label,
-    medicalStatus.level,
+    medicalCurrency.label,
+    medicalLevel,
     membership.applicationStatus,
     membership.financiallyCleared,
     membership.financeEnabled,
@@ -572,15 +596,21 @@ export const ProfileDashboard: React.FC = () => {
         level: raausStatus.level === 'action' ? 'action' : 'warning',
       });
     }
-    if (isFlyingMember && hasRecordedMedical && medicalStatus.level !== 'ready') {
+    if (isFlyingMember && medicalRequirement.required && medicalLevel !== 'ready') {
       actions.push({
         id: 'medical-status',
-        title: medicalStatus.level === 'action' ? 'Medical has expired' : 'Check your medical',
-        detail: studentDetails?.medicalExpiry
-          ? `Recorded date: ${format(studentDetails.medicalExpiry, datePattern)}.`
-          : 'No medical expiry is recorded.',
+        title: medicalCurrency.state === 'missing_type'
+          ? 'Select your operating medical'
+          : medicalCurrency.state === 'missing_expiry'
+            ? 'Add your medical expiry'
+            : medicalLevel === 'action' ? 'Medical has expired' : 'Check your medical',
+        detail: medicalCurrency.effectiveExpiry
+          ? `${medicalCurrency.definition?.validityMode === 'until_age' ? 'Age-based validity ends' : 'Recorded expiry'}: ${format(medicalCurrency.effectiveExpiry, datePattern)}.`
+          : medicalRequirement.reason === 'course' && medicalRequirement.courseTitle
+            ? `Required for your active ${medicalRequirement.courseTitle} course.`
+            : 'Required for your pilot or instructor operating privileges.',
         to: getProfileReadinessDestination('medical'),
-        level: medicalStatus.level === 'action' ? 'action' : 'warning',
+        level: medicalLevel === 'action' ? 'action' : 'warning',
       });
     }
     if (isFlyingMember && needsFlightReview && flightReviewStatus.level !== 'ready') {
@@ -608,9 +638,14 @@ export const ProfileDashboard: React.FC = () => {
     datePattern,
     flightReviewDue,
     flightReviewStatus.level,
-    hasRecordedMedical,
     isFlyingMember,
-    medicalStatus.level,
+    medicalCurrency.definition?.validityMode,
+    medicalCurrency.effectiveExpiry,
+    medicalCurrency.state,
+    medicalLevel,
+    medicalRequirement.courseTitle,
+    medicalRequirement.reason,
+    medicalRequirement.required,
     membership.applicationStatus,
     membership.automaticCommencementAt,
     membership.financiallyCleared,
@@ -621,7 +656,6 @@ export const ProfileDashboard: React.FC = () => {
     missingProfileFields,
     raausStatus.level,
     studentDetails?.licenceExpiry,
-    studentDetails?.medicalExpiry,
     needsFlightReview,
     usesRaaus,
   ]);

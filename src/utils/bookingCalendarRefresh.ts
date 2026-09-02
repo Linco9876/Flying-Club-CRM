@@ -3,11 +3,13 @@ export const BOOKING_CALENDAR_REFRESH_EVENT = 'bfc:booking-calendar-refresh';
 export type BookingCalendarRefreshReason =
   | 'booking-created'
   | 'booking-updated'
+  | 'recurring-bookings-updated'
   | 'booking-deleted'
   | 'booking-restored'
   | 'booking-approved'
   | 'booking-rejected'
   | 'supervision-accepted'
+  | 'supervision-assigned'
   | 'flight-log-created'
   | 'flight-log-updated'
   | 'flight-log-deleted'

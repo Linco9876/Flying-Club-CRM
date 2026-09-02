@@ -63,7 +63,11 @@ export const StudentDocumentsTab: React.FC<StudentDocumentsTabProps> = ({ studen
 
   const credentialSummary = useMemo(() => [
     ['RAAus Membership', student.licenceExpiry?.toLocaleDateString() || 'Expiry not recorded'],
-    ['Medical Certificate', student.medicalExpiry?.toLocaleDateString() || 'Expiry not recorded'],
+    ['Operating Medical', student.medicalType
+      ? student.medicalValidityMode === 'until_age'
+        ? `${student.medicalType} · current until age ${student.medicalValidUntilAge || 'not configured'}`
+        : `${student.medicalType} · ${student.medicalExpiry?.toLocaleDateString() || 'expiry not recorded'}`
+      : 'Not selected'],
     ['CASA / RAAus ID', student.casaId || student.raausId || 'ID not recorded'],
     ['Emergency Contact', student.emergencyContact ? `${student.emergencyContact.name} recorded` : 'Missing'],
   ], [student]);

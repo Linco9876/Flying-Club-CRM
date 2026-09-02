@@ -4,7 +4,9 @@ import test from 'node:test';
 import type { Booking } from '../types';
 import {
   authorisationCoversBooking,
+  canOfferCfiSupervisorAllocation,
   canOfferManualBookingSupervision,
+  getAuthorisedSupervisorsForBooking,
   type SeniorInstructorAuthorisation,
 } from './manualBookingSupervision.ts';
 
@@ -112,6 +114,43 @@ test('past, cancelled and logged bookings cannot receive a new promise', () => {
   ), false);
 });
 
+test('a CFI can allocate an authorised supervisor only to an uncovered future booking', () => {
+  const now = new Date('2026-09-01T00:00:00.000Z');
+  assert.equal(canOfferCfiSupervisorAllocation(booking(), true, now), true);
+  assert.equal(canOfferCfiSupervisorAllocation(booking(), false, now), false);
+  assert.equal(canOfferCfiSupervisorAllocation(
+    booking({ supervisionStatus: 'assigned', supervisingInstructorId: 'senior-1' }),
+    true,
+    now,
+  ), false);
+  assert.equal(canOfferCfiSupervisorAllocation(
+    booking({ flight_logged: true }),
+    true,
+    now,
+  ), false);
+});
+
+test('the CFI selector contains only active authorisations that cover the booking', () => {
+  assert.deepEqual(getAuthorisedSupervisorsForBooking(
+    booking(),
+    [
+      authorisation({ instructor_id: 'senior-2' }),
+      authorisation({ instructor_id: 'senior-1' }),
+      authorisation({ instructor_id: 'senior-3', locations: ['Shepparton'] }),
+      authorisation({ instructor_id: 'trainee-1' }),
+    ],
+    [
+      { id: 'senior-1', name: 'Zara Senior' },
+      { id: 'senior-2', name: 'Alex Senior' },
+      { id: 'senior-3', name: 'Wrong Location' },
+      { id: 'trainee-1', name: 'Booking Instructor' },
+    ],
+  ), [
+    { id: 'senior-2', name: 'Alex Senior' },
+    { id: 'senior-1', name: 'Zara Senior' },
+  ]);
+});
+
 test('database and booking actions preserve the safety contract', () => {
   const migration = readFileSync(
     'supabase/migrations/20260818110000_add_manual_booking_supervision_commitments.sql',
@@ -119,6 +158,14 @@ test('database and booking actions preserve the safety contract', () => {
   );
   const menu = readFileSync('src/components/Bookings/BookingActionMenu.tsx', 'utf8');
   const hook = readFileSync('src/hooks/useManualBookingSupervision.ts', 'utf8');
+  const cfiMigration = readFileSync(
+    'supabase/migrations/20260826100000_add_cfi_supervisor_allocation.sql',
+    'utf8',
+  );
+  const allocationModal = readFileSync(
+    'src/components/Bookings/SupervisorAssignmentModal.tsx',
+    'utf8',
+  );
 
   assert.match(migration, /create table if not exists public\.booking_supervision_commitments/i);
   assert.match(migration, /for update;/i, 'acceptance must lock the booking');
@@ -133,4 +180,19 @@ test('database and booking actions preserve the safety contract', () => {
   assert.match(menu, /will be present and responsible/);
   assert.match(hook, /accept_booking_supervision/);
   assert.match(hook, /supervision-accepted/);
+  assert.match(cfiMigration, /create or replace function public\.assign_booking_supervisor/i);
+  assert.match(cfiMigration, /current_user_is_cfi\(\)/i);
+  assert.match(cfiMigration, /for update;/i, 'CFI allocation must lock the booking');
+  assert.match(cfiMigration, /manual_supervisor_available_for_slot/i);
+  assert.match(cfiMigration, /rosterAvailabilityOverridden', true/i);
+  assert.match(cfiMigration, /supervisorAcknowledgementRequired', true/i);
+  assert.match(cfiMigration, /cfi_supervisor_allocated/i);
+  assert.match(menu, /CFI supervisor allocation/);
+  assert.match(menu, /Assign supervisor/);
+  assert.match(menu, /data-mobile-supervision-actions/);
+  assert.match(menu, /Assign a supervisor/);
+  assert.match(allocationModal, /asked to acknowledge the assignment/i);
+  assert.match(hook, /assign_booking_supervisor/);
+  assert.match(hook, /supervision-assigned/);
+  assert.match(hook, /current_user_is_cfi/);
 });
