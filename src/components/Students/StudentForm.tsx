@@ -1,7 +1,7 @@
 import { SearchableSelect } from '../common/SearchableSelect';
 import { SearchableSuggestionInput } from '../common/SearchableSuggestionInput';
 import React, { useEffect, useState } from 'react';
-import { X, User, Phone, Save, Loader2, Shield, FileText, KeyRound } from 'lucide-react';
+import { X, User, Phone, Save, Loader2, Shield, FileText, KeyRound, ShieldOff } from 'lucide-react';
 import { Student, Endorsement, Licence } from '../../types';
 import toast from 'react-hot-toast';
 import { useAircraft } from '../../hooks/useAircraft';
@@ -18,6 +18,16 @@ interface StudentFormProps {
   canEditEmail?: boolean;
   onSendPasswordReset?: (student: Student) => Promise<boolean>;
   passwordResetting?: boolean;
+  mfaStatus?: {
+    checked: boolean;
+    hasMfa: boolean;
+    factorCount: number;
+    verifiedFactorCount: number;
+  };
+  mfaStatusLoading?: boolean;
+  mfaResetting?: boolean;
+  onCheckMfaStatus?: (student: Student) => Promise<void>;
+  onResetMfa?: (student: Student) => Promise<boolean>;
   additionalSections?: React.ReactNode;
 }
 
@@ -57,6 +67,11 @@ export const StudentForm: React.FC<StudentFormProps> = ({
   canEditEmail = true,
   onSendPasswordReset,
   passwordResetting = false,
+  mfaStatus,
+  mfaStatusLoading = false,
+  mfaResetting = false,
+  onCheckMfaStatus,
+  onResetMfa,
   additionalSections,
 }) => {
   const [formData, setFormData] = useState(buildFormData(student));
@@ -67,6 +82,11 @@ export const StudentForm: React.FC<StudentFormProps> = ({
     if (!isOpen) return;
     setFormData(buildFormData(student));
   }, [student, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !isEdit || !student || !onCheckMfaStatus) return;
+    void onCheckMfaStatus(student);
+  }, [isOpen, isEdit, student, onCheckMfaStatus]);
 
   const [newEndorsement, setNewEndorsement] = useState({
     type: '',
@@ -335,28 +355,76 @@ export const StudentForm: React.FC<StudentFormProps> = ({
             </div>
           </div>
 
-          {isEdit && student && onSendPasswordReset && (
+          {isEdit && student && (onSendPasswordReset || onCheckMfaStatus || onResetMfa) && (
             <div>
               <h3 className="mb-4 flex items-center text-lg font-medium text-gray-900">
                 <KeyRound className="mr-2 h-5 w-5" />
                 Account Access
               </h3>
-              <div className="flex flex-col gap-4 rounded-lg border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-amber-950">Reset portal password</p>
-                  <p className="mt-1 text-sm leading-5 text-amber-800">
-                    Sends a secure reset email to {student.email}. Their current password remains active until they choose a new one.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void onSendPasswordReset(student)}
-                  disabled={passwordResetting}
-                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100 disabled:cursor-wait disabled:opacity-60"
-                >
-                  {passwordResetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
-                  {passwordResetting ? 'Sending…' : 'Send reset email'}
-                </button>
+              <div className="space-y-3">
+                {onSendPasswordReset && (
+                  <div className="flex flex-col gap-4 rounded-lg border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-amber-950">Reset portal password</p>
+                      <p className="mt-1 text-sm leading-5 text-amber-800">
+                        Sends a secure reset email to {student.email}. Their current password remains active until they choose a new one.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void onSendPasswordReset(student)}
+                      disabled={passwordResetting}
+                      className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100 disabled:cursor-wait disabled:opacity-60"
+                    >
+                      {passwordResetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
+                      {passwordResetting ? 'Sending…' : 'Send reset email'}
+                    </button>
+                  </div>
+                )}
+
+                {(onCheckMfaStatus || onResetMfa) && (
+                  <div className={`flex flex-col gap-4 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between ${
+                    mfaStatus?.hasMfa
+                      ? 'border-red-200 bg-red-50'
+                      : 'border-slate-200 bg-slate-50'
+                  }`}>
+                    <div>
+                      <p className={`text-sm font-semibold ${mfaStatus?.hasMfa ? 'text-red-950' : 'text-slate-950'}`}>
+                        Two-factor authentication
+                      </p>
+                      <p className={`mt-1 text-sm leading-5 ${mfaStatus?.hasMfa ? 'text-red-800' : 'text-slate-700'}`}>
+                        {mfaStatusLoading
+                          ? 'Checking whether this member has 2FA set up...'
+                          : mfaStatus?.hasMfa
+                          ? `${mfaStatus.verifiedFactorCount || mfaStatus.factorCount} active 2FA factor${(mfaStatus.verifiedFactorCount || mfaStatus.factorCount) === 1 ? '' : 's'} found. Reset only after confirming the member's identity.`
+                          : mfaStatus?.checked
+                          ? 'No 2FA setup is currently recorded for this member.'
+                          : 'Check the member account before resetting 2FA.'}
+                      </p>
+                    </div>
+                    {mfaStatusLoading ? (
+                      <div className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Checking
+                      </div>
+                    ) : mfaStatus?.hasMfa && onResetMfa ? (
+                      <button
+                        type="button"
+                        onClick={() => void onResetMfa(student)}
+                        disabled={mfaResetting}
+                        className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-800 hover:bg-red-100 disabled:cursor-wait disabled:opacity-60"
+                      >
+                        {mfaResetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldOff className="h-4 w-4" />}
+                        {mfaResetting ? 'Resetting...' : 'Reset 2FA'}
+                      </button>
+                    ) : (
+                      <div className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700">
+                        <Shield className="h-4 w-4" />
+                        2FA clear
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           )}

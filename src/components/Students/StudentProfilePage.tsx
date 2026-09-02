@@ -44,6 +44,7 @@ import { getStudentProfileLoadPlan } from '../../utils/studentProfileLoading';
 import { shouldUseTrainingSubtab } from '../../utils/studentProfileTabNavigation';
 import { useFinancialProviders } from '../../context/financialProviderState';
 import { useAdminPasswordReset } from '../../hooks/useAdminPasswordReset';
+import { useAdminMfaReset } from '../../hooks/useAdminMfaReset';
 import { shouldShowXeroContactEditor } from '../../utils/studentProfileAdminActions';
 import {
   FORMAL_REVIEW_FINDINGS_LABEL,
@@ -379,6 +380,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   const { user } = useAuth();
   const { capabilities: financialProviders, loading: financialProvidersLoading } = useFinancialProviders();
   const { resettingUserId, sendPasswordReset } = useAdminPasswordReset();
+  const { statusByUserId: mfaStatusByUserId, statusLoadingUserId, resettingMfaUserId, loadMfaStatus, resetMfa } = useAdminMfaReset();
   const studentId = routeStudentId || user?.id;
   const requestedLicenceId = searchParams.get('action') === 'review-licence'
     ? searchParams.get('licenceId')
@@ -5042,6 +5044,11 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
           canEditEmail={isAdmin}
           onSendPasswordReset={isAdmin ? sendPasswordReset : undefined}
           passwordResetting={resettingUserId === student.id}
+          mfaStatus={mfaStatusByUserId[student.id]}
+          mfaStatusLoading={statusLoadingUserId === student.id}
+          mfaResetting={resettingMfaUserId === student.id}
+          onCheckMfaStatus={isAdmin ? loadMfaStatus : undefined}
+          onResetMfa={isAdmin ? resetMfa : undefined}
           additionalSections={showXeroContactEditor ? (
             <section>
               <h3 className="mb-3 text-lg font-medium text-gray-900">Xero Contact</h3>
