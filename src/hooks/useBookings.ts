@@ -12,6 +12,7 @@ import {
   requestBookingCalendarRefresh,
 } from '../utils/bookingCalendarRefresh';
 import { normaliseGuestBookingPurpose } from '../utils/casualContacts';
+import { buildRecurringBookingUpdatePlan } from '../utils/recurringBookingEdits';
 
 const getErrorMessage = (error: unknown) => {
   if (error instanceof Error) return error.message;
@@ -34,8 +35,18 @@ const OPTIONAL_BOOKING_COLUMNS = new Set([
   'supervision_status', 'supervising_instructor_id', 'membership_eligibility_status',
   'membership_warning_code', 'membership_override_reason', 'membership_overridden_by',
   'membership_overridden_at', 'membership_eligibility_snapshot', 'casual_contact_id',
-  'booking_purpose',
+  'booking_purpose', 'recurrence_series_id', 'recurrence_occurrence_index',
+  'recurrence_occurrence_count', 'recurrence_notifications_finalised_at',
 ]);
+
+interface AddBookingOptions {
+  silent?: boolean;
+  recurrence?: {
+    seriesId: string;
+    occurrenceIndex: number;
+    occurrenceCount: number;
+  };
+}
 
 export interface BookingCancellationInput {
   reasonId?: string;
@@ -107,6 +118,10 @@ export const useBookings = (enabled = true) => {
         'membership_overridden_by',
         'membership_overridden_at',
         'membership_eligibility_snapshot',
+        'recurrence_series_id',
+        'recurrence_occurrence_index',
+        'recurrence_occurrence_count',
+        'recurrence_notifications_finalised_at',
       ].filter(field => !missingOptionalBookingColumnsRef.current.has(field)).join(',');
   const flightLogCalendarFields = [
     'id',
@@ -176,6 +191,16 @@ export const useBookings = (enabled = true) => {
     membershipOverriddenBy: row.membership_overridden_by || undefined,
     membershipOverriddenAt: row.membership_overridden_at ? new Date(row.membership_overridden_at) : undefined,
     membershipEligibilitySnapshot: row.membership_eligibility_snapshot || undefined,
+    recurrenceSeriesId: row.recurrence_series_id || undefined,
+    recurrenceOccurrenceIndex: row.recurrence_occurrence_index == null
+      ? undefined
+      : Number(row.recurrence_occurrence_index),
+    recurrenceOccurrenceCount: row.recurrence_occurrence_count == null
+      ? undefined
+      : Number(row.recurrence_occurrence_count),
+    recurrenceNotificationsFinalisedAt: row.recurrence_notifications_finalised_at
+      ? new Date(row.recurrence_notifications_finalised_at)
+      : undefined,
   });
 
   const retryWithoutMissingOptionalColumn = async <T,>(
@@ -579,60 +604,7 @@ export const useBookings = (enabled = true) => {
     )
   );
 
-  const promoteAvailableWaitlistedBookings = async () => {
-    const { data, error } = await supabase
-      .from('bookings')
-      .select('*')
-      .is('deleted_at', null)
-      .order('start_time', { ascending: true })
-      .order('created_at', { ascending: true });
-
-    if (error || !data) {
-      if (error) console.error('Error checking waitlisted bookings:', error);
-      return;
-    }
-
-      const activeConfirmed = data.filter((booking: any) =>
-      !booking.deleted_at &&
-      (booking.status === 'confirmed' || booking.status === 'pending_supervision') && !booking.has_conflict
-    );
-    const waitlisted = data.filter((booking: any) =>
-      !booking.deleted_at &&
-      booking.status === 'confirmed' && booking.has_conflict
-    );
-    const promoteIds: string[] = [];
-
-    for (const candidate of waitlisted) {
-      const hasConflict = activeConfirmed.some((existing: any) =>
-        timeRangesOverlap(candidate.start_time, candidate.end_time, existing.start_time, existing.end_time) &&
-        (
-          existing.aircraft_id === candidate.aircraft_id ||
-          Boolean(candidate.instructor_id && existing.instructor_id === candidate.instructor_id)
-        )
-      );
-
-      if (!hasConflict) {
-        promoteIds.push(candidate.id);
-        activeConfirmed.push({ ...candidate, has_conflict: false });
-      }
-    }
-
-    if (promoteIds.length > 0) {
-      if (missingOptionalBookingColumnsRef.current.has('has_conflict')) {
-        return;
-      }
-      const { error: promoteError } = await supabase
-        .from('bookings')
-        .update({ has_conflict: false })
-        .in('id', promoteIds);
-
-      if (promoteError) {
-        console.error('Error promoting waitlisted bookings:', promoteError);
-      }
-    }
-  };
-
-  const addBooking = async (bookingData: Omit<Booking, 'id' | 'flightLog'>, options: { silent?: boolean } = {}) => {
+  const addBooking = async (bookingData: Omit<Booking, 'id' | 'flightLog'>, options: AddBookingOptions = {}) => {
     try {
       console.log('Creating booking with data:', bookingData);
 
@@ -736,6 +708,9 @@ export const useBookings = (enabled = true) => {
         location_id: bookingData.locationId || null,
         duty_override_reason: dutyResult.overrideReason || null,
         membership_override_reason: bookingData.membershipOverrideReason?.trim() || null,
+        recurrence_series_id: options.recurrence?.seriesId || null,
+        recurrence_occurrence_index: options.recurrence?.occurrenceIndex || null,
+        recurrence_occurrence_count: options.recurrence?.occurrenceCount || null,
       };
 
       console.log('Insert data:', insertData);
@@ -808,6 +783,185 @@ export const useBookings = (enabled = true) => {
       const errorMessage = err?.message || err?.details || 'Unknown error occurred';
       if (!err?.alreadyToasted) {
         toast.error(`Failed to create booking: ${errorMessage}`);
+      }
+      throw err;
+    }
+  };
+
+  const finaliseRecurringBookingSeries = async (seriesId: string) => {
+    let lastError: unknown = null;
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const { error: finaliseError } = await supabase.rpc('finalise_recurring_booking_series', {
+        p_series_id: seriesId,
+      });
+      if (!finaliseError) return;
+      lastError = finaliseError;
+      if (attempt < 2) {
+        await new Promise(resolve => window.setTimeout(resolve, 200 * (attempt + 1)));
+      }
+    }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error(getErrorMessage(lastError) || 'Recurring booking notifications could not be finalised');
+  };
+
+  const updateRecurringBookingSeries = async (
+    id: string,
+    bookingData: Partial<Omit<Booking, 'id' | 'flightLog'>>,
+    silent = false,
+  ) => {
+    try {
+      const currentBooking = bookings.find(booking => booking.id === id);
+      if (!currentBooking) {
+        throw new Error('The selected booking could not be found. Refresh the calendar and try again.');
+      }
+      if (!currentBooking.recurrenceSeriesId || !currentBooking.recurrenceOccurrenceIndex) {
+        throw new Error('This booking is not linked to a recurring series.');
+      }
+
+      const newStartTime = bookingData.startTime
+        ? new Date(bookingData.startTime)
+        : new Date(currentBooking.startTime);
+      const newEndTime = bookingData.endTime
+        ? new Date(bookingData.endTime)
+        : new Date(currentBooking.endTime);
+      const updatePlan = buildRecurringBookingUpdatePlan(
+        bookings,
+        currentBooking,
+        newStartTime,
+        newEndTime,
+      );
+
+      let resolvedStudentId = bookingData.studentId ?? currentBooking.studentId;
+      let resolvedGuestName = bookingData.guestName?.trim() ?? currentBooking.guestName?.trim();
+      let resolvedGuestEmail = bookingData.guestEmail?.trim() ?? currentBooking.guestEmail?.trim();
+      let resolvedGuestPhone = bookingData.guestPhone?.trim() ?? currentBooking.guestPhone?.trim();
+      const trialFlightVoucherId = bookingData.trialFlightVoucherId ?? currentBooking.trialFlightVoucherId;
+      const isGuestBooking = bookingData.isGuestBooking ?? currentBooking.isGuestBooking ?? false;
+
+      if (isGuestBooking && trialFlightVoucherId) {
+        const voucherHolder = await resolveGuestVoucherHolder(trialFlightVoucherId, {
+          allowUnredeemedGuest: true,
+        });
+        resolvedStudentId = voucherHolder.userId || resolvedStudentId;
+        resolvedGuestName = resolvedGuestName || voucherHolder.guestName;
+        resolvedGuestEmail = resolvedGuestEmail || voucherHolder.guestEmail;
+        resolvedGuestPhone = resolvedGuestPhone || voucherHolder.guestPhone;
+      }
+      if (isGuestBooking && !resolvedStudentId) {
+        resolvedStudentId = await ensureGuestPlaceholderAccount();
+      }
+      if (!resolvedStudentId) throw new Error('Student is required');
+
+      const instructorId = bookingData.instructorId !== undefined
+        ? bookingData.instructorId?.trim() || undefined
+        : currentBooking.instructorId;
+      const requestedAircraftId = bookingData.aircraftId !== undefined
+        ? bookingData.aircraftId?.trim() || undefined
+        : currentBooking.aircraftId;
+      const bookingKind = bookingData.bookingKind
+        || (!requestedAircraftId ? 'ground' : currentBooking.bookingKind || 'flight');
+      const aircraftId = bookingKind === 'ground' ? undefined : requestedAircraftId;
+
+      if (bookingKind === 'flight' && !aircraftId) throw new Error('Aircraft is required');
+      if (bookingKind === 'ground' && !instructorId) {
+        throw new Error('Instructor is required for ground sessions');
+      }
+      if (isGuestBooking) {
+        if (!resolvedGuestName) throw new Error('Guest name is required');
+        if (!resolvedGuestEmail) throw new Error('Guest email is required');
+        if (!trialFlightVoucherId && !resolvedGuestPhone) throw new Error('Guest phone number is required');
+      }
+
+      for (const target of updatePlan) {
+        validateTimingRules(target.startTime, target.endTime, {
+          enforceMinNotice: Boolean(instructorId),
+        });
+        await assertInstructorAvailable({
+          instructorId,
+          startTime: target.startTime,
+          endTime: target.endTime,
+        });
+      }
+
+      const bookingPurpose = isGuestBooking
+        ? normaliseGuestBookingPurpose(
+          bookingData.bookingPurpose ?? currentBooking.bookingPurpose,
+          Boolean(trialFlightVoucherId),
+        )
+        : bookingData.bookingPurpose ?? currentBooking.bookingPurpose ?? 'standard';
+
+      const runSeriesUpdate = async (dutyOverrideReason?: string) => supabase.rpc(
+        'update_recurring_booking_series_from_occurrence',
+        {
+          p_booking_id: id,
+          p_new_start: newStartTime.toISOString(),
+          p_new_end: newEndTime.toISOString(),
+          p_student_id: resolvedStudentId,
+          p_instructor_id: instructorId || null,
+          p_aircraft_id: aircraftId || null,
+          p_payment_type: bookingData.paymentType ?? currentBooking.paymentType ?? '',
+          p_notes: bookingData.notes ?? currentBooking.notes ?? null,
+          p_booking_kind: bookingKind,
+          p_flight_type_id: bookingData.flightTypeId ?? currentBooking.flightTypeId ?? null,
+          p_is_guest_booking: isGuestBooking,
+          p_guest_name: resolvedGuestName || null,
+          p_guest_email: resolvedGuestEmail || null,
+          p_guest_phone: resolvedGuestPhone || null,
+          p_trial_flight_voucher_id: trialFlightVoucherId || null,
+          p_casual_contact_id: bookingData.casualContactId ?? currentBooking.casualContactId ?? null,
+          p_booking_purpose: bookingPurpose,
+          p_location: bookingData.location ?? currentBooking.location ?? 'Bendigo',
+          p_location_id: bookingData.locationId ?? currentBooking.locationId ?? null,
+          p_duty_override_reason: dutyOverrideReason || null,
+          p_membership_override_reason: bookingData.membershipOverrideReason || null,
+        },
+      );
+
+      let dutyOverrideReason = bookingData.dutyOverrideReason?.trim() || undefined;
+      let response = await runSeriesUpdate(dutyOverrideReason);
+      if (response.error) {
+        const errorMessage = getErrorMessage(response.error);
+        const dutyMarker = 'DUTY_OVERRIDE_REQUIRED|';
+        const markerIndex = errorMessage.indexOf(dutyMarker);
+        if (markerIndex >= 0 && !dutyOverrideReason) {
+          let warningText = 'One or more future bookings would exceed a configured duty limit.';
+          try {
+            const assessment = JSON.parse(errorMessage.slice(markerIndex + dutyMarker.length)) as DutyAssessment;
+            const messages = (assessment.warnings || []).map(warning => `• ${warning.message}`);
+            if (messages.length > 0) warningText = messages.join('\n');
+          } catch {
+            // The database hint still supplies a useful fallback if a provider
+            // wraps or truncates the structured assessment payload.
+          }
+
+          const reason = window.prompt(
+            `Duty-limit warning for the recurring series\n\n${warningText}\n\n`
+            + 'You may continue, but must provide one reason for the affected series (at least 10 characters):',
+          );
+          if (!reason || reason.trim().length < 10) {
+            throw new Error('Series update cancelled: a reason of at least 10 characters is required after a duty warning.');
+          }
+          dutyOverrideReason = reason.trim();
+          response = await runSeriesUpdate(dutyOverrideReason);
+        }
+      }
+      if (response.error) throw response.error;
+
+      const result = response.data as { updatedCount?: number } | null;
+      const updatedCount = Number(result?.updatedCount || updatePlan.length);
+      await fetchBookings({ silent: true });
+      requestBookingCalendarRefresh({ bookingId: id, reason: 'recurring-bookings-updated' });
+      if (!silent) {
+        toast.success(`${updatedCount} recurring ${updatedCount === 1 ? 'booking' : 'bookings'} updated`);
+      }
+      return updatedCount;
+    } catch (err) {
+      console.error('Error updating recurring booking series:', err);
+      if (!silent) {
+        toast.error(getErrorMessage(err) || 'Failed to update recurring booking series');
       }
       throw err;
     }
@@ -959,11 +1113,6 @@ export const useBookings = (enabled = true) => {
 
       requestBookingCalendarRefresh({ bookingId: id, reason: 'booking-updated' });
 
-      if (!isWaitlisted) {
-        void promoteAvailableWaitlistedBookings().catch((promoteError) => {
-          console.error('Error promoting waitlisted bookings after booking update:', promoteError);
-        });
-      }
       if (isWaitlisted) {
         toast('This booking overlaps an existing booking, so it has been placed on the waiting list.');
       }
@@ -1040,9 +1189,6 @@ export const useBookings = (enabled = true) => {
         throw new Error('Booking could not be deleted. It may already be cancelled or you may not have permission to change it.');
       }
 
-      void promoteAvailableWaitlistedBookings().catch((promoteError) => {
-        console.error('Error promoting waitlisted bookings after booking deletion:', promoteError);
-      });
       setBookings(prev => prev.map(existing =>
         existing.id === id
           ? {
@@ -1378,6 +1524,8 @@ export const useBookings = (enabled = true) => {
     loading,
     error,
     addBooking,
+    finaliseRecurringBookingSeries,
+    updateRecurringBookingSeries,
     updateBooking,
     deleteBooking,
     restoreBooking,

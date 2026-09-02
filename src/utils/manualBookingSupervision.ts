@@ -11,6 +11,11 @@ export interface SeniorInstructorAuthorisation {
   qualification_expires_on: string | null;
 }
 
+export interface ManualSupervisorOption {
+  id: string;
+  name: string;
+}
+
 const sydneyDate = (value: Date) => {
   const parts = new Intl.DateTimeFormat('en-AU', {
     timeZone: 'Australia/Sydney',
@@ -73,3 +78,43 @@ export const canOfferManualBookingSupervision = (
     && authorisationCoversBooking(authorisation, booking)
   )
 );
+
+export const canOfferCfiSupervisorAllocation = (
+  booking: Booking,
+  isCfi: boolean,
+  now = new Date(),
+) => Boolean(
+  isCfi
+  && booking.instructorId
+  && booking.supervisionRequired
+  && booking.supervisionStatus === 'pending'
+  && !booking.deletedAt
+  && !['cancelled', 'completed', 'no-show'].includes(booking.status)
+  && !booking.flight_logged
+  && !booking.flightLog
+  && !booking.ground_session_logged
+  && !booking.groundSessionLog
+  && new Date(booking.endTime).getTime() > now.getTime()
+);
+
+export const getAuthorisedSupervisorsForBooking = (
+  booking: Booking,
+  authorisations: SeniorInstructorAuthorisation[],
+  people: ManualSupervisorOption[],
+) => {
+  const peopleById = new Map(people.map(person => [person.id, person]));
+  const eligible = new Map<string, ManualSupervisorOption>();
+
+  authorisations.forEach(authorisation => {
+    if (
+      authorisation.instructor_id === booking.instructorId
+      || !authorisationCoversBooking(authorisation, booking)
+    ) return;
+
+    const person = peopleById.get(authorisation.instructor_id);
+    if (person) eligible.set(person.id, person);
+  });
+
+  return Array.from(eligible.values()).sort((left, right) =>
+    left.name.localeCompare(right.name));
+};

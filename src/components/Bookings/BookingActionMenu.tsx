@@ -4,7 +4,10 @@ import { Booking } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { usePortalUxSettings } from '../../hooks/useSettings';
 import { bookingToCalendarEvent } from '../../utils/calendar';
+import { getCalendarFlightLogBlockReason } from '../../utils/flightLogBookingRules';
 import { AddToCalendarModal } from './AddToCalendarModal';
+import { SupervisorAssignmentModal } from './SupervisorAssignmentModal';
+import type { ManualSupervisorOption } from '../../utils/manualBookingSupervision';
 
 interface BookingActionMenuProps {
   booking: Booking;
@@ -22,6 +25,9 @@ interface BookingActionMenuProps {
   onReject?: () => void;
   onAcceptSupervision?: () => Promise<void> | void;
   acceptingSupervision?: boolean;
+  onAssignSupervisor?: (supervisorId: string) => Promise<void> | void;
+  supervisorOptions?: ManualSupervisorOption[];
+  assigningSupervisor?: boolean;
   hasTrainingRecord?: boolean;
   canDelete?: boolean;
   canApprove?: boolean;
@@ -49,6 +55,9 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
   onReject,
   onAcceptSupervision,
   acceptingSupervision = false,
+  onAssignSupervisor,
+  supervisorOptions = [],
+  assigningSupervisor = false,
   hasTrainingRecord,
   canDelete = true,
   canApprove = false,
@@ -64,7 +73,8 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
   const isGroundSession = booking.bookingKind === 'ground';
   const isCancelledBooking = booking.status === 'cancelled' || Boolean(booking.deletedAt);
   const supervisionCovered = !booking.supervisionRequired || (Boolean(booking.supervisingInstructorId) && booking.supervisionStatus !== 'pending');
-  const effectiveCanLogFlight = canLogFlight && supervisionCovered;
+  const flightLogBlockReason = getCalendarFlightLogBlockReason(booking);
+  const effectiveCanLogFlight = canLogFlight && supervisionCovered && !flightLogBlockReason;
   const logLabel = isGroundSession ? 'Log Ground Session' : 'Log Flight';
   const editLogLabel = isGroundSession ? 'Edit Ground Session Log' : 'Edit Flight Log';
   const deleteLogLabel = isGroundSession ? 'Delete Ground Session Log' : 'Delete Flight Log';
@@ -75,6 +85,7 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
   );
   const [isOpen, setIsOpen] = React.useState(position ? true : false);
   const [showCalendarModal, setShowCalendarModal] = React.useState(false);
+  const [showSupervisorModal, setShowSupervisorModal] = React.useState(false);
   const [fixedMenuStyle, setFixedMenuStyle] = React.useState<React.CSSProperties>(() => ({
     left: position?.x ?? 0,
     top: position?.y ?? 0,
@@ -134,6 +145,17 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
     if (position && onClose) onClose();
   };
 
+  const openSupervisorModal = () => {
+    setIsOpen(false);
+    setShowSupervisorModal(true);
+  };
+
+  const closeSupervisorModal = () => {
+    if (assigningSupervisor) return;
+    setShowSupervisorModal(false);
+    if (position && onClose) onClose();
+  };
+
   React.useLayoutEffect(() => {
     if (!position || !menuRef.current) return;
 
@@ -190,7 +212,7 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
       {booking.supervisionRequired
         && booking.supervisionStatus === 'pending'
         && onAcceptSupervision && (
-        <div className="mx-2 my-2 rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-800/70 dark:bg-amber-950/30">
+        <div className="mx-2 my-2 hidden rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-800/70 dark:bg-amber-950/30 md:block">
           <div className="flex items-start gap-2">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-300" />
             <div className="min-w-0">
@@ -210,6 +232,31 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
               ? <Loader2 className="h-4 w-4 animate-spin" />
               : <ShieldCheck className="h-4 w-4" />}
             <span>{acceptingSupervision ? 'Authorising…' : 'I will supervise this booking'}</span>
+          </button>
+        </div>
+      )}
+
+      {booking.supervisionRequired
+        && booking.supervisionStatus === 'pending'
+        && onAssignSupervisor && (
+        <div className="mx-2 my-2 hidden rounded-xl border border-cyan-200 bg-cyan-50 p-3 dark:border-cyan-800/70 dark:bg-cyan-950/30 md:block">
+          <div className="flex items-start gap-2">
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-cyan-700 dark:text-cyan-300" />
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-cyan-950 dark:text-cyan-100">CFI supervisor allocation</p>
+              <p className="mt-1 text-[11px] leading-4 text-cyan-800 dark:text-cyan-200">
+                Select an authorised supervisor even when they are not marked rostered available.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            disabled={assigningSupervisor}
+            onClick={openSupervisorModal}
+            className="mt-3 flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-cyan-700 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-cyan-800 disabled:cursor-wait disabled:opacity-70"
+          >
+            {assigningSupervisor ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+            <span>{assigningSupervisor ? 'Allocating…' : 'Assign supervisor'}</span>
           </button>
         </div>
       )}
@@ -271,6 +318,8 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
           <FileText className="h-4 w-4" />
           <span>{logLabel}</span>
         </button>
+      ) : flightLogBlockReason ? (
+        <div className="px-4 py-2 text-xs font-semibold text-orange-700">{flightLogBlockReason}</div>
       ) : booking.supervisionRequired && !supervisionCovered ? (
         <div className="px-4 py-2 text-xs font-semibold text-orange-700">Flight logging is unavailable while supervision is pending.</div>
       ) : null}
@@ -327,19 +376,59 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
   );
 
   const mobileMenuHeader = (
-    <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 md:hidden">
-      <div>
-        <p className="text-sm font-bold text-gray-900">Booking actions</p>
-        <p className="text-xs text-gray-500">Choose what you want to do</p>
+    <div className="sticky top-0 z-10 border-b border-gray-200 bg-white px-4 py-3 md:hidden dark:border-slate-700 dark:bg-slate-900">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-bold text-gray-900 dark:text-white">
+            {booking.supervisionRequired && booking.supervisionStatus === 'pending'
+              ? 'Supervision required'
+              : 'Booking actions'}
+          </p>
+          <p className="text-xs text-gray-500 dark:text-slate-300">
+            {onAssignSupervisor
+              ? 'Choose who will supervise this instructor booking.'
+              : onAcceptSupervision
+                ? 'You can take responsibility for this booking.'
+                : 'Choose what you want to do'}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => position && onClose ? onClose() : setIsOpen(false)}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:text-slate-300 dark:hover:bg-slate-800"
+          aria-label="Close booking actions"
+        >
+          <XIcon className="h-5 w-5" />
+        </button>
       </div>
-      <button
-        type="button"
-        onClick={() => position && onClose ? onClose() : setIsOpen(false)}
-        className="flex h-11 w-11 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100"
-        aria-label="Close booking actions"
-      >
-        <XIcon className="h-5 w-5" />
-      </button>
+
+      {booking.supervisionRequired && booking.supervisionStatus === 'pending'
+        && (onAssignSupervisor || onAcceptSupervision) && (
+        <div className="mt-3 grid gap-2" data-mobile-supervision-actions>
+          {onAssignSupervisor && (
+            <button
+              type="button"
+              disabled={assigningSupervisor}
+              onClick={openSupervisorModal}
+              className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-cyan-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-cyan-800 disabled:cursor-wait disabled:opacity-70"
+            >
+              {assigningSupervisor ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+              {assigningSupervisor ? 'Allocating…' : 'Assign a supervisor'}
+            </button>
+          )}
+          {onAcceptSupervision && (
+            <button
+              type="button"
+              disabled={acceptingSupervision}
+              onClick={() => void onAcceptSupervision()}
+              className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-bold text-amber-900 hover:bg-amber-100 disabled:cursor-wait disabled:opacity-70 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100"
+            >
+              {acceptingSupervision ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+              {acceptingSupervision ? 'Authorising…' : 'I will supervise this booking'}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 
@@ -367,6 +456,15 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
           <AddToCalendarModal
             event={bookingToCalendarEvent(booking, { aircraftLabel: calendarAircraftLabel, viewerId: user?.id, portalUrl: `${window.location.origin}/calendar` })}
             onClose={closeCalendarModal}
+          />
+        )}
+        {showSupervisorModal && onAssignSupervisor && (
+          <SupervisorAssignmentModal
+            booking={booking}
+            supervisors={supervisorOptions}
+            assigning={assigningSupervisor}
+            onAssign={onAssignSupervisor}
+            onClose={closeSupervisorModal}
           />
         )}
       </>
@@ -406,6 +504,15 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
       <AddToCalendarModal
         event={bookingToCalendarEvent(booking, { aircraftLabel: calendarAircraftLabel, viewerId: user?.id, portalUrl: `${window.location.origin}/calendar` })}
         onClose={closeCalendarModal}
+      />
+    )}
+    {showSupervisorModal && onAssignSupervisor && (
+      <SupervisorAssignmentModal
+        booking={booking}
+        supervisors={supervisorOptions}
+        assigning={assigningSupervisor}
+        onAssign={onAssignSupervisor}
+        onClose={closeSupervisorModal}
       />
     )}
     </>

@@ -1,3 +1,13 @@
+import {
+  addDays,
+  addMonths,
+  addWeeks,
+  differenceInCalendarDays,
+  format,
+  parseISO,
+  startOfWeek,
+} from 'date-fns';
+
 export interface TemporaryDowntimeDraft {
   startDate: string;
   endDate: string;
@@ -5,6 +15,36 @@ export interface TemporaryDowntimeDraft {
   endTime?: string;
   reason?: string;
 }
+
+export type DowntimeRecurrenceFrequency = 'daily' | 'weekly' | 'monthly';
+export type DowntimeRecurrenceEndMode = 'never' | 'on' | 'after';
+
+export interface DowntimeRecurrenceRule {
+  enabled: boolean;
+  frequency: DowntimeRecurrenceFrequency;
+  interval: number;
+  weekdays: number[];
+  endMode: DowntimeRecurrenceEndMode;
+  untilDate: string;
+  count: number;
+}
+
+export interface RecurringDowntimeOccurrence {
+  startDate: string;
+  endDate: string;
+}
+
+export const MAX_DOWNTIME_RECURRENCE_OCCURRENCES = 52;
+
+export const buildDefaultDowntimeRecurrence = (): DowntimeRecurrenceRule => ({
+  enabled: false,
+  frequency: 'weekly',
+  interval: 1,
+  weekdays: [],
+  endMode: 'after',
+  untilDate: '',
+  count: 2,
+});
 
 export const REGULAR_UNAVAILABLE_BACKGROUND = 'rgba(156, 163, 175, 0.35)';
 export const TEMPORARY_DOWNTIME_BACKGROUND = `repeating-linear-gradient(
@@ -36,4 +76,89 @@ export const getTemporaryDowntimeValidationError = (draft: TemporaryDowntimeDraf
   }
   if (!draft.reason?.trim()) return 'Enter a short reason for the downtime';
   return null;
+};
+
+export const getDowntimeRecurrenceValidationError = (
+  rule: DowntimeRecurrenceRule,
+  firstStartDate: string,
+) => {
+  if (!rule.enabled) return null;
+  if (!Number.isInteger(rule.interval) || rule.interval < 1 || rule.interval > 12) {
+    return 'Choose a repeat interval from 1 to 12';
+  }
+  if (rule.frequency === 'weekly' && rule.weekdays.length === 0) {
+    return 'Choose at least one weekday';
+  }
+  if (rule.endMode === 'after' && (
+    !Number.isInteger(rule.count)
+    || rule.count < 2
+    || rule.count > MAX_DOWNTIME_RECURRENCE_OCCURRENCES
+  )) {
+    return `Choose between 2 and ${MAX_DOWNTIME_RECURRENCE_OCCURRENCES} occurrences`;
+  }
+  if (rule.endMode === 'on' && (!rule.untilDate || rule.untilDate <= firstStartDate)) {
+    return 'Choose an end date after the first downtime period';
+  }
+  return null;
+};
+
+const formatDateOnly = (date: Date) => format(date, 'yyyy-MM-dd');
+
+export const buildRecurringDowntimeOccurrences = (
+  template: Pick<TemporaryDowntimeDraft, 'startDate' | 'endDate'>,
+  rule: DowntimeRecurrenceRule,
+): RecurringDowntimeOccurrence[] => {
+  const firstStart = parseISO(template.startDate);
+  const firstEnd = parseISO(template.endDate);
+  const durationDays = Math.max(0, differenceInCalendarDays(firstEnd, firstStart));
+  const occurrences: RecurringDowntimeOccurrence[] = [{
+    startDate: template.startDate,
+    endDate: template.endDate,
+  }];
+
+  if (!rule.enabled) return occurrences;
+
+  const maximumOccurrences = rule.endMode === 'after'
+    ? Math.min(rule.count, MAX_DOWNTIME_RECURRENCE_OCCURRENCES)
+    : MAX_DOWNTIME_RECURRENCE_OCCURRENCES;
+  const untilDate = rule.endMode === 'on' ? parseISO(rule.untilDate) : null;
+
+  const appendCandidate = (candidateStart: Date) => {
+    if (candidateStart <= firstStart) return false;
+    if (untilDate && candidateStart > untilDate) return true;
+    occurrences.push({
+      startDate: formatDateOnly(candidateStart),
+      endDate: formatDateOnly(addDays(candidateStart, durationDays)),
+    });
+    return occurrences.length >= maximumOccurrences;
+  };
+
+  if (rule.frequency === 'daily') {
+    for (let index = 1; occurrences.length < maximumOccurrences; index += 1) {
+      if (appendCandidate(addDays(firstStart, index * rule.interval))) break;
+    }
+    return occurrences;
+  }
+
+  if (rule.frequency === 'monthly') {
+    for (let index = 1; occurrences.length < maximumOccurrences; index += 1) {
+      if (appendCandidate(addMonths(firstStart, index * rule.interval))) break;
+    }
+    return occurrences;
+  }
+
+  const weekdays = [...new Set(rule.weekdays)]
+    .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
+    .sort((a, b) => a - b);
+  if (weekdays.length === 0) return occurrences;
+  const firstWeekStart = startOfWeek(firstStart, { weekStartsOn: 0 });
+
+  for (let weekIndex = 0; occurrences.length < maximumOccurrences; weekIndex += 1) {
+    const weekStart = addWeeks(firstWeekStart, weekIndex * rule.interval);
+    for (const weekday of weekdays) {
+      if (appendCandidate(addDays(weekStart, weekday))) return occurrences;
+    }
+  }
+
+  return occurrences;
 };

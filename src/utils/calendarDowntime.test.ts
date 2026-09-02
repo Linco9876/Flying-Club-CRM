@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
+  buildDefaultDowntimeRecurrence,
+  buildRecurringDowntimeOccurrences,
   canManageCalendarDowntime,
+  getDowntimeRecurrenceValidationError,
   getCalendarUnavailabilityBackground,
   getTemporaryDowntimeValidationError,
 } from './calendarDowntime.ts';
@@ -43,4 +46,60 @@ test('calendar exposes click-to-edit, save and permanent delete actions for temp
   assert.match(source, /Save changes/);
   assert.match(source, /Delete permanently/);
   assert.match(source, /openInstructorDowntimeEditor/);
+});
+
+test('recurring downtime preserves the original and multi-day duration', () => {
+  const occurrences = buildRecurringDowntimeOccurrences(
+    { startDate: '2026-08-20', endDate: '2026-08-22' },
+    {
+      ...buildDefaultDowntimeRecurrence(),
+      enabled: true,
+      frequency: 'daily',
+      interval: 2,
+      count: 3,
+    },
+  );
+
+  assert.deepEqual(occurrences, [
+    { startDate: '2026-08-20', endDate: '2026-08-22' },
+    { startDate: '2026-08-22', endDate: '2026-08-24' },
+    { startDate: '2026-08-24', endDate: '2026-08-26' },
+  ]);
+});
+
+test('weekly recurring downtime supports multiple selected weekdays', () => {
+  const occurrences = buildRecurringDowntimeOccurrences(
+    { startDate: '2026-08-20', endDate: '2026-08-20' },
+    {
+      ...buildDefaultDowntimeRecurrence(),
+      enabled: true,
+      frequency: 'weekly',
+      weekdays: [1, 4],
+      count: 4,
+    },
+  );
+
+  assert.deepEqual(occurrences.map(item => item.startDate), [
+    '2026-08-20',
+    '2026-08-24',
+    '2026-08-27',
+    '2026-08-31',
+  ]);
+});
+
+test('recurring downtime validates its end controls and is exposed in the editor', () => {
+  const base = { ...buildDefaultDowntimeRecurrence(), enabled: true };
+  assert.equal(
+    getDowntimeRecurrenceValidationError({ ...base, frequency: 'weekly', weekdays: [] }, '2026-08-20'),
+    'Choose at least one weekday',
+  );
+  assert.equal(
+    getDowntimeRecurrenceValidationError({ ...base, weekdays: [4], endMode: 'on', untilDate: '2026-08-20' }, '2026-08-20'),
+    'Choose an end date after the first downtime period',
+  );
+
+  const source = readFileSync(new URL('../components/Calendar/Calendar.tsx', import.meta.url), 'utf8');
+  assert.match(source, /Recurring downtime/);
+  assert.match(source, /Save & create series/);
+  assert.match(source, /updateAbsenceWithCopies/);
 });

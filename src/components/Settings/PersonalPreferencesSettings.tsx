@@ -39,6 +39,7 @@ import { CalendarSubscriptionSettings } from './CalendarSubscriptionSettings';
 import { MfaSettings } from '../Auth/MfaSecurity';
 import { SettingsLoadError } from './SettingsLoadError';
 import { usePwaPushNotifications } from '../../hooks/usePwaPushNotifications';
+import { findMedicalTypeDefinition } from '../../utils/medicalRequirements';
 
 interface PersonalPreferencesSettingsProps {
   canEdit: boolean;
@@ -236,6 +237,8 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
   const hasFlyingRole = user?.roles?.some(role =>
     ['student', 'pilot', 'instructor', 'senior_instructor'].includes(role)
   ) || ['student', 'pilot', 'instructor', 'senior_instructor'].includes(user?.role || '');
+  const selectedMedicalType = findMedicalTypeDefinition(profileForm.medicalType, trainingSettings.medicalTypes);
+  const availableMedicalTypes = trainingSettings.medicalTypes.filter(type => type.isActive || type.name === profileForm.medicalType);
 
   const tabs = useMemo(() => {
     const base: Array<{ id: AccountTab; label: string; icon: React.ReactNode }> = [
@@ -930,7 +933,9 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
           last_raaus_bfr_date: profileForm.lastRaausBfrDate || null,
           last_casa_afr_date: profileForm.lastCasaAfrDate || null,
           medical_type: profileForm.medicalType.trim() || null,
-          medical_expiry: profileForm.medicalExpiry || null,
+          medical_expiry: selectedMedicalType?.validityMode === 'until_age'
+            ? null
+            : profileForm.medicalExpiry || null,
           date_of_birth: profileForm.birthdate || null,
           emergency_contact_name: profileForm.emergencyName.trim() || null,
           emergency_contact_phone: profileForm.emergencyPhone.trim() || null,
@@ -1320,17 +1325,42 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
                   {renderProfileField({ label: 'Last CASA AFR date', field: 'lastCasaAfrDate', type: 'date' })}
                   <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">A CASA aeroplane flight review renews both CASA AFR and RAAus BFR currency.</p>
                 </div>
-                {renderProfileField({ label: 'Medical Expiry', field: 'medicalExpiry', type: 'date' })}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Medical Type</label>
-                  <input
-                    type="text"
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Operating Medical</label>
+                  <SearchableSelect
                     value={profileForm.medicalType}
-                    onChange={event => updateProfile('medicalType', event.target.value)}
+                    onChange={event => {
+                      const definition = findMedicalTypeDefinition(event.target.value, trainingSettings.medicalTypes);
+                      setProfileForm(current => ({
+                        ...current,
+                        medicalType: event.target.value,
+                        medicalExpiry: definition?.validityMode === 'until_age' ? '' : current.medicalExpiry,
+                      }));
+                      onFormChange();
+                    }}
                     disabled={!canEdit}
-                    placeholder="Class 2, Driver licence, BasicMed..."
                     className={inputClass}
-                  />
+                  >
+                    <option value="">Not selected</option>
+                    {availableMedicalTypes.map(type => <option key={type.id} value={type.name}>{type.name}</option>)}
+                  </SearchableSelect>
+                  <p className="mt-1 text-xs text-gray-500">Pilots and instructors should select the medical they operate under.</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Medical Expiry</label>
+                  {selectedMedicalType?.validityMode === 'until_age' ? (
+                    <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                      Current until age {selectedMedicalType.validUntilAge}. Your date of birth determines currency.
+                    </div>
+                  ) : (
+                    <input
+                      type="date"
+                      value={profileForm.medicalExpiry}
+                      onChange={event => updateProfile('medicalExpiry', event.target.value)}
+                      disabled={!canEdit || !profileForm.medicalType}
+                      className={inputClass}
+                    />
+                  )}
                 </div>
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-2">Medical Document</label>

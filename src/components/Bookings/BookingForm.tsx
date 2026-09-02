@@ -23,6 +23,10 @@ import { shouldCaptureFinancialDetails } from '../../utils/financialProviderPres
 import { bookingDefaultTimes } from '../../utils/bookingDefaults';
 import { isPaymentTypeAvailable } from '../../utils/paymentMethodAvailability';
 import { bookingPurposeNeedsFormalProfile } from '../../utils/casualContacts';
+import {
+  getExpectedFutureOccurrenceCount,
+  type RecurringBookingEditScope,
+} from '../../utils/recurringBookingEdits';
 
 interface BookingFormProps {
   isOpen: boolean;
@@ -238,6 +242,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     count: number;
   }>(buildDefaultRecurrence);
   const [showRecurrenceModal, setShowRecurrenceModal] = useState(false);
+  const [recurringEditScope, setRecurringEditScope] = useState<RecurringBookingEditScope>('single');
   const [pendingSafetySubmit, setPendingSafetySubmit] = useState<typeof formData | null>(null);
   const [safetyWarningState, setSafetyWarningState] = useState<{
     concerns: SafetyConcern[];
@@ -279,6 +284,8 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     || safetySettingsError || bookingFieldsError || billingSettingsError || locationsError
     || portalSettingsError || bookingRulesError || organisationSettingsError;
   const showModalLoader = isLoading || isSubmitting;
+  const isRecurringSeriesEdit = Boolean(isEdit && booking?.recurrenceSeriesId);
+  const expectedFutureOccurrenceCount = getExpectedFutureOccurrenceCount(booking);
   const selectedGuestVoucher = guestVoucherOptions.find(option => option.id === formData.trialFlightVoucherId);
   const selectedPilot = users.find(item => item.id === formData.studentId);
   const getPilotSearchLabel = (member: { name?: string; email?: string; id: string }) =>
@@ -416,6 +423,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     setPilotSearch(initialData.isGuestBooking || !initialPilot ? '' : getPilotSearchLabel(initialPilot));
     setShowPilotDropdown(false);
     setRecurrence(buildDefaultRecurrence());
+    setRecurringEditScope('single');
     setIsSubmitting(false);
   }, [buildDefaultRecurrence, buildInitialFormData, isOpen, users]);
 
@@ -758,6 +766,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       await onSubmit({
         ...normalisedBookingData,
         recurrence: !isEdit && !normalisedBookingData.isGuestBooking && recurrence.enabled ? recurrence : undefined,
+        recurringEditScope: isRecurringSeriesEdit ? recurringEditScope : 'single',
       });
       onClose();
     } catch (error) {
@@ -922,12 +931,27 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     setEndorsementWarningState(null);
   };
 
+  React.useEffect(() => {
+    if (!isOpen) return undefined;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || isSubmitting) return;
+      if (showRecurrenceModal) {
+        setShowRecurrenceModal(false);
+        return;
+      }
+      if (safetyWarningState || endorsementWarningState) return;
+      onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [endorsementWarningState, isOpen, isSubmitting, onClose, safetyWarningState, showRecurrenceModal]);
+
   if (!isOpen) return null;
 
   return (
     <>
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="relative bg-white rounded-xl shadow-2xl max-w-xs w-full max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="relative bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-hidden flex flex-col" role="dialog" aria-modal="true" aria-labelledby="booking-form-title">
         {showModalLoader && (
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/88 backdrop-blur-[1px]">
             <div className="flex flex-col items-center gap-3 rounded-xl border border-blue-100 bg-white px-5 py-4 text-center shadow-lg">
@@ -946,12 +970,14 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
           </div>
         )}
         <div className="flex justify-between items-center px-4 py-3 border-b border-gray-200 bg-gray-50">
-          <h2 className="text-base font-semibold text-gray-900">
+          <h2 id="booking-form-title" className="text-base font-semibold text-gray-900">
             {isEdit ? 'Edit Booking' : isCopiedBooking ? 'Copy Booking' : 'New Booking'}
           </h2>
           <button
+            type="button"
             onClick={onClose}
             className="p-1.5 hover:bg-gray-200 rounded-md transition-colors"
+            aria-label="Close booking form"
           >
             <X className="h-4 w-4 text-gray-600" />
           </button>
@@ -966,6 +992,42 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                 ? 'Financial service status could not be confirmed. This booking cannot be saved until the status is available.'
                 : 'Booking rules or operational data could not be loaded. This booking cannot be saved until they are available.'}
             </div>
+          )}
+          {!isLoading && isRecurringSeriesEdit && (
+            <fieldset className="rounded-lg border border-blue-200 bg-blue-50/70 p-3">
+              <legend className="px-1 text-xs font-semibold text-blue-950">Apply changes to</legend>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRecurringEditScope('single')}
+                  aria-pressed={recurringEditScope === 'single'}
+                  className={`rounded-md border px-3 py-2 text-left text-xs font-semibold transition-colors ${
+                    recurringEditScope === 'single'
+                      ? 'border-blue-600 bg-white text-blue-800 shadow-sm'
+                      : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-white'
+                  }`}
+                >
+                  This booking only
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRecurringEditScope('future')}
+                  aria-pressed={recurringEditScope === 'future'}
+                  className={`rounded-md border px-3 py-2 text-left text-xs font-semibold transition-colors ${
+                    recurringEditScope === 'future'
+                      ? 'border-blue-600 bg-white text-blue-800 shadow-sm'
+                      : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-white'
+                  }`}
+                >
+                  This and all future
+                </button>
+              </div>
+              <p className="mt-2 text-[11px] leading-4 text-blue-800">
+                {recurringEditScope === 'future'
+                  ? `Updates up to ${expectedFutureOccurrenceCount || 'all remaining'} active occurrences. Date and time changes shift each later booking by the same amount; past, cancelled and completed bookings stay unchanged.`
+                  : 'Only this occurrence will change. The rest of the series stays unchanged.'}
+              </p>
+            </fieldset>
           )}
           {!isLoading && isFieldVisible('pilot', userRole) && (isStaffUser) && (
             <div>
@@ -1448,24 +1510,31 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
               className="px-4 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isSubmitting
-                ? (isEdit ? 'Updating...' : recurrence.enabled ? 'Creating series...' : 'Creating...')
-                : (isEdit ? 'Update Booking' : recurrence.enabled ? 'Create Series' : 'Create Booking')}
+                ? (isEdit
+                  ? recurringEditScope === 'future' && isRecurringSeriesEdit ? 'Updating series...' : 'Updating...'
+                  : recurrence.enabled ? 'Creating series...' : 'Creating...')
+                : (isEdit
+                  ? recurringEditScope === 'future' && isRecurringSeriesEdit
+                    ? `Update ${expectedFutureOccurrenceCount || 'Future'} Bookings`
+                    : 'Update Booking'
+                  : recurrence.enabled ? 'Create Series' : 'Create Booking')}
             </button>
           </div>
         </form>
 
         {showRecurrenceModal && (
           <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 p-4">
-            <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="recurring-booking-title">
               <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
                 <div>
-                  <h3 className="text-lg font-bold text-gray-950">Recurring booking</h3>
+                  <h3 id="recurring-booking-title" className="text-lg font-bold text-gray-950">Recurring booking</h3>
                   <p className="text-xs text-gray-500">{recurrenceSummary}</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setShowRecurrenceModal(false)}
                   className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100"
+                  aria-label="Close recurring booking options"
                 >
                   <X className="h-4 w-4" />
                 </button>

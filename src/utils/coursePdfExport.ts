@@ -793,7 +793,10 @@ export async function exportCoursePdf({
     ['RAAus Number', student.raausId || 'Not recorded'],
     ['RAAus Expiry', formatDate(student.licenceExpiry)],
     ['CASA ARN', student.casaId || 'Not recorded'],
-    ['Medical Expiry', formatDate(student.medicalExpiry)],
+    ['Operating Medical', student.medicalType || 'Not recorded'],
+    ['Medical Valid Until', student.medicalValidityMode === 'until_age'
+      ? `Age ${student.medicalValidUntilAge || 'not configured'}`
+      : formatDate(student.medicalExpiry)],
     ['Mobile', student.mobilePhone || student.phone || 'Not recorded'],
     ['Address', student.address || 'Not recorded'],
     ['Date of Birth', formatDate(student.dateOfBirth)],

@@ -13,6 +13,13 @@ export const getTrainingSettingsValidationError = (settings: TrainingSyllabusSet
   if (settings.licenceTypes.length === 0) return 'Keep at least one licence type.';
   if (settings.licenceTypes.some(value => !value.trim())) return 'Licence names cannot be blank.';
   if (hasDuplicate(settings.licenceTypes)) return 'Licence names must be unique.';
+  if (settings.medicalTypes.length === 0) return 'Keep at least one medical type.';
+  if (settings.medicalTypes.some(value => !value.name.trim())) return 'Medical names cannot be blank.';
+  if (hasDuplicate(settings.medicalTypes.map(value => value.name))) return 'Medical names must be unique.';
+  if (settings.medicalTypes.some(value => value.validityMode === 'until_age'
+    && (!Number.isInteger(value.validUntilAge) || Number(value.validUntilAge) < 1 || Number(value.validUntilAge) > 120))) {
+    return 'Age-based medicals need a valid age between 1 and 120.';
+  }
   return null;
 };
 
@@ -42,4 +49,20 @@ export const canStaffEditTrainingRecord = ({
       recordStatus === 'draft' || allowSubmittedRecordEditing
     )
   ),
+);
+
+export const canStaffReassignTrainingRecord = ({
+  isAdminOrCfi,
+  isRecordInstructor,
+  recordStatus,
+  hasFlightLog,
+}: {
+  isAdminOrCfi: boolean;
+  isRecordInstructor: boolean;
+  recordStatus: string;
+  hasFlightLog: boolean;
+}) => Boolean(
+  hasFlightLog
+  && recordStatus !== 'draft'
+  && (isAdminOrCfi || isRecordInstructor)
 );

@@ -28,6 +28,8 @@ import {
   Loader2,
   Search,
   Sun,
+  Repeat2,
+  X,
 } from 'lucide-react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAircraft } from '../../hooks/useAircraft';
@@ -64,9 +66,14 @@ import {
   isCalendarSlotOutsideDaylight,
 } from '../../utils/calendarDaylight';
 import {
+  buildDefaultDowntimeRecurrence,
+  buildRecurringDowntimeOccurrences,
   canManageCalendarDowntime,
+  getDowntimeRecurrenceValidationError,
   getCalendarUnavailabilityBackground,
   getTemporaryDowntimeValidationError,
+  type DowntimeRecurrenceEndMode,
+  type DowntimeRecurrenceFrequency,
 } from '../../utils/calendarDowntime';
 import {
   buildCalendarViewSearchParams,
@@ -233,8 +240,12 @@ export const Calendar: React.FC<CalendarProps> = ({
   const { user } = useAuth();
   const {
     acceptBooking: acceptManualSupervision,
+    assignBooking: assignManualSupervision,
     acceptingBookingId,
+    assigningBookingId,
     canAcceptBooking: canAcceptManualSupervision,
+    canAssignBooking: canAssignManualSupervision,
+    getAssignableSupervisors,
   } = useManualBookingSupervision();
   const location = useLocation();
   const navigate = useNavigate();
@@ -365,8 +376,10 @@ export const Calendar: React.FC<CalendarProps> = ({
     scheduleChanges,
     loading: availabilityLoading,
     addAbsence,
+    updateAbsenceWithCopies,
     updateAbsence,
     deleteAbsence,
+    refetch: refetchAvailability,
   } = useInstructorAvailability();
   const lastAvailabilityRef = useRef({
     weeklySchedules,
@@ -474,8 +487,10 @@ export const Calendar: React.FC<CalendarProps> = ({
   } | null>(null);
   const [downtimeReason, setDowntimeReason] = useState('Temporary off period');
   const [downtimeEditor, setDowntimeEditor] = useState<Absence | null>(null);
-  const [downtimeEditorBusy, setDowntimeEditorBusy] = useState<'save' | 'delete' | null>(null);
+  const [downtimeEditorBusy, setDowntimeEditorBusy] = useState<'save' | 'series' | 'delete' | null>(null);
   const [confirmingDowntimeDelete, setConfirmingDowntimeDelete] = useState(false);
+  const [downtimeRecurrence, setDowntimeRecurrence] = useState(buildDefaultDowntimeRecurrence);
+  const [showDowntimeRecurrenceModal, setShowDowntimeRecurrenceModal] = useState(false);
 
   // Drag and drop states
   const [draggedBooking, setDraggedBooking] = useState<Booking | null>(null);
@@ -1858,6 +1873,33 @@ export const Calendar: React.FC<CalendarProps> = ({
 
     setDowntimeEditor({ ...absence });
     setConfirmingDowntimeDelete(false);
+    setDowntimeRecurrence(buildDefaultDowntimeRecurrence());
+    setShowDowntimeRecurrenceModal(false);
+  };
+
+  const closeInstructorDowntimeEditor = () => {
+    setDowntimeEditor(null);
+    setConfirmingDowntimeDelete(false);
+    setDowntimeRecurrence(buildDefaultDowntimeRecurrence());
+    setShowDowntimeRecurrenceModal(false);
+  };
+
+  const openDowntimeRecurrenceOptions = () => {
+    if (!downtimeEditor || downtimeEditorBusy) return;
+    const validationError = getTemporaryDowntimeValidationError(downtimeEditor);
+    if (validationError) {
+      toast.error(validationError);
+      return;
+    }
+
+    const firstDate = new Date(`${downtimeEditor.startDate}T12:00:00`);
+    setDowntimeRecurrence(current => ({
+      ...buildDefaultDowntimeRecurrence(),
+      ...current,
+      weekdays: current.weekdays.length > 0 ? current.weekdays : [firstDate.getDay()],
+      untilDate: current.untilDate || format(addMonths(firstDate, 1), 'yyyy-MM-dd'),
+    }));
+    setShowDowntimeRecurrenceModal(true);
   };
 
   const handleUpdateInstructorDowntime = async () => {
@@ -1877,10 +1919,106 @@ export const Calendar: React.FC<CalendarProps> = ({
         endTime: downtimeEditor.endTime || '',
         reason: downtimeEditor.reason?.trim() || 'Temporary off period',
       });
-      setDowntimeEditor(null);
-      setConfirmingDowntimeDelete(false);
+      closeInstructorDowntimeEditor();
     } catch {
       // The availability hook displays the actionable database or permission error.
+    } finally {
+      setDowntimeEditorBusy(null);
+    }
+  };
+
+  const handleUpdateRecurringInstructorDowntime = async () => {
+    if (!downtimeEditor || downtimeEditorBusy) return;
+    const downtimeValidationError = getTemporaryDowntimeValidationError(downtimeEditor);
+    if (downtimeValidationError) {
+      toast.error(downtimeValidationError);
+      return;
+    }
+
+    const recurrenceValidationError = getDowntimeRecurrenceValidationError(
+      downtimeRecurrence,
+      downtimeEditor.startDate,
+    );
+    if (recurrenceValidationError) {
+      toast.error(recurrenceValidationError);
+      setShowDowntimeRecurrenceModal(true);
+      return;
+    }
+
+    const occurrences = buildRecurringDowntimeOccurrences(downtimeEditor, downtimeRecurrence);
+    const requestedCopies = occurrences.slice(1);
+    if (requestedCopies.length === 0) {
+      toast.error('This repeat pattern does not reach another date. Extend the end date or change the interval.');
+      setShowDowntimeRecurrenceModal(true);
+      return;
+    }
+
+    const reason = downtimeEditor.reason?.trim() || 'Temporary off period';
+    const existingSignatures = new Set(
+      displayAbsences
+        .filter(absence => absence.id !== downtimeEditor.id)
+        .map(absence => [
+          absence.userId,
+          absence.startDate,
+          absence.endDate,
+          absence.startTime || '',
+          absence.endTime || '',
+          absence.reason?.trim() || 'Temporary off period',
+        ].join('|')),
+    );
+    const copies = requestedCopies
+      .map(occurrence => ({
+        userId: downtimeEditor.userId,
+        startDate: occurrence.startDate,
+        endDate: occurrence.endDate,
+        startTime: downtimeEditor.startTime,
+        endTime: downtimeEditor.endTime,
+        reason,
+      }))
+      .filter(copy => !existingSignatures.has([
+        copy.userId,
+        copy.startDate,
+        copy.endDate,
+        copy.startTime || '',
+        copy.endTime || '',
+        copy.reason,
+      ].join('|')));
+
+    if (copies.length === 0) {
+      setDowntimeEditorBusy('save');
+      try {
+        await updateAbsence(downtimeEditor.id, {
+          startDate: downtimeEditor.startDate,
+          endDate: downtimeEditor.endDate,
+          startTime: downtimeEditor.startTime || '',
+          endTime: downtimeEditor.endTime || '',
+          reason,
+        });
+        toast('Matching recurring downtime already exists, so no duplicate copies were added.');
+        closeInstructorDowntimeEditor();
+      } catch {
+        // The availability hook displays the actionable database or permission error.
+      } finally {
+        setDowntimeEditorBusy(null);
+      }
+      return;
+    }
+
+    setDowntimeEditorBusy('series');
+    try {
+      await updateAbsenceWithCopies(downtimeEditor.id, {
+        startDate: downtimeEditor.startDate,
+        endDate: downtimeEditor.endDate,
+        startTime: downtimeEditor.startTime || '',
+        endTime: downtimeEditor.endTime || '',
+        reason,
+      }, copies);
+      if (copies.length < requestedCopies.length) {
+        toast(`${requestedCopies.length - copies.length} matching ${requestedCopies.length - copies.length === 1 ? 'copy was' : 'copies were'} skipped.`);
+      }
+      closeInstructorDowntimeEditor();
+    } catch {
+      // The availability hook rolls back newly inserted copies when possible and displays the error.
     } finally {
       setDowntimeEditorBusy(null);
     }
@@ -1891,14 +2029,21 @@ export const Calendar: React.FC<CalendarProps> = ({
     setDowntimeEditorBusy('delete');
     try {
       await deleteAbsence(downtimeEditor.id);
-      setDowntimeEditor(null);
-      setConfirmingDowntimeDelete(false);
+      closeInstructorDowntimeEditor();
     } catch {
       // The availability hook displays the actionable database or permission error.
     } finally {
       setDowntimeEditorBusy(null);
     }
   };
+
+  const downtimeRecurrenceSummary = downtimeRecurrence.enabled
+    ? downtimeRecurrence.endMode === 'on'
+      ? `Repeats until ${downtimeRecurrence.untilDate || 'the selected date'}`
+      : downtimeRecurrence.endMode === 'never'
+        ? 'Repeats, capped at 52 periods'
+        : `Repeats ${downtimeRecurrence.count} times including this period`
+    : 'Copy this downtime into a repeating series';
 
   const getUnavailabilityPeriods = useMemo(() => {
     const cache = new Map<string, UnavailabilityPeriod[]>();
@@ -3125,10 +3270,14 @@ export const Calendar: React.FC<CalendarProps> = ({
     </button>
   );
 
-  const handleViewModeChange = (mode: ViewMode) => {
+  const handleViewModeChange = (mode: ViewMode, focusDate?: Date) => {
     setNotificationFocusBookingId(null);
     setViewMode(mode);
-    setSearchParams((current) => buildCalendarViewSearchParams(current, mode));
+    setSearchParams((current) => {
+      const next = buildCalendarViewSearchParams(current, mode);
+      if (focusDate) next.set('date', format(focusDate, 'yyyy-MM-dd'));
+      return next;
+    });
   };
 
   const renderViewModeButtons = () => (
@@ -3136,7 +3285,9 @@ export const Calendar: React.FC<CalendarProps> = ({
         {(['day', 'week', 'month', 'list'] as ViewMode[]).map((mode) => (
           <button
             key={mode}
+            type="button"
             onClick={() => handleViewModeChange(mode)}
+            aria-pressed={viewMode === mode}
             className={`rounded-lg px-2 py-2 text-xs font-semibold transition-colors ${isKioskMode ? 'px-2.5 py-3 text-sm' : 'sm:px-3 sm:py-2 sm:text-sm'} ${
               viewMode === mode
                 ? 'bg-white text-blue-600 shadow-sm dark:bg-[#262b33] dark:text-blue-300'
@@ -4717,7 +4868,7 @@ export const Calendar: React.FC<CalendarProps> = ({
           <div>
             <h3 className="text-base font-bold text-gray-950 dark:text-gray-100">Bookings by date range</h3>
             <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-              {filteredListBookings.length} booking{filteredListBookings.length === 1 ? '' : 's'} match the selected range and filters.
+              {filteredListBookings.length} booking{filteredListBookings.length === 1 ? '' : 's'} {filteredListBookings.length === 1 ? 'matches' : 'match'} the selected range and filters.
             </p>
           </div>
           <div className="flex flex-wrap gap-2" aria-label="Date range shortcuts">
@@ -5030,11 +5181,17 @@ export const Calendar: React.FC<CalendarProps> = ({
     const weekdayLabels = Array.from({ length: 7 }, (_, index) =>
       format(addDays(calendarStart, index), 'EEE')
     );
+    const selectedPickerDate = viewMode === 'list'
+      ? parseCalendarDateParam(listStartDate)
+      : currentDate;
 
     return (
       <div
         ref={datePickerRef}
         className="absolute left-1/2 top-full z-50 mt-3 w-[min(22rem,calc(100vw-2rem))] -translate-x-1/2 rounded-2xl border border-gray-200 bg-white p-4 text-left shadow-2xl dark:border-[#363b45] dark:bg-[#171a21]"
+        role="dialog"
+        aria-modal="false"
+        aria-label="Choose calendar date"
       >
         <div className="mb-4 flex items-center justify-between gap-3">
           <button
@@ -5070,7 +5227,7 @@ export const Calendar: React.FC<CalendarProps> = ({
             </div>
           ))}
           {pickerDays.map((day) => {
-            const isSelected = isSameDay(day, currentDate);
+            const isSelected = Boolean(selectedPickerDate && isSameDay(day, selectedPickerDate));
             const isOutsideMonth = day.getMonth() !== datePickerMonth.getMonth();
             const isCurrentDay = isToday(day);
 
@@ -5145,6 +5302,13 @@ export const Calendar: React.FC<CalendarProps> = ({
     );
     setCurrentDate(start);
     setShowNextAvailableSlot(false);
+  };
+
+  const handleCalendarRefresh = async () => {
+    await Promise.all([
+      onRefresh?.(),
+      refetchAvailability(),
+    ]);
   };
 
   const renderStandardControls = () => (
@@ -5234,7 +5398,7 @@ export const Calendar: React.FC<CalendarProps> = ({
 
           {onRefresh && (
             <button
-              onClick={() => void onRefresh()}
+              onClick={() => void handleCalendarRefresh()}
               className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-[#262b33]"
               title="Refresh calendar"
             >
@@ -5266,7 +5430,7 @@ export const Calendar: React.FC<CalendarProps> = ({
 
           {onRefresh && (
             <button
-              onClick={() => void onRefresh()}
+              onClick={() => void handleCalendarRefresh()}
               className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-[#262b33]"
               title="Refresh calendar"
             >
@@ -5357,7 +5521,7 @@ export const Calendar: React.FC<CalendarProps> = ({
 
         {onRefresh && (
           <button
-            onClick={() => void onRefresh()}
+            onClick={() => void handleCalendarRefresh()}
             className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-[#262b33]"
             title="Refresh calendar"
           >
@@ -5422,7 +5586,7 @@ export const Calendar: React.FC<CalendarProps> = ({
           defaultAircraftId={preferredAircraftId}
           onDayClick={(date) => {
             setCurrentDate(date);
-            setViewMode('day');
+            handleViewModeChange('day', date);
           }}
           weekStartsOn={calendarSettings?.week_starts_on === 'sunday' ? 0 : 1}
           showWeekends={calendarSettings?.show_weekends ?? true}
@@ -5491,6 +5655,25 @@ export const Calendar: React.FC<CalendarProps> = ({
               }
             : undefined}
           acceptingSupervision={acceptingBookingId === actionMenuBooking.id}
+          onAssignSupervisor={canAssignManualSupervision(actionMenuBooking)
+            ? async (supervisorId) => {
+                try {
+                  const result = await assignManualSupervision(actionMenuBooking, supervisorId);
+                  toast.success(`${result.supervisingInstructorName} has been allocated and notified`);
+                  bookingMenuOpenTokenRef.current += 1;
+                  setActionMenuBooking(null);
+                  setBookingMenuLoading(null);
+                  await Promise.resolve(onRefresh?.());
+                } catch (error) {
+                  toast.error(error instanceof Error
+                    ? error.message
+                    : 'The supervisor could not be allocated.');
+                  throw error;
+                }
+              }
+            : undefined}
+          supervisorOptions={getAssignableSupervisors(actionMenuBooking)}
+          assigningSupervisor={assigningBookingId === actionMenuBooking.id}
           onEdit={() => {
             if (isBookingFlightLogged(actionMenuBooking)) {
               toast.error('Delete the flight log before editing this booking');
@@ -5679,8 +5862,7 @@ export const Calendar: React.FC<CalendarProps> = ({
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
           onMouseDown={() => {
             if (downtimeEditorBusy) return;
-            setDowntimeEditor(null);
-            setConfirmingDowntimeDelete(false);
+            closeInstructorDowntimeEditor();
           }}
         >
           <div
@@ -5737,7 +5919,11 @@ export const Calendar: React.FC<CalendarProps> = ({
               <form
                 onSubmit={(event) => {
                   event.preventDefault();
-                  void handleUpdateInstructorDowntime();
+                  if (downtimeRecurrence.enabled) {
+                    void handleUpdateRecurringInstructorDowntime();
+                  } else {
+                    void handleUpdateInstructorDowntime();
+                  }
                 }}
               >
                 <div className="space-y-4 p-5">
@@ -5825,22 +6011,35 @@ export const Calendar: React.FC<CalendarProps> = ({
                 </div>
 
                 <div className="flex flex-col gap-2 border-t border-gray-200 bg-gray-50 px-5 py-4 dark:border-[#363b45] dark:bg-[#11141a] sm:flex-row sm:items-center">
-                  <button
-                    type="button"
-                    onClick={() => setConfirmingDowntimeDelete(true)}
-                    disabled={Boolean(downtimeEditorBusy)}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-800 dark:bg-[#171a21] dark:text-red-300"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    Delete
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingDowntimeDelete(true)}
+                      disabled={Boolean(downtimeEditorBusy)}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-800 dark:bg-[#171a21] dark:text-red-300"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Delete
+                    </button>
+                    <button
+                      type="button"
+                      onClick={openDowntimeRecurrenceOptions}
+                      disabled={Boolean(downtimeEditorBusy)}
+                      title="Copy this downtime into a repeating series"
+                      aria-label="Recurring downtime options"
+                      className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border transition-colors disabled:opacity-60 ${
+                        downtimeRecurrence.enabled
+                          ? 'border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-300'
+                          : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-100 dark:border-[#4b5563] dark:bg-[#171a21] dark:text-gray-200'
+                      }`}
+                    >
+                      <Repeat2 className="h-4 w-4" />
+                    </button>
+                  </div>
                   <div className="flex flex-1 flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                     <button
                       type="button"
-                      onClick={() => {
-                        setDowntimeEditor(null);
-                        setConfirmingDowntimeDelete(false);
-                      }}
+                      onClick={closeInstructorDowntimeEditor}
                       disabled={Boolean(downtimeEditorBusy)}
                       className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-[#4b5563] dark:bg-[#171a21] dark:text-gray-100"
                     >
@@ -5851,14 +6050,210 @@ export const Calendar: React.FC<CalendarProps> = ({
                       disabled={Boolean(downtimeEditorBusy)}
                       className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-orange-700 disabled:opacity-60"
                     >
-                      {downtimeEditorBusy === 'save' && <Loader2 className="h-4 w-4 animate-spin" />}
-                      Save changes
+                      {(downtimeEditorBusy === 'save' || downtimeEditorBusy === 'series') && <Loader2 className="h-4 w-4 animate-spin" />}
+                      {downtimeRecurrence.enabled ? 'Save & create series' : 'Save changes'}
                     </button>
                   </div>
                 </div>
               </form>
             )}
           </div>
+
+          {showDowntimeRecurrenceModal && (
+            <div
+              className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"
+              onMouseDown={(event) => {
+                event.stopPropagation();
+                if (!downtimeEditorBusy) setShowDowntimeRecurrenceModal(false);
+              }}
+            >
+              <div
+                className="max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-[#363b45] dark:bg-[#171a21]"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="recurring-downtime-title"
+                onMouseDown={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-5 py-4 dark:border-[#363b45]">
+                  <div>
+                    <h3 id="recurring-downtime-title" className="text-lg font-bold text-gray-950 dark:text-gray-100">
+                      Recurring downtime
+                    </h3>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{downtimeRecurrenceSummary}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowDowntimeRecurrenceModal(false)}
+                    disabled={Boolean(downtimeEditorBusy)}
+                    className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 disabled:opacity-60 dark:text-gray-300 dark:hover:bg-[#252a34]"
+                    aria-label="Close recurring downtime options"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="space-y-5 px-5 py-4">
+                  <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-950 dark:border-orange-900 dark:bg-orange-950/30 dark:text-orange-100">
+                    The current downtime stays as the first occurrence. Each new copy uses the same duration, times and reason.
+                  </div>
+
+                  <section>
+                    <h4 className="mb-2 text-sm font-bold text-gray-900 dark:text-gray-100">Repeats every</h4>
+                    <div className="grid grid-cols-[110px_1fr] gap-3">
+                      <input
+                        type="number"
+                        min={1}
+                        max={12}
+                        value={downtimeRecurrence.interval}
+                        onChange={(event) => setDowntimeRecurrence(current => ({
+                          ...current,
+                          interval: Math.max(1, Math.min(12, Number(event.target.value) || 1)),
+                        }))}
+                        className="rounded-xl border border-gray-300 bg-white px-3 py-3 text-lg font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-500 dark:border-[#4b5563] dark:bg-[#11141a] dark:text-gray-100"
+                      />
+                      <SearchableSelect
+                        value={downtimeRecurrence.frequency}
+                        onChange={(event) => setDowntimeRecurrence(current => ({
+                          ...current,
+                          frequency: event.target.value as DowntimeRecurrenceFrequency,
+                        }))}
+                        className="rounded-xl border border-gray-300 bg-white px-3 py-3 text-lg font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-500 dark:border-[#4b5563] dark:bg-[#11141a] dark:text-gray-100"
+                      >
+                        <option value="daily">day</option>
+                        <option value="weekly">week</option>
+                        <option value="monthly">month</option>
+                      </SearchableSelect>
+                    </div>
+                  </section>
+
+                  {downtimeRecurrence.frequency === 'weekly' && (
+                    <section>
+                      <h4 className="mb-2 text-sm font-bold text-gray-900 dark:text-gray-100">Repeats on</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          { short: 'S', full: 'Sunday' },
+                          { short: 'M', full: 'Monday' },
+                          { short: 'T', full: 'Tuesday' },
+                          { short: 'W', full: 'Wednesday' },
+                          { short: 'T', full: 'Thursday' },
+                          { short: 'F', full: 'Friday' },
+                          { short: 'S', full: 'Saturday' },
+                        ].map((day, index) => {
+                          const selected = downtimeRecurrence.weekdays.includes(index);
+                          return (
+                            <button
+                              key={day.full}
+                              type="button"
+                              aria-label={`${selected ? 'Remove' : 'Add'} ${day.full}`}
+                              aria-pressed={selected}
+                              onClick={() => setDowntimeRecurrence(current => {
+                                const next = selected
+                                  ? current.weekdays.filter(weekday => weekday !== index)
+                                  : [...current.weekdays, index].sort((a, b) => a - b);
+                                return { ...current, weekdays: next.length > 0 ? next : [index] };
+                              })}
+                              className={`flex h-11 w-11 items-center justify-center rounded-full border text-sm font-bold transition-colors ${
+                                selected
+                                  ? 'border-orange-600 bg-orange-600 text-white'
+                                  : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-[#4b5563] dark:bg-[#11141a] dark:text-gray-200'
+                              }`}
+                            >
+                              {day.short}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  )}
+
+                  <section>
+                    <h4 className="mb-2 text-sm font-bold text-gray-900 dark:text-gray-100">Ends</h4>
+                    <div className="space-y-3">
+                      {[
+                        { value: 'never', label: 'Never' },
+                        { value: 'on', label: 'On' },
+                        { value: 'after', label: 'After' },
+                      ].map(option => (
+                        <label key={option.value} className="flex min-h-12 items-center gap-3 rounded-xl border border-gray-200 px-3 py-2 dark:border-[#363b45]">
+                          <input
+                            type="radio"
+                            name="downtime-recurrence-end-mode"
+                            checked={downtimeRecurrence.endMode === option.value}
+                            onChange={() => setDowntimeRecurrence(current => ({
+                              ...current,
+                              endMode: option.value as DowntimeRecurrenceEndMode,
+                            }))}
+                            className="h-4 w-4 text-orange-600 focus:ring-orange-500"
+                          />
+                          <span className="min-w-14 text-sm font-semibold text-gray-800 dark:text-gray-100">{option.label}</span>
+                          {option.value === 'on' && (
+                            <input
+                              type="date"
+                              min={format(addDays(new Date(`${downtimeEditor.startDate}T12:00:00`), 1), 'yyyy-MM-dd')}
+                              value={downtimeRecurrence.untilDate}
+                              onChange={(event) => setDowntimeRecurrence(current => ({ ...current, untilDate: event.target.value }))}
+                              className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-2 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-500 dark:border-[#4b5563] dark:bg-[#11141a] dark:text-gray-100"
+                            />
+                          )}
+                          {option.value === 'after' && (
+                            <span className="flex min-w-0 flex-1 items-center gap-2">
+                              <input
+                                type="number"
+                                min={2}
+                                max={52}
+                                value={downtimeRecurrence.count}
+                                onChange={(event) => setDowntimeRecurrence(current => ({
+                                  ...current,
+                                  count: Math.max(2, Math.min(52, Number(event.target.value) || 2)),
+                                }))}
+                                className="w-20 rounded-lg border border-gray-300 bg-white px-2 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-500 dark:border-[#4b5563] dark:bg-[#11141a] dark:text-gray-100"
+                              />
+                              <span className="text-sm text-gray-600 dark:text-gray-300">periods</span>
+                            </span>
+                          )}
+                        </label>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Recurring downtime is limited to 52 periods per series.</p>
+                  </section>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 border-t border-gray-200 px-5 py-4 dark:border-[#363b45]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDowntimeRecurrence(buildDefaultDowntimeRecurrence());
+                      setShowDowntimeRecurrenceModal(false);
+                    }}
+                    className="rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-[#4b5563] dark:text-gray-100 dark:hover:bg-[#252a34]"
+                  >
+                    No repeat
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = { ...downtimeRecurrence, enabled: true };
+                      const validationError = getDowntimeRecurrenceValidationError(next, downtimeEditor.startDate);
+                      if (validationError) {
+                        toast.error(validationError);
+                        return;
+                      }
+                      const occurrences = buildRecurringDowntimeOccurrences(downtimeEditor, next);
+                      if (occurrences.length < 2) {
+                        toast.error('This repeat pattern does not reach another date. Extend the end date or change the interval.');
+                        return;
+                      }
+                      setDowntimeRecurrence(next);
+                      setShowDowntimeRecurrenceModal(false);
+                    }}
+                    className="rounded-xl bg-orange-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-orange-700"
+                  >
+                    Apply
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

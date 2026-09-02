@@ -56,6 +56,7 @@ import { useTrainingSettings } from '../../hooks/useTrainingSettings';
 import { formatSyllabusMatrixText, matrixStandardLabel, useSyllabusMatrix } from '../../hooks/useSyllabusMatrix';
 import { supabase } from '../../lib/supabase';
 import { publicationIssueSummary } from '../../utils/courseQuality';
+import { medicalRequirementDescription } from '../../utils/medicalRequirements';
 
 interface NewCourseState {
   title: string;
@@ -67,6 +68,8 @@ interface NewCourseState {
   prerequisites: string;
   requiresStudentAcknowledgement: boolean;
   twoOccasionCompetencyRuleEnabled: boolean;
+  medicalRequirementMode: 'none' | 'required' | 'age_threshold';
+  medicalRequirementAge: string;
   requiresFlyingDeclaration: boolean;
   flyingDeclarationTitle: string;
   flyingDeclarationText: string;
@@ -88,6 +91,7 @@ type CourseBuildMode = 'simple' | 'advanced';
 type CourseBuilderStep = 'details' | 'rules' | 'assessment' | 'resources';
 type LessonBuilderStep = 'details' | 'content' | 'assessment';
 type LessonStudyAssetKind = LessonStudyAsset['type'];
+type CourseReferenceModal = 'assessment' | 'exams' | null;
 
 interface NewLessonState {
   name: string;
@@ -444,6 +448,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ label, value, onChange,
           />
         </div>
       </div>
+
     </div>
   );
 };
@@ -664,6 +669,8 @@ const emptyCourseForm = (): CourseFormState => ({
   prerequisites: '',
   requiresStudentAcknowledgement: true,
   twoOccasionCompetencyRuleEnabled: false,
+  medicalRequirementMode: 'none',
+  medicalRequirementAge: '',
   requiresFlyingDeclaration: false,
   flyingDeclarationTitle: 'Flying Declaration',
   flyingDeclarationText: defaultFlyingDeclarationText,
@@ -1433,6 +1440,34 @@ export const TrainingCourseCatalog: React.FC = () => {
   const [lessonStudyAssets, setLessonStudyAssets] = useState<EditableLessonStudyAsset[]>([]);
   const [expandedLessons, setExpandedLessons] = useState<Record<string, boolean>>({});
   const [deletingLessonId, setDeletingLessonId] = useState<string | null>(null);
+  const [courseReferenceModal, setCourseReferenceModal] = useState<CourseReferenceModal>(null);
+
+  useEffect(() => {
+    if (!showLessonForm && !courseReferenceModal) return;
+
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (courseReferenceModal) {
+        setCourseReferenceModal(null);
+      } else {
+        setShowLessonForm(false);
+        setNewLesson(emptyLessonForm());
+        setLessonPassMarks({});
+        setLessonRepeatPassRequirements({});
+        setLessonStudyAssets([]);
+        setEditingLessonId(null);
+        setLessonBuilderStep('details');
+      }
+    };
+
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [courseReferenceModal, showLessonForm]);
 
   useEffect(() => {
     if (courseModules.length === 0) {
@@ -1714,6 +1749,7 @@ export const TrainingCourseCatalog: React.FC = () => {
     setShowEditCourseForm(false);
     setShowDeleteCourseConfirm(false);
     setDeletingLessonId(null);
+    setCourseReferenceModal(null);
     resetLessonForm();
   };
 
@@ -1737,6 +1773,8 @@ export const TrainingCourseCatalog: React.FC = () => {
       prerequisites: selectedModule.prerequisites.join('\n'),
       requiresStudentAcknowledgement: selectedModule.requiresStudentAcknowledgement ?? true,
       twoOccasionCompetencyRuleEnabled: selectedModule.twoOccasionCompetencyRuleEnabled ?? false,
+      medicalRequirementMode: selectedModule.medicalRequirementMode ?? 'none',
+      medicalRequirementAge: selectedModule.medicalRequirementAge ? String(selectedModule.medicalRequirementAge) : '',
       requiresFlyingDeclaration: selectedModule.requiresFlyingDeclaration ?? false,
       flyingDeclarationTitle: selectedModule.flyingDeclarationTitle || 'Flying Declaration',
       flyingDeclarationText: selectedModule.flyingDeclarationText || defaultFlyingDeclarationText,
@@ -1783,6 +1821,13 @@ export const TrainingCourseCatalog: React.FC = () => {
     if (editCourse.completionLicenceEnabled && licenceTypes.length === 0) {
       toast.error('Add licence options in Training / Syllabus Settings first');
       return;
+    }
+    if (editCourse.medicalRequirementMode === 'age_threshold') {
+      const age = Number(editCourse.medicalRequirementAge);
+      if (!Number.isInteger(age) || age < 1 || age > 120) {
+        toast.error('Enter an age between 1 and 120 for the course medical requirement');
+        return;
+      }
     }
 
     // Validate criteria
@@ -1845,6 +1890,10 @@ export const TrainingCourseCatalog: React.FC = () => {
       version,
       status: editCourse.status,
       estimatedDurationHours: Math.max(1, Number(editCourse.estimatedDurationHours) || 1),
+      medicalRequirementMode: editCourse.medicalRequirementMode,
+      medicalRequirementAge: editCourse.medicalRequirementMode === 'age_threshold'
+        ? Number(editCourse.medicalRequirementAge)
+        : null,
       prerequisites,
       objectives,
       evaluationCriteria,
@@ -1877,6 +1926,10 @@ export const TrainingCourseCatalog: React.FC = () => {
         prerequisites,
         requiresStudentAcknowledgement: editCourse.requiresStudentAcknowledgement,
         twoOccasionCompetencyRuleEnabled: editCourse.twoOccasionCompetencyRuleEnabled,
+        medicalRequirementMode: editCourse.medicalRequirementMode,
+        medicalRequirementAge: editCourse.medicalRequirementMode === 'age_threshold'
+          ? Number(editCourse.medicalRequirementAge)
+          : null,
         requiresFlyingDeclaration: editCourse.requiresFlyingDeclaration,
         flyingDeclarationTitle: editCourse.flyingDeclarationTitle.trim() || 'Flying Declaration',
         flyingDeclarationText: editCourse.flyingDeclarationText.trim(),
@@ -1917,7 +1970,6 @@ export const TrainingCourseCatalog: React.FC = () => {
   };
 
   const handleEditLesson = (lesson: TrainingLesson) => {
-    queueFormScroll('lesson');
     setNewLesson({
       name: lesson.name,
       objective: lesson.objective,
@@ -2099,6 +2151,13 @@ export const TrainingCourseCatalog: React.FC = () => {
       toast.error('Add licence options in Training / Syllabus Settings first');
       return;
     }
+    if (newCourse.medicalRequirementMode === 'age_threshold') {
+      const age = Number(newCourse.medicalRequirementAge);
+      if (!Number.isInteger(age) || age < 1 || age > 120) {
+        toast.error('Enter an age between 1 and 120 for the course medical requirement');
+        return;
+      }
+    }
     if (newCourse.requiresFlyingDeclaration && !newCourse.flyingDeclarationText.trim()) {
       toast.error('Add the flying declaration wording, or turn off the declaration requirement');
       return;
@@ -2146,6 +2205,10 @@ export const TrainingCourseCatalog: React.FC = () => {
       estimatedDurationHours: Math.max(1, Number(newCourse.estimatedDurationHours) || 1),
       requiresStudentAcknowledgement: newCourse.requiresStudentAcknowledgement,
       twoOccasionCompetencyRuleEnabled: newCourse.twoOccasionCompetencyRuleEnabled,
+      medicalRequirementMode: newCourse.medicalRequirementMode,
+      medicalRequirementAge: newCourse.medicalRequirementMode === 'age_threshold'
+        ? Number(newCourse.medicalRequirementAge)
+        : null,
       requiresFlyingDeclaration: newCourse.requiresFlyingDeclaration,
       flyingDeclarationTitle: newCourse.flyingDeclarationTitle.trim() || 'Flying Declaration',
       flyingDeclarationText: newCourse.flyingDeclarationText.trim(),
@@ -2211,7 +2274,6 @@ export const TrainingCourseCatalog: React.FC = () => {
       toast.error('Please select a course first');
       return;
     }
-    queueFormScroll('lesson');
     resetLessonForm();
     setShowLessonForm(true);
     setShowEditCourseForm(false);
@@ -2236,7 +2298,6 @@ export const TrainingCourseCatalog: React.FC = () => {
 
     setNewLesson(pilotCertificateFlightTestTemplate);
     setLessonStudyAssets([]);
-    queueFormScroll('lesson');
     setLessonPassMarks(
       Object.fromEntries(
         selectedModule.assessmentCriteria.map((criterion) => [
@@ -2735,6 +2796,43 @@ export const TrainingCourseCatalog: React.FC = () => {
                 </span>
               </span>
             </label>
+            <div className="rounded-lg border border-cyan-200 bg-white p-4 text-sm text-cyan-950 md:col-span-2">
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px] sm:items-end">
+                <label className="flex flex-col text-xs font-medium text-cyan-950">
+                  Student medical requirement
+                  <SearchableSelect
+                    value={newCourse.medicalRequirementMode}
+                    onChange={(event) => setNewCourse((prev) => ({
+                      ...prev,
+                      medicalRequirementMode: event.target.value as CourseFormState['medicalRequirementMode'],
+                      medicalRequirementAge: event.target.value === 'age_threshold' ? prev.medicalRequirementAge : '',
+                    }))}
+                    className="mt-1 rounded-md border border-cyan-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-100"
+                  >
+                    <option value="none">No medical required</option>
+                    <option value="required">Medical required for everyone</option>
+                    <option value="age_threshold">Medical required from an age</option>
+                  </SearchableSelect>
+                </label>
+                {newCourse.medicalRequirementMode === 'age_threshold' && (
+                  <label className="flex flex-col text-xs font-medium text-cyan-950">
+                    Required from age
+                    <input
+                      type="number"
+                      min={1}
+                      max={120}
+                      inputMode="numeric"
+                      value={newCourse.medicalRequirementAge}
+                      onChange={(event) => setNewCourse((prev) => ({ ...prev, medicalRequirementAge: event.target.value }))}
+                      className="mt-1 rounded-md border border-cyan-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-100"
+                    />
+                  </label>
+                )}
+              </div>
+              <p className="mt-2 text-xs text-cyan-700">
+                Student medical warnings are only shown while they are actively enrolled and this rule applies to their age. Pilot and instructor operating-medical checks remain separate.
+              </p>
+            </div>
             <div className="rounded-lg border border-amber-200 bg-white p-4 text-sm text-amber-950 md:col-span-2">
               <label className="flex items-start gap-3">
                 <input
@@ -3139,6 +3237,11 @@ export const TrainingCourseCatalog: React.FC = () => {
                           Licence
                         </span>
                       )}
+                      {(module.medicalRequirementMode ?? 'none') !== 'none' && (
+                        <span className="rounded-full bg-cyan-50 px-2 py-0.5 text-xs font-semibold text-cyan-700">
+                          Medical rule
+                        </span>
+                      )}
                       {module.lessons.some((lesson) => lesson.isFlightTest) && (
                         <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">
                           Flight test
@@ -3328,6 +3431,15 @@ export const TrainingCourseCatalog: React.FC = () => {
                             </dd>
                           </div>
                           <div>
+                            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Student medical</dt>
+                            <dd className="mt-1 text-slate-700">
+                              {medicalRequirementDescription(
+                                selectedModule.medicalRequirementMode ?? 'none',
+                                selectedModule.medicalRequirementAge,
+                              )}
+                            </dd>
+                          </div>
+                          <div>
                             <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Completion endorsement</dt>
                             <dd className="mt-1 text-slate-700">
                               {selectedModule.completionEndorsementEnabled
@@ -3346,35 +3458,34 @@ export const TrainingCourseCatalog: React.FC = () => {
                         </dl>
                       </div>
 
-                      {selectedModule.assessmentCriteria.length > 0 && (
-                        <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
-                          <h3 className="text-sm font-semibold text-blue-950">Assessment criteria</h3>
-                          <div className="mt-3 space-y-2">
-                            {selectedModule.assessmentCriteria.map((c) => (
-                              <div key={c.id} className="rounded-lg bg-white px-3 py-2 text-sm ring-1 ring-blue-100">
-                                <div className="font-semibold text-slate-900">{c.name}</div>
-                                <div className="mt-0.5 text-xs text-slate-500">{c.gradingSystem} - pass mark {c.passingGrade}</div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {(selectedModule.exams || []).length > 0 && (
-                        <div className="rounded-xl border border-amber-100 bg-amber-50 p-4">
-                          <h3 className="text-sm font-semibold text-amber-950">Course exams</h3>
-                          <div className="mt-3 space-y-2">
-                            {(selectedModule.exams || []).map((exam) => (
-                              <div key={exam.id} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 ring-1 ring-amber-100">
-                                <span className="min-w-0 truncate text-sm font-medium text-amber-950">{exam.name}</span>
-                                <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
-                                  {exam.passMark}% pass
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+                      <div className="grid grid-cols-2 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setCourseReferenceModal('assessment')}
+                          className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-left transition hover:border-blue-300 hover:bg-blue-100"
+                        >
+                          <span className="flex items-center justify-between gap-2 text-sm font-semibold text-blue-950">
+                            <span className="inline-flex items-center gap-2"><ClipboardList className="h-4 w-4" />Assessment criteria</span>
+                            <ChevronRight className="h-4 w-4" />
+                          </span>
+                          <span className="mt-1 block text-xs text-blue-700">
+                            {selectedModule.assessmentCriteria.length} {selectedModule.assessmentCriteria.length === 1 ? 'criterion' : 'criteria'}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCourseReferenceModal('exams')}
+                          className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-left transition hover:border-amber-300 hover:bg-amber-100"
+                        >
+                          <span className="flex items-center justify-between gap-2 text-sm font-semibold text-amber-950">
+                            <span className="inline-flex items-center gap-2"><Award className="h-4 w-4" />Exam criteria</span>
+                            <ChevronRight className="h-4 w-4" />
+                          </span>
+                          <span className="mt-1 block text-xs text-amber-700">
+                            {(selectedModule.exams || []).length} {(selectedModule.exams || []).length === 1 ? 'exam' : 'exams'}
+                          </span>
+                        </button>
+                      </div>
 
                       {selectedModule.tags.length > 0 && (
                         <div className="flex flex-wrap gap-2">
@@ -3521,6 +3632,43 @@ export const TrainingCourseCatalog: React.FC = () => {
                         </span>
                       </span>
                     </label>
+                    <div className="rounded-lg border border-cyan-200 bg-cyan-50 p-4 text-sm text-cyan-950 md:col-span-2">
+                      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px] sm:items-end">
+                        <label className="flex flex-col text-xs font-medium text-cyan-950">
+                          Student medical requirement
+                          <SearchableSelect
+                            value={editCourse.medicalRequirementMode}
+                            onChange={(event) => setEditCourse((prev) => ({
+                              ...prev,
+                              medicalRequirementMode: event.target.value as CourseFormState['medicalRequirementMode'],
+                              medicalRequirementAge: event.target.value === 'age_threshold' ? prev.medicalRequirementAge : '',
+                            }))}
+                            className="mt-1 rounded-md border border-cyan-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-cyan-400 focus:outline-none"
+                          >
+                            <option value="none">No medical required</option>
+                            <option value="required">Medical required for everyone</option>
+                            <option value="age_threshold">Medical required from an age</option>
+                          </SearchableSelect>
+                        </label>
+                        {editCourse.medicalRequirementMode === 'age_threshold' && (
+                          <label className="flex flex-col text-xs font-medium text-cyan-950">
+                            Required from age
+                            <input
+                              type="number"
+                              min={1}
+                              max={120}
+                              inputMode="numeric"
+                              value={editCourse.medicalRequirementAge}
+                              onChange={(event) => setEditCourse((prev) => ({ ...prev, medicalRequirementAge: event.target.value }))}
+                              className="mt-1 rounded-md border border-cyan-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-cyan-400 focus:outline-none"
+                            />
+                          </label>
+                        )}
+                      </div>
+                      <p className="mt-2 text-xs text-cyan-700">
+                        Students are not warned about a medical unless this course rule applies to them while enrolled.
+                      </p>
+                    </div>
                     <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 md:col-span-2">
                       <label className="flex items-start gap-3">
                         <input
@@ -3909,17 +4057,33 @@ export const TrainingCourseCatalog: React.FC = () => {
               )}
 
               {showLessonForm && (
-                <div ref={lessonFormRef} className="rounded-xl border border-blue-200 bg-blue-50 p-6 shadow-inner">
-                  <div className="flex flex-wrap items-center justify-between gap-3 text-blue-900">
+                <div
+                  className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-950/60 p-2 backdrop-blur-[1px] sm:p-6"
+                  onMouseDown={handleCancelLesson}
+                >
+                <div
+                  ref={lessonFormRef}
+                  className="max-h-[calc(100vh-1rem)] w-full max-w-6xl overflow-y-auto rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-2xl sm:max-h-[calc(100vh-3rem)] sm:p-6"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="lesson-editor-title"
+                  onMouseDown={(event) => event.stopPropagation()}
+                >
+                  <div className="sticky top-0 z-20 -mx-4 -mt-4 flex flex-wrap items-center justify-between gap-3 border-b border-blue-200 bg-blue-50/95 px-4 py-4 text-blue-900 backdrop-blur dark:border-blue-400/25 dark:bg-blue-950/95 dark:text-blue-100 sm:-mx-6 sm:-mt-6 sm:px-6">
                     <div className="flex items-center gap-2">
                       {editingLessonId ? <Pencil className="h-5 w-5" /> : <FilePlus className="h-5 w-5" />}
-                      <h3 className="text-lg font-semibold">{editingLessonId ? 'Edit lesson' : 'Create new lesson'}</h3>
+                      <div>
+                        <h3 id="lesson-editor-title" className="text-lg font-semibold">{editingLessonId ? 'Edit lesson' : 'Create new lesson'}</h3>
+                        <p className="mt-0.5 text-xs font-normal text-blue-700">{selectedModule?.title}</p>
+                      </div>
                     </div>
                     <button
+                      type="button"
                       onClick={handleCancelLesson}
-                      className="text-sm font-medium underline-offset-2 hover:underline"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-blue-200 bg-white text-blue-800 hover:bg-blue-100"
+                      aria-label="Close lesson editor"
                     >
-                      Cancel
+                      <X className="h-4 w-4" />
                     </button>
                   </div>
                   <div className="mt-5 grid gap-2 md:grid-cols-3">
@@ -4352,7 +4516,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                   </div>
                   </div>
                   )}
-                  <div className="mt-6 flex justify-end gap-3">
+                  <div className="sticky bottom-0 z-20 -mx-4 -mb-4 mt-6 flex flex-wrap justify-end gap-2 border-t border-blue-200 bg-blue-50/95 px-4 py-4 backdrop-blur dark:border-blue-400/25 dark:bg-blue-950/95 sm:-mx-6 sm:-mb-6 sm:px-6">
                     <button
                       onClick={handleCancelLesson}
                       className="rounded-lg border border-blue-200 px-4 py-2 text-sm font-medium text-blue-900 transition hover:bg-blue-100"
@@ -4386,9 +4550,10 @@ export const TrainingCourseCatalog: React.FC = () => {
                     </button>
                   </div>
                 </div>
+                </div>
               )}
 
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2 text-slate-950">
@@ -4412,7 +4577,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                     No lessons recorded yet. Use the “New lesson” button to start building this course.
                   </div>
                 ) : (
-                  <div className="mt-6 space-y-4">
+                  <div className="mt-4 space-y-2">
                     {selectedModule.lessons.map((lesson, lessonIndex) => {
                       const isExpanded = expandedLessons[lesson.id] ?? false;
                       const flightExercisesContent = formatRichTextContent(lesson.flightExercises);
@@ -4421,6 +4586,9 @@ export const TrainingCourseCatalog: React.FC = () => {
                       const studyGuideContent = formatRichTextContent(lesson.studyGuide ?? '');
                       const isFirstLesson = lessonIndex === 0;
                       const isLastLesson = lessonIndex === selectedModule.lessons.length - 1;
+                      const lessonCriteriaCount = selectedModule.assessmentCriteria.length > 0
+                        ? selectedModule.assessmentCriteria.filter((criterion) => lesson.passMarks?.[criterion.id]).length
+                        : lesson.assessmentCriteria.length;
 
                       return (
                         <article
@@ -4450,7 +4618,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                             </div>
                           )}
 
-                          <div className="grid gap-3 bg-slate-50 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+                          <div className="grid gap-2 bg-slate-50 px-3 py-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
                             <div className="flex min-w-0 items-start gap-2">
                               <button
                                 type="button"
@@ -4475,9 +4643,17 @@ export const TrainingCourseCatalog: React.FC = () => {
                                     </span>
                                   )}
                                 </div>
-                                <p className="mt-2 text-sm leading-5 text-slate-600">
+                                <p className="mt-1 line-clamp-1 text-sm leading-5 text-slate-600">
                                   {lesson.objective || 'Document the lesson objective for instructors.'}
                                 </p>
+                                <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] font-medium text-slate-500">
+                                  <span className="rounded-full bg-white px-2 py-0.5 ring-1 ring-slate-200">{lesson.stage || 'flight'}</span>
+                                  <span className="rounded-full bg-white px-2 py-0.5 ring-1 ring-slate-200">{lesson.durationMinutes || 60} min</span>
+                                  <span className="rounded-full bg-white px-2 py-0.5 ring-1 ring-slate-200">{lessonCriteriaCount} {lessonCriteriaCount === 1 ? 'criterion' : 'criteria'}</span>
+                                  {(lesson.studyAssets || []).length > 0 && (
+                                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-700 ring-1 ring-emerald-100">{lesson.studyAssets?.length} {lesson.studyAssets?.length === 1 ? 'study file' : 'study files'}</span>
+                                  )}
+                                </div>
                               </div>
                             </div>
                             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 lg:justify-end">
@@ -4503,14 +4679,6 @@ export const TrainingCourseCatalog: React.FC = () => {
                                   <ArrowDown className="h-3.5 w-3.5" />
                                 </button>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => handleToggleLessonExpansion(lesson.id)}
-                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-100"
-                              >
-                                {isExpanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-                                {isExpanded ? 'Collapse' : 'Expand'}
-                              </button>
                               <button
                                 type="button"
                                 onClick={() => handleEditLesson(lesson)}
@@ -4750,6 +4918,118 @@ export const TrainingCourseCatalog: React.FC = () => {
           )}
         </div>
       </div>
+
+      {courseReferenceModal && selectedModule && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-[1px] sm:p-6"
+          onMouseDown={() => setCourseReferenceModal(null)}
+        >
+          <div
+            className="flex max-h-[min(42rem,calc(100vh-2rem))] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="course-reference-modal-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className={`flex items-start justify-between gap-4 border-b px-5 py-4 ${courseReferenceModal === 'assessment' ? 'border-blue-100 bg-blue-50' : 'border-amber-100 bg-amber-50'}`}>
+              <div>
+                <p className={`text-xs font-bold uppercase tracking-wide ${courseReferenceModal === 'assessment' ? 'text-blue-700' : 'text-amber-700'}`}>
+                  {selectedModule.title}
+                </p>
+                <h2 id="course-reference-modal-title" className="mt-1 text-lg font-bold text-slate-950">
+                  {courseReferenceModal === 'assessment' ? 'Assessment criteria' : 'Exam criteria'}
+                </h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  {courseReferenceModal === 'assessment'
+                    ? 'Grading systems and the minimum course standard for each criterion.'
+                    : 'Theory exams and the pass mark required for each result.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCourseReferenceModal(null)}
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/80 bg-white text-slate-600 shadow-sm hover:bg-slate-50"
+                aria-label="Close course criteria"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-5">
+              {courseReferenceModal === 'assessment' ? (
+                selectedModule.assessmentCriteria.length > 0 ? (
+                  <div className="space-y-2">
+                    {selectedModule.assessmentCriteria.map((criterion, index) => (
+                      <div key={criterion.id} className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center">
+                        <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-lg bg-white px-2 text-xs font-bold text-slate-500 ring-1 ring-slate-200">
+                          {index + 1}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-slate-950">{criterion.name}</p>
+                          <p className="mt-0.5 text-xs text-slate-500">{criterion.id} · {criterion.gradingSystem}</p>
+                        </div>
+                        <span className="w-fit rounded-full bg-blue-100 px-2.5 py-1 text-xs font-bold text-blue-800">
+                          Pass {criterion.passingGrade}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-600">
+                    No assessment criteria have been added to this course.
+                  </div>
+                )
+              ) : (
+                (selectedModule.exams || []).length > 0 ? (
+                  <div className="space-y-2">
+                    {(selectedModule.exams || []).map((exam, index) => (
+                      <div key={exam.id} className="flex items-center justify-between gap-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-xs font-bold text-amber-800 ring-1 ring-amber-200">
+                            {index + 1}
+                          </span>
+                          <p className="truncate font-semibold text-amber-950">{exam.name}</p>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-bold text-amber-800 ring-1 ring-amber-200">
+                          {exam.passMark}% pass
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-6 text-center text-sm text-amber-900">
+                    No theory exams have been added to this course.
+                  </div>
+                )
+              )}
+            </div>
+
+            <div className="flex flex-col-reverse gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:flex-row sm:justify-between">
+              {canManageCourse(selectedModule) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const targetStep: CourseBuilderStep = courseReferenceModal === 'assessment' ? 'assessment' : 'resources';
+                    setCourseReferenceModal(null);
+                    handleOpenEditCourse();
+                    setEditCourseStep(targetStep);
+                  }}
+                  className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                >
+                  Edit {courseReferenceModal === 'assessment' ? 'assessment criteria' : 'exam criteria'}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setCourseReferenceModal(null)}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 sm:ml-auto"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import type {
   ClubMembership,
@@ -187,4 +188,13 @@ test('uses only a period that covers today and powers register filters', () => {
   });
   assert.equal(membershipMatchesDashboardFocus(current, 'outstanding', summary), true);
   assert.equal(membershipMatchesDashboardFocus(current, 'ceased', summary), false);
+});
+
+test('membership register defaults to current members while retaining drill-down filters', () => {
+  const source = readFileSync(new URL('../components/Membership/MembershipDashboard.tsx', import.meta.url), 'utf8');
+  assert.match(source, /initialFocus = 'current'/);
+  assert.match(source, /useState<MembershipRegisterFocus>\('current'\)/);
+  assert.match(source, /item\.id === 'register'.*setRegisterFocus\('current'\)/);
+  assert.match(source, /onOpenRegister\('outstanding'\)/);
+  assert.match(source, /onOpenRegister\('attention'\)/);
 });
