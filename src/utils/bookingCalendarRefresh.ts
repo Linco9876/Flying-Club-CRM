@@ -10,6 +10,7 @@ export type BookingCalendarRefreshReason =
   | 'booking-rejected'
   | 'supervision-accepted'
   | 'supervision-assigned'
+  | 'supervision-acknowledged'
   | 'flight-log-created'
   | 'flight-log-updated'
   | 'flight-log-deleted'

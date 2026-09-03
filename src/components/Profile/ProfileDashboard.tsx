@@ -136,6 +136,7 @@ export const ProfileDashboard: React.FC = () => {
   const navigate = useNavigate();
   const roles = user?.roles?.length ? user.roles : user?.role ? [user.role] : [];
   const isInstructor = roles.includes('instructor') || roles.includes('senior_instructor');
+  const isStaffUser = roles.some(role => ['admin', 'cfi', 'instructor', 'senior_instructor'].includes(role));
   const isStudentOnly = roles.includes('student') && !roles.some(role =>
     ['pilot', 'instructor', 'senior_instructor'].includes(role)
   );
@@ -663,16 +664,17 @@ export const ProfileDashboard: React.FC = () => {
   const calendarEvent = useMemo<BrowserCalendarEvent | null>(() => {
     if (!stats.nextBooking) return null;
     const booking = stats.nextBooking;
-    const status = booking.status === 'cancelled' || booking.status === 'no-show'
+    const visibleStatus = !isStaffUser && booking.status === 'pending_supervision' ? 'confirmed' : booking.status;
+    const status = visibleStatus === 'cancelled' || visibleStatus === 'no-show'
       ? 'CANCELLED'
-      : booking.status.startsWith('pending_') ? 'TENTATIVE' : 'CONFIRMED';
+      : visibleStatus.startsWith('pending_') ? 'TENTATIVE' : 'CONFIRMED';
     return {
       uid: `booking-${booking.id}@portal.bendigoflyingclub.com.au`,
       title: `BFC booking – ${booking.aircraftRegistration}`,
       description: [
-        `Status: ${humaniseStatus(booking.status)}`,
+        `Status: ${humaniseStatus(visibleStatus)}`,
         booking.instructorName ? `Instructor: ${booking.instructorName}` : '',
-        booking.supervisorName ? `Supervising senior instructor: ${booking.supervisorName}` : '',
+        isStaffUser && booking.supervisorName ? `Supervising senior instructor: ${booking.supervisorName}` : '',
         'The BFC portal is the source of truth for this booking.',
       ].filter(Boolean).join('\n'),
       location: booking.location || 'Bendigo Flying Club',
@@ -680,7 +682,7 @@ export const ProfileDashboard: React.FC = () => {
       end: booking.endTime,
       status,
     };
-  }, [stats.nextBooking]);
+  }, [isStaffUser, stats.nextBooking]);
 
   if (pageLoading) {
     return (
@@ -895,11 +897,11 @@ export const ProfileDashboard: React.FC = () => {
                           {format(stats.nextBooking.startTime, datePattern)}
                         </p>
                         <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                          stats.nextBooking.status.startsWith('pending_')
+                          (isStaffUser ? stats.nextBooking.status : stats.nextBooking.status === 'pending_supervision' ? 'confirmed' : stats.nextBooking.status).startsWith('pending_')
                             ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200'
                             : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'
                         }`}>
-                          {humaniseStatus(stats.nextBooking.status)}
+                          {humaniseStatus(!isStaffUser && stats.nextBooking.status === 'pending_supervision' ? 'confirmed' : stats.nextBooking.status)}
                         </span>
                       </div>
                       <p className="mt-2 text-lg font-semibold text-slate-800 dark:text-slate-100">
@@ -913,7 +915,7 @@ export const ProfileDashboard: React.FC = () => {
                         {stats.nextBooking.instructorName && (
                           <p>Instructor/student: <span className="font-semibold">{stats.nextBooking.instructorName}</span></p>
                         )}
-                        {stats.nextBooking.supervisorName && (
+                        {isStaffUser && stats.nextBooking.supervisorName && (
                           <p className="text-xs">Supervising senior instructor: {stats.nextBooking.supervisorName}</p>
                         )}
                         {isStudentOnly && nextLessonLabel && (

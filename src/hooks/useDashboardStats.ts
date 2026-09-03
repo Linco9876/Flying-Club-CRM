@@ -262,8 +262,7 @@ export function useDashboardStats(userId?: string, userRole?: string, scheduleSc
             .select(`
               id, start_time, end_time, status, location,
               aircraft:aircraft_id (registration),
-              instructor:instructor_id (name),
-              supervisor:supervising_instructor_id (name)
+              instructor:instructor_id (name)
             `)
             .is('deleted_at', null)
             .eq('student_id', userId)
@@ -294,11 +293,10 @@ export function useDashboardStats(userId?: string, userRole?: string, scheduleSc
             id: nb.id,
             startTime: new Date(nb.start_time),
             endTime: new Date(nb.end_time),
-            status: nb.status,
+            status: nb.status === 'pending_supervision' ? 'confirmed' : nb.status,
             location: nb.location || undefined,
             aircraftRegistration: nb.aircraft?.registration || 'Unknown',
             instructorName: nb.instructor?.name,
-            supervisorName: nb.supervisor?.name,
           };
         }
 

@@ -4,9 +4,12 @@ import test from 'node:test';
 import type { Booking } from '../types';
 import {
   authorisationCoversBooking,
+  canAcknowledgeBookingSupervision,
   canOfferCfiSupervisorAllocation,
   canOfferManualBookingSupervision,
   getAuthorisedSupervisorsForBooking,
+  getSupervisionCoverageWindow,
+  type InstructorSupervisionRequirement,
   type SeniorInstructorAuthorisation,
 } from './manualBookingSupervision.ts';
 
@@ -114,7 +117,7 @@ test('past, cancelled and logged bookings cannot receive a new promise', () => {
   ), false);
 });
 
-test('a CFI can allocate an authorised supervisor only to an uncovered future booking', () => {
+test('a CFI can allocate or reassign an authorised supervisor on a future booking', () => {
   const now = new Date('2026-09-01T00:00:00.000Z');
   assert.equal(canOfferCfiSupervisorAllocation(booking(), true, now), true);
   assert.equal(canOfferCfiSupervisorAllocation(booking(), false, now), false);
@@ -122,7 +125,12 @@ test('a CFI can allocate an authorised supervisor only to an uncovered future bo
     booking({ supervisionStatus: 'assigned', supervisingInstructorId: 'senior-1' }),
     true,
     now,
-  ), false);
+  ), true);
+  assert.equal(canOfferCfiSupervisorAllocation(
+    booking({ supervisionStatus: 'acknowledged', supervisingInstructorId: 'senior-1' }),
+    true,
+    now,
+  ), true);
   assert.equal(canOfferCfiSupervisorAllocation(
     booking({ flight_logged: true }),
     true,
@@ -151,6 +159,43 @@ test('the CFI selector contains only active authorisations that cover the bookin
   ]);
 });
 
+test('the existing supervisor is omitted from the reassignment selector', () => {
+  assert.deepEqual(getAuthorisedSupervisorsForBooking(
+    booking({ supervisionStatus: 'assigned', supervisingInstructorId: 'senior-1' }),
+    [authorisation(), authorisation({ instructor_id: 'senior-2' })],
+    [
+      { id: 'senior-1', name: 'Current Supervisor' },
+      { id: 'senior-2', name: 'Replacement Supervisor' },
+    ],
+  ), [{ id: 'senior-2', name: 'Replacement Supervisor' }]);
+});
+
+test('only the allocated supervisor can acknowledge a new assignment', () => {
+  const assigned = booking({ supervisionStatus: 'assigned', supervisingInstructorId: 'senior-1' });
+  assert.equal(canAcknowledgeBookingSupervision(assigned, 'senior-1'), true);
+  assert.equal(canAcknowledgeBookingSupervision(assigned, 'senior-2'), false);
+  assert.equal(canAcknowledgeBookingSupervision(
+    booking({ supervisionStatus: 'acknowledged', supervisingInstructorId: 'senior-1' }),
+    'senior-1',
+  ), false);
+});
+
+test('calendar supervision blocks include the configured briefing and debriefing window', () => {
+  const requirement: InstructorSupervisionRequirement = {
+    instructor_id: 'trainee-1',
+    supervision_required: true,
+    activity_types: ['flight'],
+    locations: ['Bendigo'],
+    preflight_minutes: 20,
+    postflight_minutes: 15,
+    effective_from: '2026-01-01',
+    effective_to: null,
+  };
+  const window = getSupervisionCoverageWindow(booking(), [requirement]);
+  assert.equal(window.startTime.toISOString(), '2026-09-09T23:40:00.000Z');
+  assert.equal(window.endTime.toISOString(), '2026-09-10T01:45:00.000Z');
+});
+
 test('database and booking actions preserve the safety contract', () => {
   const migration = readFileSync(
     'supabase/migrations/20260818110000_add_manual_booking_supervision_commitments.sql',
@@ -166,6 +211,13 @@ test('database and booking actions preserve the safety contract', () => {
     'src/components/Bookings/SupervisorAssignmentModal.tsx',
     'utf8',
   );
+  const reassignmentMigration = readFileSync(
+    'supabase/migrations/20260903090000_support_calendar_supervision_reassignment.sql',
+    'utf8',
+  );
+  const calendar = readFileSync('src/components/Calendar/Calendar.tsx', 'utf8');
+  const browserCalendar = readFileSync('src/utils/calendar.ts', 'utf8');
+  const calendarFeed = readFileSync('supabase/functions/calendar-feed/index.ts', 'utf8');
 
   assert.match(migration, /create table if not exists public\.booking_supervision_commitments/i);
   assert.match(migration, /for update;/i, 'acceptance must lock the booking');
@@ -195,4 +247,13 @@ test('database and booking actions preserve the safety contract', () => {
   assert.match(hook, /assign_booking_supervisor/);
   assert.match(hook, /supervision-assigned/);
   assert.match(hook, /current_user_is_cfi/);
+  assert.match(reassignmentMigration, /cfi_supervisor_reassigned/i);
+  assert.match(reassignmentMigration, /supervision_status not in \('pending', 'assigned', 'acknowledged'\)/i);
+  assert.match(calendar, /<span>Supervision<\/span>/i);
+  assert.match(calendar, /Supervision confirmed/i);
+  assert.match(calendar, /data-supervision-block/i);
+  assert.match(browserCalendar, /!showSupervision && booking\.status === 'pending_supervision'/i);
+  assert.match(browserCalendar, /showSupervision && booking\.supervisingInstructorName/i);
+  assert.match(calendarFeed, /!showSupervision && booking\.status === "pending_supervision"/i);
+  assert.match(calendarFeed, /showSupervision && supervisor\?\.name/i);
 });

@@ -95,7 +95,7 @@
     "test:billing-description": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/billingDescription.test.ts",
     "test:financial-providers": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/financialProviderPresentation.test.ts src/utils/paymentMethodAvailability.test.ts src/utils/billingSettingsRules.test.ts src/utils/billingSettingsAtomicity.test.ts && npx --yes deno test --node-modules-dir=false supabase/functions/_shared/financialCapabilities.test.ts",
     "test:pricing-policy": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/pricingPolicy.test.ts",
-    "test:maintenance": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/maintenanceRules.test.ts",
+    "test:maintenance": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/maintenanceRules.test.ts src/utils/historicalAircraftBooking.test.ts",
     "test:learning-quiz": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/learningQuiz.test.ts",
     "test:learning-program-permissions": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/learningProgramPermissions.test.ts",
     "test:rpc-p92-learning": "node --test scripts/rpc-p92-learning-programs.test.mjs",
