@@ -57,8 +57,6 @@ $$;
 
 revoke all on function public.enforce_aircraft_maintenance_serviceability()
   from public, anon, authenticated;
-grant execute on function public.enforce_aircraft_maintenance_serviceability()
-  to service_role;
 
 update private.function_permission_manifest
 set rationale = 'Internal booking trigger. It strictly blocks archived aircraft and current/future use of unserviceable aircraft, while allowing staff-only reconstruction of bookings that have already ended.',

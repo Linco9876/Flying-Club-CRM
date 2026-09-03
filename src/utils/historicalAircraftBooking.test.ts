@@ -53,4 +53,12 @@ test('the database trigger applies the same staff-only completed-history boundar
   assert.match(migration, /current_user_has_staff_role\(\)/i);
   assert.match(migration, /auth\.role\(\) = 'service_role'/i);
   assert.match(migration, /v_is_archived/i);
+  assert.match(
+    migration,
+    /revoke all on function public\.enforce_aircraft_maintenance_serviceability\(\)\s+from public, anon, authenticated;/i,
+  );
+  assert.doesNotMatch(
+    migration,
+    /grant execute on function public\.enforce_aircraft_maintenance_serviceability\(\)/i,
+  );
 });
