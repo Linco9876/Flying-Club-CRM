@@ -29,6 +29,8 @@ import {
   Search,
   Sun,
   Repeat2,
+  ShieldCheck,
+  Check,
   X,
 } from 'lucide-react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -49,6 +51,7 @@ import { CurrentTimeIndicator } from './CurrentTimeIndicator';
 import { MonthView } from './MonthView';
 import { isPastBooking } from '../../utils/timeUtils';
 import { BookingActionMenu } from '../Bookings/BookingActionMenu';
+import { SupervisionReassignmentModal } from '../Bookings/SupervisionReassignmentModal';
 import { FlightLogModal } from '../Bookings/FlightLogModal';
 import { GroundSessionLogModal } from '../Bookings/GroundSessionLogModal';
 import { BookingCancellationModal } from '../Bookings/BookingCancellationModal';
@@ -159,6 +162,7 @@ const CALENDAR_HEADER_SHRINK_DISTANCE = 40;
 const TOUCH_TAP_MOVE_THRESHOLD_PX = 6;
 const TOUCH_CANCEL_MOVE_THRESHOLD_PX = 24;
 const CALENDAR_DAYLIGHT_OVERLAY_STORAGE_KEY = 'bfc.calendar.shade_non_daylight';
+const CALENDAR_SUPERVISION_OVERLAY_STORAGE_KEY = 'bfc.calendar.show_supervision';
 
 const CALENDAR_BOOKING_COLOUR_CLASSES = {
   confirmed: 'bg-blue-100/90 border-blue-500 hover:bg-blue-100 text-blue-950',
@@ -178,12 +182,27 @@ const CALENDAR_BOOKING_LEGEND = [
   { label: 'Cancelled', classes: CALENDAR_BOOKING_COLOUR_CLASSES.cancelled },
 ] as const;
 
+const CALENDAR_SUPERVISION_LEGEND = [
+  { label: 'Supervisor needed', classes: 'border-orange-500 bg-orange-100 text-orange-900', pattern: 'diagonal' },
+  { label: 'Awaiting acknowledgement', classes: 'border-amber-500 border-dashed bg-amber-100/75 text-amber-950', pattern: 'solid' },
+  { label: 'Supervision confirmed', classes: 'border-cyan-600 bg-cyan-100/70 text-cyan-950', pattern: 'solid' },
+] as const;
+
 const getStoredDaylightOverlayPreference = () => {
   if (typeof window === 'undefined') return false;
   try {
     return window.localStorage.getItem(CALENDAR_DAYLIGHT_OVERLAY_STORAGE_KEY) === 'true';
   } catch {
     return false;
+  }
+};
+
+const getStoredSupervisionOverlayPreference = () => {
+  if (typeof window === 'undefined') return true;
+  try {
+    return window.localStorage.getItem(CALENDAR_SUPERVISION_OVERLAY_STORAGE_KEY) !== 'false';
+  } catch {
+    return true;
   }
 };
 
@@ -241,10 +260,14 @@ export const Calendar: React.FC<CalendarProps> = ({
   const {
     acceptBooking: acceptManualSupervision,
     assignBooking: assignManualSupervision,
+    acknowledgeBooking: acknowledgeManualSupervision,
     acceptingBookingId,
     assigningBookingId,
+    acknowledgingBookingId,
     canAcceptBooking: canAcceptManualSupervision,
     canAssignBooking: canAssignManualSupervision,
+    canAcknowledgeBooking: canAcknowledgeManualSupervision,
+    getCoverageWindow: getSupervisionCoverageWindow,
     getAssignableSupervisors,
   } = useManualBookingSupervision();
   const location = useLocation();
@@ -302,7 +325,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   const displayUsers = users.length > 0 ? users : lastKnownUsersRef.current;
   const displayInstructors = instructors.length > 0 ? instructors : lastKnownInstructorsRef.current;
   const userRoles = user?.roles && user.roles.length > 0 ? user.roles : (user?.role ? [user.role] : []);
-  const isStaffCalendarUser = userRoles.some(role => ['admin', 'senior_instructor', 'instructor'].includes(role));
+  const isStaffCalendarUser = userRoles.some(role => ['admin', 'cfi', 'senior_instructor', 'instructor'].includes(role));
   const isStudentOrPilotCalendarUser = userRoles.some(role => role === 'student' || role === 'pilot');
   const isLimitedCalendarUser = isStudentOrPilotCalendarUser && !isStaffCalendarUser;
   useEffect(() => {
@@ -478,6 +501,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   const [showUnavailableBlocks, setShowUnavailableBlocks] = useState(true);
   const [hideAllDayUnavailableResources, setHideAllDayUnavailableResources] = useState(false);
   const [showDaylightOverlay, setShowDaylightOverlay] = useState(getStoredDaylightOverlayPreference);
+  const [showSupervisionBlocks, setShowSupervisionBlocks] = useState(getStoredSupervisionOverlayPreference);
   const [daylightLocationId, setDaylightLocationId] = useState('');
   const [downtimeChoice, setDowntimeChoice] = useState<{
     date: Date;
@@ -515,6 +539,12 @@ export const Calendar: React.FC<CalendarProps> = ({
     resourceType: 'aircraft' | 'instructor';
     startX: number;
     startY: number;
+  } | null>(null);
+  const [draggedSupervisionBooking, setDraggedSupervisionBooking] = useState<Booking | null>(null);
+  const [pendingSupervisionReassignment, setPendingSupervisionReassignment] = useState<{
+    booking: Booking;
+    supervisorId: string;
+    supervisorName: string;
   } | null>(null);
   // Time selection states
   const [isDragging, setIsDragging] = useState(false);
@@ -1147,6 +1177,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   };
 
   const getSupervisingInstructorName = (booking: Booking) => {
+    if (!isStaffCalendarUser) return '';
     if (!booking.supervisingInstructorId) return '';
     return displayUsers.find((u) => u.id === booking.supervisingInstructorId)?.name || booking.supervisingInstructorName || 'Senior instructor';
   };
@@ -1168,7 +1199,10 @@ export const Calendar: React.FC<CalendarProps> = ({
   const passesCalendarFilters = (booking: Booking) => {
     if (isCancelledBooking(booking)) return showCancelledBookings;
     if (!showWaitlistedBookings && booking.hasConflict) return false;
-    if (!showPendingBookings && (booking.status === 'pending_approval' || booking.status === 'pending_supervision')) return false;
+    if (!showPendingBookings && (
+      booking.status === 'pending_approval'
+      || (isStaffCalendarUser && booking.status === 'pending_supervision')
+    )) return false;
     return true;
   };
 
@@ -1181,8 +1215,13 @@ export const Calendar: React.FC<CalendarProps> = ({
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const listDateRangeValid = isCalendarListDateRangeValid(listStartDate, listEndDate);
+  const privacySafeListBookings = isStaffCalendarUser
+    ? bookings
+    : bookings.map(booking => booking.status === 'pending_supervision'
+      ? { ...booking, status: 'confirmed' as const }
+      : booking);
   const filteredListBookings = filterCalendarListBookings(
-    bookings,
+    privacySafeListBookings,
     {
       startDate: listStartDate,
       endDate: listEndDate,
@@ -1395,8 +1434,8 @@ export const Calendar: React.FC<CalendarProps> = ({
       return CALENDAR_BOOKING_COLOUR_CLASSES.pendingApproval;
     }
 
-    if (booking.status === 'pending_supervision') {
-      return CALENDAR_BOOKING_COLOUR_CLASSES.pendingSupervision;
+    if (booking.status === 'pending_supervision' && isStaffCalendarUser) {
+      return `${CALENDAR_BOOKING_COLOUR_CLASSES.pendingSupervision} calendar-supervision-needed`;
     }
 
     if (booking.status === 'cancelled') {
@@ -1444,7 +1483,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     const notes = showNotes && canSeePrivateBookingDetails(booking)
       ? truncateNotes(booking.notes, estimatedHeight >= 120 ? 84 : 48)
       : '';
-    const supervisingName = getSupervisingInstructorName(booking);
+    const supervisingName = isStaffCalendarUser ? getSupervisingInstructorName(booking) : '';
 
     if (density === 'name-only') {
       return (
@@ -1523,7 +1562,7 @@ export const Calendar: React.FC<CalendarProps> = ({
           ? 'Unlogged'
           : booking.status === 'pending_approval'
             ? 'Pending'
-            : booking.status === 'pending_supervision'
+            : booking.status === 'pending_supervision' && isStaffCalendarUser
               ? 'Pending supervision'
             : booking.status === 'cancelled'
               ? 'Cancelled'
@@ -2308,6 +2347,136 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
 
     return filteredBookings;
+  };
+
+  const getSupervisionBookingsForResource = (
+    supervisorId: string,
+    date: Date,
+  ): Booking[] => {
+    if (!isStaffCalendarUser || isKioskMode || !showSupervisionBlocks) return [];
+
+    return bookings
+      .map(booking => ({ ...booking, ...optimisticBookingUpdates[booking.id] }))
+      .filter(booking => (
+        booking.supervisingInstructorId === supervisorId
+        && booking.supervisionRequired
+        && (booking.supervisionStatus === 'assigned' || booking.supervisionStatus === 'acknowledged')
+        && !isCancelledBooking(booking)
+        && isSameDay(new Date(booking.startTime), date)
+        && passesCalendarFilters(booking)
+      ));
+  };
+
+  const queueSupervisionReassignment = (booking: Booking, supervisorId: string) => {
+    if (!canAssignManualSupervision(booking) || supervisorId === booking.supervisingInstructorId) return;
+    const option = getAssignableSupervisors(booking).find(candidate => candidate.id === supervisorId);
+    if (!option) {
+      toast.error('That instructor is not authorised for this supervision assignment.');
+      return;
+    }
+    setPendingSupervisionReassignment({
+      booking,
+      supervisorId,
+      supervisorName: option.name,
+    });
+  };
+
+  const handleSupervisionDragStart = (event: React.DragEvent, booking: Booking) => {
+    if (!canAssignManualSupervision(booking)) {
+      event.preventDefault();
+      return;
+    }
+    event.stopPropagation();
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', booking.id);
+    setDraggedSupervisionBooking(booking);
+    setActionMenuBooking(null);
+  };
+
+  const handleSupervisionDrop = (event: React.DragEvent, supervisorId: string) => {
+    if (!draggedSupervisionBooking) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const booking = draggedSupervisionBooking;
+    setDraggedSupervisionBooking(null);
+    queueSupervisionReassignment(booking, supervisorId);
+  };
+
+  const renderSupervisionCalendarBlock = (
+    booking: Booking,
+    resourceIndex: number,
+    supervisorId: string,
+    keySuffix: string,
+  ) => {
+    const coverage = getSupervisionCoverageWindow(booking);
+    const displayDayStart = new Date(booking.startTime);
+    displayDayStart.setHours(calendarStartHour, 0, 0, 0);
+    const displayDayEnd = new Date(booking.startTime);
+    displayDayEnd.setHours(calendarEndHour, 0, 0, 0);
+    const visibleStart = new Date(Math.max(coverage.startTime.getTime(), displayDayStart.getTime()));
+    const visibleEnd = new Date(Math.min(coverage.endTime.getTime(), displayDayEnd.getTime()));
+    const position = getPeriodPosition(visibleStart, visibleEnd);
+    const acknowledged = booking.supervisionStatus === 'acknowledged';
+    const canDrag = canAssignManualSupervision(booking);
+    const instructorName = getInstructorName(booking) || 'Instructor';
+    const estimatedHeight = Math.max(
+      slotHeight,
+      (position.gridRowEnd - position.gridRowStart) * slotHeight - position.marginTop,
+    );
+
+    return (
+      <button
+        type="button"
+        key={`supervision-${booking.id}-${keySuffix}`}
+        data-supervision-block
+        data-booking-id={booking.id}
+        draggable={canDrag}
+        onDragStart={event => handleSupervisionDragStart(event, booking)}
+        onDragEnd={() => setDraggedSupervisionBooking(null)}
+        onDragOver={event => {
+          if (draggedSupervisionBooking) {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+          }
+        }}
+        onDrop={event => handleSupervisionDrop(event, supervisorId)}
+        onClick={event => {
+          event.stopPropagation();
+          openBookingActionMenu(booking, { x: event.clientX, y: event.clientY });
+        }}
+        className={`relative cursor-pointer overflow-hidden rounded-md border-2 px-1.5 py-1 text-[10px] shadow-sm transition hover:brightness-95 ${
+          acknowledged
+            ? 'border-cyan-600 bg-cyan-100/75 text-cyan-950 dark:border-cyan-500 dark:bg-cyan-950/65 dark:text-cyan-50'
+            : 'border-dashed border-amber-500 bg-amber-100/80 text-amber-950 dark:border-amber-400 dark:bg-amber-950/65 dark:text-amber-50'
+        } ${canDrag ? 'cursor-ew-resize' : ''}`}
+        style={{
+          gridColumn: resourceIndex + 2,
+          gridRow: `${position.gridRowStart} / ${position.gridRowEnd}`,
+          marginTop: position.marginTop,
+          ...getBookingBlockStyle(position),
+          zIndex: 9,
+          width: '100%',
+          justifySelf: 'stretch',
+        }}
+        title={`${acknowledged ? 'Supervision confirmed' : 'Awaiting acknowledgement'}: ${instructorName}. Coverage ${format(coverage.startTime, 'HH:mm')}–${format(coverage.endTime, 'HH:mm')}. ${canDrag ? 'Drag horizontally to change supervisor.' : 'Select for details.'}`}
+        aria-label={`${acknowledged ? 'Confirmed supervision' : 'Supervision awaiting acknowledgement'} for ${instructorName}`}
+      >
+        <div className="flex items-center gap-1 font-black leading-tight">
+          {acknowledged ? <Check className="h-3 w-3 shrink-0" /> : <ShieldCheck className="h-3 w-3 shrink-0" />}
+          <span className="truncate">Supervising {instructorName}</span>
+        </div>
+        {estimatedHeight >= 48 && (
+          <div className="mt-0.5 truncate font-semibold opacity-80">
+            {format(coverage.startTime, 'HH:mm')}–{format(coverage.endTime, 'HH:mm')} cover
+          </div>
+        )}
+        {estimatedHeight >= 68 && (
+          <div className="mt-0.5 truncate opacity-75">
+            Flight {format(new Date(booking.startTime), 'HH:mm')}–{format(new Date(booking.endTime), 'HH:mm')}
+          </div>
+        )}
+      </button>
+    );
   };
 
   const getAgendaBookingsForDate = (date: Date): Booking[] => {
@@ -3457,6 +3626,30 @@ export const Calendar: React.FC<CalendarProps> = ({
         <span>Pending</span>
       </label>
 
+      {isStaffCalendarUser && !isKioskMode && (
+        <label
+          className="inline-flex items-center gap-2 rounded-lg border border-cyan-300 bg-cyan-50 px-2.5 py-2 text-sm font-semibold text-cyan-900 hover:bg-cyan-100 dark:border-cyan-800 dark:bg-cyan-950/30 dark:text-cyan-100 dark:hover:bg-cyan-950/50"
+          title="Show supervision allocations in supervising instructors' columns"
+        >
+          <input
+            type="checkbox"
+            checked={showSupervisionBlocks}
+            onChange={(event) => {
+              const checked = event.target.checked;
+              setShowSupervisionBlocks(checked);
+              try {
+                window.localStorage.setItem(CALENDAR_SUPERVISION_OVERLAY_STORAGE_KEY, String(checked));
+              } catch {
+                // The in-memory preference still works when storage is unavailable.
+              }
+            }}
+            className="h-4 w-4 rounded border-cyan-400 text-cyan-700 focus:ring-cyan-500"
+          />
+          <ShieldCheck className="h-4 w-4" />
+          <span>Supervision</span>
+        </label>
+      )}
+
       <label className={`inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-[#262b33] ${isKioskMode ? 'px-2.5 py-1.5 text-xs' : 'px-2.5 py-2 text-sm'}`}>
         <input
           type="checkbox"
@@ -3917,6 +4110,15 @@ export const Calendar: React.FC<CalendarProps> = ({
                             );
                           }
                         }}
+                        onDragOver={(event) => {
+                          if (draggedSupervisionBooking && resource.type === 'instructor') {
+                            event.preventDefault();
+                            event.dataTransfer.dropEffect = 'move';
+                          }
+                        }}
+                        onDrop={(event) => {
+                          if (resource.type === 'instructor') handleSupervisionDrop(event, resource.id);
+                        }}
                       />
                     );
                   })}
@@ -3967,6 +4169,12 @@ export const Calendar: React.FC<CalendarProps> = ({
                   );
                 })
             )}
+
+            {/* Staff-only, non-blocking supervision allocations. */}
+            {resources.map((resource, resourceIndex) => resource.type === 'instructor'
+              ? getSupervisionBookingsForResource(resource.id, currentDate)
+                .map(booking => renderSupervisionCalendarBlock(booking, resourceIndex, resource.id, resource.id))
+              : null)}
 
             {/* Render bookings as grid items */}
             {resources.map((resource, resourceIndex) =>
@@ -4029,7 +4237,45 @@ export const Calendar: React.FC<CalendarProps> = ({
                         openBookingActionMenu(booking, { x: e.clientX, y: e.clientY });
                       }
                     }}
+                    onDragOver={(event) => {
+                      if (draggedSupervisionBooking && resource.type === 'instructor') {
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = 'move';
+                      }
+                    }}
+                    onDrop={(event) => {
+                      if (resource.type === 'instructor') handleSupervisionDrop(event, resource.id);
+                    }}
                   >
+                    {isStaffCalendarUser
+                      && booking.supervisionRequired
+                      && booking.supervisionStatus === 'pending'
+                      && canAssignManualSupervision(booking) && (
+                      <span
+                        draggable
+                        role="button"
+                        tabIndex={0}
+                        onMouseDown={event => event.stopPropagation()}
+                        onPointerDown={event => event.stopPropagation()}
+                        onDragStart={event => handleSupervisionDragStart(event, booking)}
+                        onDragEnd={() => setDraggedSupervisionBooking(null)}
+                        onClick={event => {
+                          event.stopPropagation();
+                          openBookingActionMenu(booking, { x: event.clientX, y: event.clientY });
+                        }}
+                        onKeyDown={event => {
+                          if (event.key !== 'Enter' && event.key !== ' ') return;
+                          event.preventDefault();
+                          event.stopPropagation();
+                          openBookingActionMenu(booking, { x: window.innerWidth / 2, y: window.innerHeight / 2 });
+                        }}
+                        className="absolute right-1 top-1 z-30 flex h-6 w-6 cursor-ew-resize items-center justify-center rounded-md border border-orange-500 bg-orange-50 text-orange-700 shadow-sm"
+                        title="Drag this supervision requirement to an authorised senior instructor"
+                        aria-label="Allocate a supervisor"
+                      >
+                        <ShieldCheck className="h-3.5 w-3.5" />
+                      </span>
+                    )}
                     {canUseBookingActions(booking) && canDragOrResizeBooking(booking) && (
                       <>
                         <div
@@ -4501,6 +4747,13 @@ export const Calendar: React.FC<CalendarProps> = ({
                               );
                             }
                           }}
+                          onDragOver={(event) => {
+                            if (draggedSupervisionBooking) {
+                              event.preventDefault();
+                              event.dataTransfer.dropEffect = 'move';
+                            }
+                          }}
+                          onDrop={(event) => handleSupervisionDrop(event, selectedInstructorId)}
                         />
                       );
                     }
@@ -4592,6 +4845,18 @@ export const Calendar: React.FC<CalendarProps> = ({
               return overlays;
             })}
 
+            {/* Staff-only supervision layer for the selected instructor. */}
+            {hasInstructor && weekDays.map((day, dayIndex) => {
+              const columnIndex = dayIndex * columnsPerDay + (hasAircraft ? 1 : 0);
+              return getSupervisionBookingsForResource(selectedInstructorId, day)
+                .map(booking => renderSupervisionCalendarBlock(
+                  booking,
+                  columnIndex,
+                  selectedInstructorId,
+                  `${dayIndex}-${selectedInstructorId}`,
+                ));
+            })}
+
             {/* Render bookings as grid items */}
             {weekDays.map((day, dayIndex) => {
               const bookingElements: React.ReactNode[] = [];
@@ -4656,6 +4921,35 @@ export const Calendar: React.FC<CalendarProps> = ({
                         }
                       }}
                     >
+                      {isStaffCalendarUser
+                        && booking.supervisionRequired
+                        && booking.supervisionStatus === 'pending'
+                        && canAssignManualSupervision(booking) && (
+                        <span
+                          draggable
+                          role="button"
+                          tabIndex={0}
+                          onMouseDown={event => event.stopPropagation()}
+                          onPointerDown={event => event.stopPropagation()}
+                          onDragStart={event => handleSupervisionDragStart(event, booking)}
+                          onDragEnd={() => setDraggedSupervisionBooking(null)}
+                        onClick={event => {
+                          event.stopPropagation();
+                          openBookingActionMenu(booking, { x: event.clientX, y: event.clientY });
+                        }}
+                        onKeyDown={event => {
+                          if (event.key !== 'Enter' && event.key !== ' ') return;
+                          event.preventDefault();
+                          event.stopPropagation();
+                          openBookingActionMenu(booking, { x: window.innerWidth / 2, y: window.innerHeight / 2 });
+                        }}
+                        className="absolute right-1 top-1 z-30 flex h-6 w-6 cursor-ew-resize items-center justify-center rounded-md border border-orange-500 bg-orange-50 text-orange-700 shadow-sm"
+                          title="Drag this supervision requirement to an authorised senior instructor"
+                          aria-label="Allocate a supervisor"
+                        >
+                          <ShieldCheck className="h-3.5 w-3.5" />
+                        </span>
+                      )}
                       {canUseBookingActions(booking) && canDragOrResizeBooking(booking) && (
                         <>
                           <div
@@ -4747,7 +5041,43 @@ export const Calendar: React.FC<CalendarProps> = ({
                           openBookingActionMenu(booking, { x: e.clientX, y: e.clientY });
                         }
                       }}
+                      onDragOver={(event) => {
+                        if (draggedSupervisionBooking) {
+                          event.preventDefault();
+                          event.dataTransfer.dropEffect = 'move';
+                        }
+                      }}
+                      onDrop={(event) => handleSupervisionDrop(event, selectedInstructorId)}
                     >
+                      {isStaffCalendarUser
+                        && booking.supervisionRequired
+                        && booking.supervisionStatus === 'pending'
+                        && canAssignManualSupervision(booking) && (
+                        <span
+                          draggable
+                          role="button"
+                          tabIndex={0}
+                          onMouseDown={event => event.stopPropagation()}
+                          onPointerDown={event => event.stopPropagation()}
+                          onDragStart={event => handleSupervisionDragStart(event, booking)}
+                          onDragEnd={() => setDraggedSupervisionBooking(null)}
+                        onClick={event => {
+                          event.stopPropagation();
+                          openBookingActionMenu(booking, { x: event.clientX, y: event.clientY });
+                        }}
+                        onKeyDown={event => {
+                          if (event.key !== 'Enter' && event.key !== ' ') return;
+                          event.preventDefault();
+                          event.stopPropagation();
+                          openBookingActionMenu(booking, { x: window.innerWidth / 2, y: window.innerHeight / 2 });
+                        }}
+                        className="absolute right-1 top-1 z-30 flex h-6 w-6 cursor-ew-resize items-center justify-center rounded-md border border-orange-500 bg-orange-50 text-orange-700 shadow-sm"
+                          title="Drag this supervision requirement to an authorised senior instructor"
+                          aria-label="Allocate a supervisor"
+                        >
+                          <ShieldCheck className="h-3.5 w-3.5" />
+                        </span>
+                      )}
                       {canUseBookingActions(booking) && canDragOrResizeBooking(booking) && (
                         <>
                           <div
@@ -5007,7 +5337,7 @@ export const Calendar: React.FC<CalendarProps> = ({
               <option value="all">All statuses</option>
               <option value="confirmed">Confirmed</option>
               <option value="pending_approval">Pending approval</option>
-              <option value="pending_supervision">Needs supervision</option>
+              {isStaffCalendarUser && <option value="pending_supervision">Needs supervision</option>}
               <option value="waitlist">Waitlist</option>
               <option value="logged">Logged</option>
               <option value="not_logged">Not logged</option>
@@ -5060,7 +5390,9 @@ export const Calendar: React.FC<CalendarProps> = ({
                 ? 'Logged'
                 : isPast
                   ? 'Unlogged'
-                  : booking.status.replaceAll('_', ' ');
+                  : booking.status === 'pending_supervision' && !isStaffCalendarUser
+                    ? 'confirmed'
+                    : booking.status.replaceAll('_', ' ');
 
           return (
             <div
@@ -5102,7 +5434,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                     ? 'bg-red-100 text-red-700'
                     : booking.status === 'pending_approval'
                       ? 'bg-amber-100 text-amber-700'
-                      : booking.status === 'pending_supervision'
+                      : booking.status === 'pending_supervision' && isStaffCalendarUser
                         ? 'bg-orange-100 text-orange-700'
                       : isCancelled
                         ? 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'
@@ -5541,12 +5873,32 @@ export const Calendar: React.FC<CalendarProps> = ({
     >
       <div className="flex flex-nowrap items-center gap-x-4 overflow-x-auto pb-1 text-[11px] font-semibold text-gray-600 dark:text-gray-300 sm:flex-wrap sm:gap-y-2 sm:overflow-visible sm:pb-0 sm:text-xs">
         <span className="font-extrabold uppercase tracking-wide text-gray-500 dark:text-gray-400">Booking colours</span>
-        {CALENDAR_BOOKING_LEGEND.map((item) => (
+        {CALENDAR_BOOKING_LEGEND
+          .filter(item => item.label !== 'Needs supervision')
+          .map((item) => (
           <span key={item.label} className="inline-flex items-center gap-1.5 whitespace-nowrap">
             <span className={`h-3.5 w-3.5 shrink-0 rounded border-2 ${item.classes}`} aria-hidden="true" />
             {item.label}
           </span>
         ))}
+        {isStaffCalendarUser && !isKioskMode && (
+          <>
+            <span className="hidden h-4 w-px bg-gray-300 dark:bg-gray-600 sm:block" aria-hidden="true" />
+            <span className="font-extrabold uppercase tracking-wide text-gray-500 dark:text-gray-400">Supervision</span>
+            {CALENDAR_SUPERVISION_LEGEND.map(item => (
+              <span key={item.label} className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                <span
+                  className={`h-3.5 w-3.5 shrink-0 rounded border-2 ${item.classes}`}
+                  style={item.pattern === 'diagonal' ? {
+                    backgroundImage: 'repeating-linear-gradient(135deg, rgba(249,115,22,0.24) 0 3px, transparent 3px 7px)',
+                  } : undefined}
+                  aria-hidden="true"
+                />
+                {item.label}
+              </span>
+            ))}
+          </>
+        )}
         <span className="hidden h-4 w-px bg-gray-300 dark:bg-gray-600 sm:block" aria-hidden="true" />
         <span className="font-extrabold uppercase tracking-wide text-gray-500 dark:text-gray-400">Calendar shading</span>
         <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
@@ -5655,6 +6007,23 @@ export const Calendar: React.FC<CalendarProps> = ({
               }
             : undefined}
           acceptingSupervision={acceptingBookingId === actionMenuBooking.id}
+          onAcknowledgeSupervision={canAcknowledgeManualSupervision(actionMenuBooking)
+            ? async () => {
+                try {
+                  await acknowledgeManualSupervision(actionMenuBooking);
+                  toast.success('Supervision assignment acknowledged');
+                  bookingMenuOpenTokenRef.current += 1;
+                  setActionMenuBooking(null);
+                  setBookingMenuLoading(null);
+                  await Promise.resolve(onRefresh?.());
+                } catch (error) {
+                  toast.error(error instanceof Error
+                    ? error.message
+                    : 'The supervision acknowledgement could not be saved.');
+                }
+              }
+            : undefined}
+          acknowledgingSupervision={acknowledgingBookingId === actionMenuBooking.id}
           onAssignSupervisor={canAssignManualSupervision(actionMenuBooking)
             ? async (supervisorId) => {
                 try {
@@ -5674,6 +6043,7 @@ export const Calendar: React.FC<CalendarProps> = ({
             : undefined}
           supervisorOptions={getAssignableSupervisors(actionMenuBooking)}
           assigningSupervisor={assigningBookingId === actionMenuBooking.id}
+          currentSupervisorName={getSupervisingInstructorName(actionMenuBooking)}
           onEdit={() => {
             if (isBookingFlightLogged(actionMenuBooking)) {
               toast.error('Delete the flight log before editing this booking');
@@ -5772,6 +6142,32 @@ export const Calendar: React.FC<CalendarProps> = ({
             bookingMenuOpenTokenRef.current += 1;
             setActionMenuBooking(null);
             setBookingMenuLoading(null);
+          }}
+        />
+      )}
+
+      {pendingSupervisionReassignment && (
+        <SupervisionReassignmentModal
+          booking={pendingSupervisionReassignment.booking}
+          currentSupervisorName={getSupervisingInstructorName(pendingSupervisionReassignment.booking)}
+          nextSupervisorName={pendingSupervisionReassignment.supervisorName}
+          assigning={assigningBookingId === pendingSupervisionReassignment.booking.id}
+          onClose={() => setPendingSupervisionReassignment(null)}
+          onConfirm={async () => {
+            try {
+              const result = await assignManualSupervision(
+                pendingSupervisionReassignment.booking,
+                pendingSupervisionReassignment.supervisorId,
+              );
+              toast.success(`${result.supervisingInstructorName} has been allocated and notified`);
+              setPendingSupervisionReassignment(null);
+              setDraggedSupervisionBooking(null);
+              await Promise.resolve(onRefresh?.());
+            } catch (error) {
+              toast.error(error instanceof Error
+                ? error.message
+                : 'The supervisor could not be reallocated.');
+            }
           }}
         />
       )}

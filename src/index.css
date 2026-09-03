@@ -1223,6 +1223,8 @@ html[data-portal-theme='dark'] .bg-amber-50\/50,
 html[data-portal-theme='dark'] .bg-amber-50\/60,
 html[data-portal-theme='dark'] .bg-amber-50\/70,
 html[data-portal-theme='dark'] .bg-amber-50\/80,
+html[data-portal-theme='dark'] .bg-amber-100\/75,
+html[data-portal-theme='dark'] .bg-amber-100\/80,
 html[data-portal-theme='dark'] .bg-amber-100\/90,
 html[data-portal-theme='dark'] .bg-orange-100\/90 {
   background-color: rgb(180 83 9 / 0.22) !important;
@@ -2097,6 +2099,26 @@ html[data-portal-theme='dark'] .pilot-logbook .logbook-skeleton {
     rgb(249 115 22 / 0.72) 3px,
     rgb(249 115 22 / 0.1) 3px,
     rgb(249 115 22 / 0.1) 6px
+  );
+}
+
+.calendar-supervision-needed {
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgb(249 115 22 / 0.2),
+    rgb(249 115 22 / 0.2) 4px,
+    transparent 4px,
+    transparent 9px
+  );
+}
+
+html[data-portal-theme='dark'] .calendar-supervision-needed {
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgb(251 146 60 / 0.22),
+    rgb(251 146 60 / 0.22) 4px,
+    transparent 4px,
+    transparent 9px
   );
 }
 

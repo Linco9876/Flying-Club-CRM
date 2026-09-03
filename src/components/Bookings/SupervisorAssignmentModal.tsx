@@ -8,6 +8,7 @@ interface SupervisorAssignmentModalProps {
   booking: Booking;
   supervisors: ManualSupervisorOption[];
   assigning?: boolean;
+  currentSupervisorName?: string;
   onAssign: (supervisorId: string) => Promise<void> | void;
   onClose: () => void;
 }
@@ -16,6 +17,7 @@ export const SupervisorAssignmentModal: React.FC<SupervisorAssignmentModalProps>
   booking,
   supervisors,
   assigning = false,
+  currentSupervisorName,
   onAssign,
   onClose,
 }) => {
@@ -62,10 +64,12 @@ export const SupervisorAssignmentModal: React.FC<SupervisorAssignmentModalProps>
             </div>
             <div className="min-w-0">
               <h2 id="supervisor-assignment-title" className="text-lg font-black text-slate-950 dark:text-white">
-                Allocate supervisor
+                {currentSupervisorName ? 'Change supervisor' : 'Allocate supervisor'}
               </h2>
               <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">
-                Choose a currently authorised senior instructor for this booking.
+                {currentSupervisorName
+                  ? `Currently allocated to ${currentSupervisorName}. Choose a replacement.`
+                  : 'Choose a currently authorised senior instructor for this booking.'}
               </p>
             </div>
           </div>
@@ -125,7 +129,9 @@ export const SupervisorAssignmentModal: React.FC<SupervisorAssignmentModalProps>
             className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-cyan-700 px-4 py-2 text-sm font-bold text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {assigning ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-            {assigning ? 'Allocating…' : `Allocate${supervisorName ? ` ${supervisorName}` : ''}`}
+            {assigning
+              ? 'Saving…'
+              : `${currentSupervisorName ? 'Change to' : 'Allocate'}${supervisorName ? ` ${supervisorName}` : ''}`}
           </button>
         </div>
       </section>

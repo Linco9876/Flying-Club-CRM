@@ -2,11 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { getSupabaseFunctionErrorMessage } from '../lib/supabaseFunctionErrors';
-import type { Booking } from '../types';
+import type { Booking, UserRole } from '../types';
 import {
   canOfferCfiSupervisorAllocation,
   canOfferManualBookingSupervision,
+  canAcknowledgeBookingSupervision,
+  getSupervisionCoverageWindow,
   getAuthorisedSupervisorsForBooking,
+  type InstructorSupervisionRequirement,
   type ManualSupervisorOption,
   type SeniorInstructorAuthorisation,
 } from '../utils/manualBookingSupervision';
@@ -40,18 +43,34 @@ const AUTHORISATION_FIELDS = [
   'qualification_expires_on',
 ].join(',');
 
+const REQUIREMENT_FIELDS = [
+  'instructor_id',
+  'supervision_required',
+  'activity_types',
+  'locations',
+  'preflight_minutes',
+  'postflight_minutes',
+  'effective_from',
+  'effective_to',
+].join(',');
+
+const STAFF_ROLES: UserRole[] = ['admin', 'cfi', 'senior_instructor', 'instructor'];
+
 export const useManualBookingSupervision = () => {
   const { user } = useAuth();
   const [authorisations, setAuthorisations] = useState<SeniorInstructorAuthorisation[]>([]);
   const [authorisationsLoading, setAuthorisationsLoading] = useState(true);
   const [authorisedPeople, setAuthorisedPeople] = useState<ManualSupervisorOption[]>([]);
+  const [requirements, setRequirements] = useState<InstructorSupervisionRequirement[]>([]);
   const [acceptingBookingId, setAcceptingBookingId] = useState<string | null>(null);
   const [assigningBookingId, setAssigningBookingId] = useState<string | null>(null);
+  const [acknowledgingBookingId, setAcknowledgingBookingId] = useState<string | null>(null);
   const acceptingBookingIdRef = useRef<string | null>(null);
   const assigningBookingIdRef = useRef<string | null>(null);
   const [serverCfiAuthority, setServerCfiAuthority] = useState(false);
   const [cfiAuthorityLoading, setCfiAuthorityLoading] = useState(true);
   const isCfi = hasRole(user, 'cfi') || serverCfiAuthority;
+  const isStaff = STAFF_ROLES.some(role => hasRole(user, role));
 
   useEffect(() => {
     let mounted = true;
@@ -88,16 +107,29 @@ export const useManualBookingSupervision = () => {
     let mounted = true;
 
     const loadAuthorisations = async () => {
-      if (!user?.id) {
+      if (!user?.id || !isStaff) {
         if (mounted) {
           setAuthorisations([]);
           setAuthorisedPeople([]);
+          setRequirements([]);
           setAuthorisationsLoading(false);
         }
         return;
       }
 
       setAuthorisationsLoading(true);
+      const { data: requirementData, error: requirementError } = await supabase
+        .from('instructor_supervision_requirements')
+        .select(REQUIREMENT_FIELDS)
+        .eq('supervision_required', true);
+      if (!mounted) return;
+      if (requirementError) {
+        console.error('Unable to load supervision requirements:', requirementError);
+        setRequirements([]);
+      } else {
+        setRequirements((requirementData || []) as unknown as InstructorSupervisionRequirement[]);
+      }
+
       let authorisationQuery = supabase
         .from('senior_instructor_authorisations')
         .select(AUTHORISATION_FIELDS)
@@ -141,7 +173,7 @@ export const useManualBookingSupervision = () => {
     return () => {
       mounted = false;
     };
-  }, [isCfi, user?.id]);
+  }, [isCfi, isStaff, user?.id]);
 
   const canAcceptBooking = useCallback((booking: Booking) =>
     canOfferManualBookingSupervision(booking, user?.id, authorisations),
@@ -154,6 +186,14 @@ export const useManualBookingSupervision = () => {
   const getAssignableSupervisors = useCallback((booking: Booking) =>
     getAuthorisedSupervisorsForBooking(booking, authorisations, authorisedPeople),
   [authorisations, authorisedPeople]);
+
+  const getCoverageWindow = useCallback((booking: Booking) =>
+    getSupervisionCoverageWindow(booking, requirements),
+  [requirements]);
+
+  const canAcknowledgeBooking = useCallback((booking: Booking) =>
+    canAcknowledgeBookingSupervision(booking, user?.id),
+  [user?.id]);
 
   const acceptBooking = useCallback(async (booking: Booking) => {
     if (!user?.id) throw new Error('Sign in again before accepting supervision.');
@@ -216,15 +256,47 @@ export const useManualBookingSupervision = () => {
     }
   }, [isCfi, user?.id]);
 
+  const acknowledgeBooking = useCallback(async (booking: Booking) => {
+    if (!user?.id || !canAcknowledgeBookingSupervision(booking, user.id)) {
+      throw new Error('Only the allocated supervisor can acknowledge this assignment.');
+    }
+    if (acknowledgingBookingId) {
+      throw new Error('Another supervision acknowledgement is still being processed.');
+    }
+
+    setAcknowledgingBookingId(booking.id);
+    try {
+      const { error } = await supabase.rpc('acknowledge_booking_supervision', {
+        p_booking_id: booking.id,
+      });
+      if (error) {
+        throw new Error(await getSupabaseFunctionErrorMessage(
+          error,
+          'The supervision acknowledgement could not be saved. Refresh the calendar and try again.',
+        ));
+      }
+      requestBookingCalendarRefresh({
+        bookingId: booking.id,
+        reason: 'supervision-acknowledged',
+      });
+    } finally {
+      setAcknowledgingBookingId(null);
+    }
+  }, [acknowledgingBookingId, user?.id]);
+
   return {
     acceptBooking,
     assignBooking,
+    acknowledgeBooking,
     acceptingBookingId,
     assigningBookingId,
+    acknowledgingBookingId,
     authorisationsLoading,
     cfiAuthorityLoading,
     canAcceptBooking,
     canAssignBooking,
+    canAcknowledgeBooking,
+    getCoverageWindow,
     getAssignableSupervisors,
   };
 };

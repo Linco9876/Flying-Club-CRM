@@ -104,6 +104,10 @@ const bookingEvent = ({
   const aircraftName = aircraftLabel(aircraft);
   const isSupervisor = viewerId && booking.supervising_instructor_id === viewerId && booking.instructor_id !== viewerId;
   const isInstructor = viewerId && booking.instructor_id === viewerId;
+  const showSupervision = Boolean(isInstructor || isSupervisor);
+  const visibleStatus = !showSupervision && booking.status === "pending_supervision"
+    ? "confirmed"
+    : booking.status;
   const isTrial = Boolean(booking.trial_flight_voucher_id);
   const ground = booking.booking_kind === "ground";
   let title = isTrial ? `BFC Trial Flight – ${aircraftName}` : ground ? "BFC Ground Session" : `BFC Flight – ${aircraftName}`;
@@ -113,10 +117,10 @@ const bookingEvent = ({
   if (isSupervisor) title = `BFC Supervision – ${instructor?.name || "Instructor"} – ${aircraftName}`;
 
   const details = [
-    `Status: ${labelStatus(booking.status, booking.deleted_at)}`,
+    `Status: ${labelStatus(visibleStatus, booking.deleted_at)}`,
     `Aircraft: ${aircraftName}`,
     instructor?.name ? `Instructor: ${instructor.name}` : "",
-    supervisor?.name ? `Supervising senior instructor: ${supervisor.name}` : "",
+    showSupervision && supervisor?.name ? `Supervising senior instructor: ${supervisor.name}` : "",
     manageUrl ? `Manage in the BFC portal: ${manageUrl}` : "",
     "The BFC portal is the source of truth for this booking.",
   ].filter(Boolean);
@@ -128,7 +132,7 @@ const bookingEvent = ({
     location: booking.location || LOCATION_FALLBACK,
     start: booking.start_time,
     end: booking.end_time,
-    status: calendarStatus(booking.status, booking.deleted_at),
+    status: calendarStatus(visibleStatus, booking.deleted_at),
     lastModified: booking.updated_at || booking.cancelled_at || booking.created_at,
     sequence: sequenceFor(booking.updated_at || booking.cancelled_at || booking.created_at),
     url: manageUrl,

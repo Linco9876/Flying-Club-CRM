@@ -39,10 +39,13 @@ export const BookingsList: React.FC<BookingsListProps> = ({
   const {
     acceptBooking: acceptManualSupervision,
     assignBooking: assignManualSupervision,
+    acknowledgeBooking: acknowledgeManualSupervision,
     acceptingBookingId,
     assigningBookingId,
+    acknowledgingBookingId,
     canAcceptBooking: canAcceptManualSupervision,
     canAssignBooking: canAssignManualSupervision,
+    canAcknowledgeBooking: canAcknowledgeManualSupervision,
     getAssignableSupervisors,
   } = useManualBookingSupervision();
   const [showFlightLogForm, setShowFlightLogForm] = React.useState(false);
@@ -68,8 +71,8 @@ export const BookingsList: React.FC<BookingsListProps> = ({
   const canCancelOwnBookings = user?.role !== 'student' && user?.role !== 'pilot'
     ? true
     : portalSettings.allow_booking_cancellation;
-  const isStaffUser = user?.role === 'admin' || user?.role === 'instructor' || user?.role === 'senior_instructor'
-    || user?.roles?.some(role => role === 'admin' || role === 'instructor' || role === 'senior_instructor');
+  const isStaffUser = user?.role === 'admin' || user?.role === 'cfi' || user?.role === 'instructor' || user?.role === 'senior_instructor'
+    || user?.roles?.some(role => role === 'admin' || role === 'cfi' || role === 'instructor' || role === 'senior_instructor');
   const instructors = getInstructors();
   const pilotOptions = students
     .filter(student => student.role === 'student' || student.role === 'pilot')
@@ -189,7 +192,7 @@ export const BookingsList: React.FC<BookingsListProps> = ({
           instructorName,
           booking.notes,
           booking.paymentType,
-          booking.status,
+          isStaffUser || booking.status !== 'pending_supervision' ? booking.status : 'confirmed',
         ].some(value => value?.toLowerCase().includes(searchTerm));
       })
       .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
@@ -280,6 +283,10 @@ export const BookingsList: React.FC<BookingsListProps> = ({
         return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   };
+
+  const getVisibleStatus = (booking: Booking) => (
+    !isStaffUser && booking.status === 'pending_supervision' ? 'confirmed' : booking.status
+  );
 
   const formatPaymentType = (paymentType?: string) => {
     const normalised = (paymentType || '').trim().toLowerCase().replace(/[_-]/g, ' ');
@@ -389,7 +396,7 @@ export const BookingsList: React.FC<BookingsListProps> = ({
                 <option value="">Any status</option>
                 <option value="confirmed">Confirmed</option>
                 <option value="pending_approval">Pending approval</option>
-                <option value="pending_supervision">Pending supervision</option>
+                {isStaffUser && <option value="pending_supervision">Pending supervision</option>}
                 <option value="completed">Completed</option>
                 <option value="cancelled">Cancelled</option>
                 <option value="no-show">No-show</option>
@@ -504,8 +511,8 @@ export const BookingsList: React.FC<BookingsListProps> = ({
                   <p className="text-sm text-gray-600">{booking.notes}</p>
                 </div>
                 <div className="flex items-center space-x-3">
-                  <span className={`inline-flex px-3 py-1 text-xs font-medium rounded-full border ${getStatusColor(booking.status)}`}>
-                    {booking.status.replaceAll('_', ' ').replace(/^./, value => value.toUpperCase())}
+                  <span className={`inline-flex px-3 py-1 text-xs font-medium rounded-full border ${getStatusColor(getVisibleStatus(booking))}`}>
+                    {getVisibleStatus(booking).replaceAll('_', ' ').replace(/^./, value => value.toUpperCase())}
                   </span>
                   
                   {/* Action Menu - Always Rendered */}
@@ -537,6 +544,19 @@ export const BookingsList: React.FC<BookingsListProps> = ({
                         }
                       : undefined}
                     acceptingSupervision={acceptingBookingId === booking.id}
+                    onAcknowledgeSupervision={canAcknowledgeManualSupervision(booking)
+                      ? async () => {
+                          try {
+                            await acknowledgeManualSupervision(booking);
+                            toast.success('Supervision assignment acknowledged');
+                          } catch (error) {
+                            toast.error(error instanceof Error
+                              ? error.message
+                              : 'The supervision acknowledgement could not be saved.');
+                          }
+                        }
+                      : undefined}
+                    acknowledgingSupervision={acknowledgingBookingId === booking.id}
                     onAssignSupervisor={canAssignManualSupervision(booking)
                       ? async (supervisorId) => {
                           try {
@@ -552,6 +572,7 @@ export const BookingsList: React.FC<BookingsListProps> = ({
                       : undefined}
                     supervisorOptions={getAssignableSupervisors(booking)}
                     assigningSupervisor={assigningBookingId === booking.id}
+                    currentSupervisorName={getPersonName(booking.supervisingInstructorId)}
                     hasTrainingRecord={!!booking.flightLog}
                     canDelete={canCancelOwnBookings}
                     canApprove={user?.role === 'admin' || user?.role === 'instructor'}
@@ -618,10 +639,10 @@ export const BookingsList: React.FC<BookingsListProps> = ({
                   )}
                 </div>
               </div>
-              {booking.supervisingInstructorId && (
+              {isStaffUser && booking.supervisingInstructorId && (
                 <p className="mt-2 text-[11px] font-medium text-gray-500">Supervising senior instructor: {getPersonName(booking.supervisingInstructorId)}</p>
               )}
-              {booking.supervisionRequired && booking.supervisionStatus === 'pending' && (
+              {isStaffUser && booking.supervisionRequired && booking.supervisionStatus === 'pending' && (
                 <p className="mt-2 text-xs font-semibold text-orange-700">Pending — no authorised senior instructor is currently available.</p>
               )}
               {booking.membershipOverrideReason && (

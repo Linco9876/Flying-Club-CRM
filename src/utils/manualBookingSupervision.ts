@@ -16,6 +16,24 @@ export interface ManualSupervisorOption {
   name: string;
 }
 
+export interface InstructorSupervisionRequirement {
+  instructor_id: string;
+  supervision_required: boolean;
+  activity_types: string[] | null;
+  locations: string[] | null;
+  preflight_minutes: number | null;
+  postflight_minutes: number | null;
+  effective_from: string;
+  effective_to: string | null;
+}
+
+export interface SupervisionCoverageWindow {
+  startTime: Date;
+  endTime: Date;
+  preflightMinutes: number;
+  postflightMinutes: number;
+}
+
 const sydneyDate = (value: Date) => {
   const parts = new Intl.DateTimeFormat('en-AU', {
     timeZone: 'Australia/Sydney',
@@ -87,7 +105,7 @@ export const canOfferCfiSupervisorAllocation = (
   isCfi
   && booking.instructorId
   && booking.supervisionRequired
-  && booking.supervisionStatus === 'pending'
+  && booking.supervisionStatus !== 'not_required'
   && !booking.deletedAt
   && !['cancelled', 'completed', 'no-show'].includes(booking.status)
   && !booking.flight_logged
@@ -108,6 +126,7 @@ export const getAuthorisedSupervisorsForBooking = (
   authorisations.forEach(authorisation => {
     if (
       authorisation.instructor_id === booking.instructorId
+      || authorisation.instructor_id === booking.supervisingInstructorId
       || !authorisationCoversBooking(authorisation, booking)
     ) return;
 
@@ -117,4 +136,45 @@ export const getAuthorisedSupervisorsForBooking = (
 
   return Array.from(eligible.values()).sort((left, right) =>
     left.name.localeCompare(right.name));
+};
+
+export const canAcknowledgeBookingSupervision = (
+  booking: Booking,
+  currentUserId: string | undefined,
+) => Boolean(
+  currentUserId
+  && booking.supervisingInstructorId === currentUserId
+  && booking.supervisionRequired
+  && booking.supervisionStatus === 'assigned'
+  && !booking.deletedAt
+  && !['cancelled', 'completed', 'no-show'].includes(booking.status)
+);
+
+export const getSupervisionCoverageWindow = (
+  booking: Booking,
+  requirements: InstructorSupervisionRequirement[],
+): SupervisionCoverageWindow => {
+  const bookingStart = new Date(booking.startTime);
+  const bookingEnd = new Date(booking.endTime);
+  const startDate = sydneyDate(bookingStart);
+  const endDate = sydneyDate(bookingEnd);
+  const activityType = booking.bookingKind === 'ground' ? 'ground' : 'flight';
+  const location = booking.location || 'Bendigo';
+  const requirement = requirements.find(row => (
+    row.instructor_id === booking.instructorId
+    && row.supervision_required
+    && row.effective_from <= startDate
+    && (!row.effective_to || row.effective_to >= endDate)
+    && containsIgnoreCase(row.activity_types, activityType)
+    && containsIgnoreCase(row.locations, location)
+  ));
+  const preflightMinutes = Math.max(0, Number(requirement?.preflight_minutes ?? 30));
+  const postflightMinutes = Math.max(0, Number(requirement?.postflight_minutes ?? 30));
+
+  return {
+    startTime: new Date(bookingStart.getTime() - preflightMinutes * 60_000),
+    endTime: new Date(bookingEnd.getTime() + postflightMinutes * 60_000),
+    preflightMinutes,
+    postflightMinutes,
+  };
 };

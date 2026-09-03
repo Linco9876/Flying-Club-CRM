@@ -36,7 +36,7 @@ const foldLine = (line: string) => {
 
 export const bookingToCalendarEvent = (
   booking: Booking,
-  options: { aircraftLabel?: string; viewerId?: string; portalUrl?: string } = {},
+  options: { aircraftLabel?: string; viewerId?: string; portalUrl?: string; showSupervision?: boolean } = {},
 ): BrowserCalendarEvent => {
   const aircraft = options.aircraftLabel || 'Aircraft to be advised';
   const isGround = booking.bookingKind === 'ground';
@@ -50,15 +50,19 @@ export const bookingToCalendarEvent = (
     : `BFC Instruction – ${booking.hirerName || 'Student'} – ${aircraft}`;
   if (isSupervisor) title = `BFC Supervision – ${booking.instructorName || 'Instructor'} – ${aircraft}`;
 
-  const status = booking.status === 'cancelled' || booking.status === 'no-show' || booking.deletedAt
+  const showSupervision = options.showSupervision ?? Boolean(isInstructor || isSupervisor);
+  const visibleStatus = !showSupervision && booking.status === 'pending_supervision'
+    ? 'confirmed'
+    : booking.status;
+  const status = visibleStatus === 'cancelled' || visibleStatus === 'no-show' || booking.deletedAt
     ? 'CANCELLED'
-    : booking.status.startsWith('pending_') ? 'TENTATIVE' : 'CONFIRMED';
-  const statusLabel = booking.status.replaceAll('_', ' ').replace(/^./, character => character.toUpperCase());
+    : visibleStatus.startsWith('pending_') ? 'TENTATIVE' : 'CONFIRMED';
+  const statusLabel = visibleStatus.replaceAll('_', ' ').replace(/^./, character => character.toUpperCase());
   const description = [
     `Status: ${statusLabel}`,
     `Aircraft: ${aircraft}`,
     booking.instructorName ? `Instructor: ${booking.instructorName}` : '',
-    booking.supervisingInstructorName ? `Supervising senior instructor: ${booking.supervisingInstructorName}` : '',
+    showSupervision && booking.supervisingInstructorName ? `Supervising senior instructor: ${booking.supervisingInstructorName}` : '',
     options.portalUrl ? `View current booking: ${options.portalUrl}` : '',
     'The BFC portal is the source of truth for this booking.',
   ].filter(Boolean).join('\n');

@@ -90,6 +90,17 @@ export const Dashboard: React.FC = () => {
   const { stats, loading } = useDashboardStats(user?.id, user?.role);
   const { settings: portalSettings } = usePortalUxSettings();
   const timePattern = portalSettings.time_format === '12h' ? 'h:mm a' : 'HH:mm';
+  const roles = user?.roles?.length ? user.roles : user?.role ? [user.role] : [];
+  const isStaffUser = roles.some(role => ['admin', 'cfi', 'senior_instructor', 'instructor'].includes(role));
+  const visibleBookingStatus = (status: string) => (
+    !isStaffUser && status === 'pending_supervision' ? 'confirmed' : status
+  );
+  const bookingStatusLabel = (status: string) => {
+    const visibleStatus = visibleBookingStatus(status);
+    if (visibleStatus === 'pending_approval') return 'Pending approval';
+    if (visibleStatus === 'pending_supervision') return 'Pending supervision';
+    return visibleStatus.charAt(0).toUpperCase() + visibleStatus.slice(1);
+  };
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -197,8 +208,8 @@ export const Dashboard: React.FC = () => {
                           {booking.instructorName && ` · ${booking.instructorName}`}
                         </p>
                       </div>
-                      <span className={`text-xs font-medium px-2 py-1 rounded-full ${statusColors[booking.status] || 'bg-gray-100 text-gray-700'}`}>
-                        {booking.status === 'pending_approval' ? 'Pending approval' : booking.status === 'pending_supervision' ? 'Pending supervision' : booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+                      <span className={`text-xs font-medium px-2 py-1 rounded-full ${statusColors[visibleBookingStatus(booking.status)] || 'bg-gray-100 text-gray-700'}`}>
+                        {bookingStatusLabel(booking.status)}
                       </span>
                     </div>
                   ))}
@@ -284,8 +295,8 @@ export const Dashboard: React.FC = () => {
                           {booking.studentName || 'Unknown student'} · {booking.aircraftRegistration}
                         </p>
                       </div>
-                      <span className={`text-xs font-medium px-2 py-1 rounded-full ${statusColors[booking.status] || 'bg-gray-100 text-gray-700'}`}>
-                        {booking.status === 'pending_approval' ? 'Pending approval' : booking.status === 'pending_supervision' ? 'Pending supervision' : booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+                      <span className={`text-xs font-medium px-2 py-1 rounded-full ${statusColors[visibleBookingStatus(booking.status)] || 'bg-gray-100 text-gray-700'}`}>
+                        {bookingStatusLabel(booking.status)}
                       </span>
                     </div>
                   ))}
@@ -372,8 +383,8 @@ export const Dashboard: React.FC = () => {
                           {booking.instructorName && ` · ${booking.instructorName}`}
                         </p>
                       </div>
-                      <span className={`text-xs font-medium px-2 py-1 rounded-full ${statusColors[booking.status] || 'bg-gray-100 text-gray-700'}`}>
-                        {booking.status === 'pending_approval' ? 'Pending approval' : booking.status === 'pending_supervision' ? 'Pending supervision' : booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+                      <span className={`text-xs font-medium px-2 py-1 rounded-full ${statusColors[visibleBookingStatus(booking.status)] || 'bg-gray-100 text-gray-700'}`}>
+                        {bookingStatusLabel(booking.status)}
                       </span>
                     </div>
                   ))}

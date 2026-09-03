@@ -27,6 +27,7 @@ import {
   getExpectedFutureOccurrenceCount,
   type RecurringBookingEditScope,
 } from '../../utils/recurringBookingEdits';
+import { canUseAircraftForBooking, isCompletedHistoricalWindow } from '../../utils/historicalAircraftBooking';
 
 interface BookingFormProps {
   isOpen: boolean;
@@ -323,8 +324,18 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     return Array.from(merged.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [publicInstructors, roleBasedInstructors]);
 
+  const prospectiveBookingEnd = new Date(
+    `${formData.endDate || formData.date}T${formData.endTime || formData.startTime}`
+  );
+  const isHistoricalAircraftEntry = isStaffUser
+    && isCompletedHistoricalWindow(prospectiveBookingEnd);
   const availableAircraft = aircraft.filter((item) => {
-    if (item.status !== 'serviceable' || item.isArchived) return false;
+    if (!canUseAircraftForBooking({
+      status: item.status,
+      isArchived: item.isArchived,
+      isStaff: isStaffUser,
+      bookingEnd: prospectiveBookingEnd,
+    })) return false;
     if (!formData.isGuestBooking || guestEligibleAircraftIds.length === 0) return true;
     return guestEligibleAircraftIds.includes(item.id);
   });
@@ -658,20 +669,26 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       return;
     }
 
+    const startDateTime = new Date(`${formData.date}T${formData.startTime}`);
+    const endDateTime = new Date(`${formData.endDate}T${formData.endTime}`);
     const selectedAircraft = aircraft.find(a => a.id === formData.aircraftId);
     if (!effectiveGroundSession) {
       if (selectedAircraft?.isArchived) {
         toast.error('This aircraft is archived and cannot be booked');
         return;
       }
-      if (selectedAircraft && selectedAircraft.status !== 'serviceable') {
-        toast.error('Selected aircraft is not serviceable');
+      if (selectedAircraft && !canUseAircraftForBooking({
+        status: selectedAircraft.status,
+        isArchived: selectedAircraft.isArchived,
+        isStaff: isStaffUser,
+        bookingEnd: endDateTime,
+      })) {
+        toast.error(isStaffUser
+          ? 'This aircraft is currently unserviceable and can only be selected for a booking that has already ended.'
+          : 'Selected aircraft is not serviceable.');
         return;
       }
     }
-
-    const startDateTime = new Date(`${formData.date}T${formData.startTime}`);
-    const endDateTime = new Date(`${formData.endDate}T${formData.endTime}`);
 
     if (endDateTime <= startDateTime) {
       toast.error('End time must be after start time');
@@ -1342,9 +1359,17 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                 {availableAircraft.map(a => (
                   <option key={a.id} value={a.id}>
                     {a.registration} — {a.make} {a.model}
+                    {a.status !== 'serviceable' ? ' (currently unserviceable — historical record only)' : ''}
                   </option>
                 ))}
               </SearchableSelect>
+              {isHistoricalAircraftEntry
+                && aircraft.find(item => item.id === formData.aircraftId)?.status !== 'serviceable'
+                && formData.aircraftId && (
+                <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium leading-5 text-amber-900">
+                  Historical record only: this aircraft is currently unserviceable. Selecting it here records a flight that already occurred and does not return it to service for current or future bookings.
+                </p>
+              )}
             </div>
 
             {shouldShowInstructorField && (
