@@ -27,7 +27,11 @@ import {
   getExpectedFutureOccurrenceCount,
   type RecurringBookingEditScope,
 } from '../../utils/recurringBookingEdits';
-import { canUseAircraftForBooking, isCompletedHistoricalWindow } from '../../utils/historicalAircraftBooking';
+import {
+  canUseAircraftForBooking,
+  isCompletedHistoricalWindow,
+  shiftBookingDateRange,
+} from '../../utils/historicalAircraftBooking';
 
 interface BookingFormProps {
   isOpen: boolean;
@@ -1283,7 +1287,17 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                 <input
                   type="date"
                   value={formData.date}
-                  onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
+                  onChange={(e) => {
+                    const nextStartDate = e.target.value;
+                    setFormData((prev) => {
+                      const shiftedRange = shiftBookingDateRange(prev.date, prev.endDate, nextStartDate);
+                      return {
+                        ...prev,
+                        date: shiftedRange.startDate,
+                        endDate: shiftedRange.endDate,
+                      };
+                    });
+                  }}
                   className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required={isFieldRequired('startDate', userRole)}
                 />
