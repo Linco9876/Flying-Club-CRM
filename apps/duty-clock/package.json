@@ -29,7 +29,7 @@
   "devDependencies": {
     "@types/react": "^19.2.18",
     "sharp": "^0.35.3",
-    "typescript": "~6.0.3"
+    "typescript": "~7.0.2"
   },
   "overrides": {
     "image-size": "file:vendor/image-size",
