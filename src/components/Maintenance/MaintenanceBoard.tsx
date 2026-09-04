@@ -25,7 +25,7 @@ import { DefectReportForm } from './DefectReportForm';
 import { DefectEditForm } from './DefectEditForm';
 import { MaintenanceCompleteModal } from './MaintenanceCompleteModal';
 import { useAircraft } from '../../hooks/useAircraft';
-import { useMaintenanceMilestones } from '../../hooks/useMaintenanceMilestones';
+import { useMaintenanceMilestones, type MaintenanceMilestone } from '../../hooks/useMaintenanceMilestones';
 import { useMaintenanceSettings } from '../../hooks/useMaintenanceSettings';
 import { usePageLoadState } from '../../context/PageLoadContext';
 import { Defect } from '../../types';
@@ -634,7 +634,11 @@ export const MaintenanceBoard: React.FC = () => {
   const [editingDefect, setEditingDefect] = useState<BoardDefect | null>(null);
   const [statusModalDefect, setStatusModalDefect] = useState<BoardDefect | null>(null);
   const [activePhoto, setActivePhoto] = useState<string | null>(null);
-  const [selectedMaintenance, setSelectedMaintenance] = useState<{ milestone: any; aircraftId: string } | null>(null);
+  const [selectedMaintenance, setSelectedMaintenance] = useState<{
+    milestone: MaintenanceMilestone;
+    aircraftId: string;
+    mode: 'register' | 'correct';
+  } | null>(null);
   const [selectedMilestoneFilters, setSelectedMilestoneFilters] = useState<string[]>([]);
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
   const [defectHistory, setDefectHistory] = useState<any[]>([]);
@@ -1062,13 +1066,22 @@ export const MaintenanceBoard: React.FC = () => {
                     {milestone.nextDueDate && <p>Due by {milestone.nextDueDate.toLocaleDateString()}</p>}
                   </div>
                   {canManageMaintenanceMilestones && (
-                    <button
-                      onClick={() => setSelectedMaintenance({ milestone, aircraftId: milestone.aircraftId })}
-                      className="flex items-center justify-center gap-1 rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-700 sm:rounded sm:py-1.5"
-                    >
-                      <CheckSquare className="h-3 w-3" />
-                      <span>Mark Complete</span>
-                    </button>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <button
+                        onClick={() => setSelectedMaintenance({ milestone, aircraftId: milestone.aircraftId, mode: 'correct' })}
+                        className="flex items-center justify-center gap-1 rounded-xl border border-yellow-300 bg-yellow-50 px-3 py-2 text-xs font-semibold text-yellow-800 transition-colors hover:bg-yellow-100 sm:rounded sm:py-1.5"
+                      >
+                        <EditIcon className="h-3 w-3" />
+                        <span>Correct deadline</span>
+                      </button>
+                      <button
+                        onClick={() => setSelectedMaintenance({ milestone, aircraftId: milestone.aircraftId, mode: 'register' })}
+                        className="flex items-center justify-center gap-1 rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-700 sm:rounded sm:py-1.5"
+                      >
+                        <CheckSquare className="h-3 w-3" />
+                        <span>Mark complete</span>
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -1186,12 +1199,20 @@ export const MaintenanceBoard: React.FC = () => {
                                 </div>
                               </div>
                               {canManageMaintenanceMilestones && (
-                                <button
-                                  onClick={() => setSelectedMaintenance({ milestone, aircraftId: ac.id })}
-                                  className="flex-shrink-0 rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white"
-                                >
-                                  Complete
-                                </button>
+                                <div className="flex flex-shrink-0 flex-col gap-2">
+                                  <button
+                                    onClick={() => setSelectedMaintenance({ milestone, aircraftId: ac.id, mode: 'correct' })}
+                                    className="rounded-xl border border-yellow-300 bg-yellow-50 px-3 py-2 text-xs font-semibold text-yellow-800 transition-colors hover:bg-yellow-100"
+                                  >
+                                    Correct deadline
+                                  </button>
+                                  <button
+                                    onClick={() => setSelectedMaintenance({ milestone, aircraftId: ac.id, mode: 'register' })}
+                                    className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-700"
+                                  >
+                                    Mark complete
+                                  </button>
+                                </div>
                               )}
                             </div>
                           </div>
@@ -1274,13 +1295,22 @@ export const MaintenanceBoard: React.FC = () => {
                               </div>
                             )}
                             {canManageMaintenanceMilestones && (
-                              <button
-                                onClick={() => setSelectedMaintenance({ milestone, aircraftId: ac.id })}
-                                className="flex items-center space-x-1 text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded transition-colors"
-                              >
-                                <CheckSquare className="h-3 w-3" />
-                                <span>Mark Complete</span>
-                              </button>
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  onClick={() => setSelectedMaintenance({ milestone, aircraftId: ac.id, mode: 'correct' })}
+                                  className="flex items-center space-x-1 rounded border border-yellow-300 bg-yellow-50 px-3 py-1 text-xs font-medium text-yellow-800 transition-colors hover:bg-yellow-100"
+                                >
+                                  <EditIcon className="h-3 w-3" />
+                                  <span>Correct deadline</span>
+                                </button>
+                                <button
+                                  onClick={() => setSelectedMaintenance({ milestone, aircraftId: ac.id, mode: 'register' })}
+                                  className="flex items-center space-x-1 rounded bg-blue-600 px-3 py-1 text-xs text-white transition-colors hover:bg-blue-700"
+                                >
+                                  <CheckSquare className="h-3 w-3" />
+                                  <span>Mark complete</span>
+                                </button>
+                              </div>
                             )}
                           </div>
                         </td>
@@ -1452,6 +1482,7 @@ export const MaintenanceBoard: React.FC = () => {
           milestone={selectedMaintenance.milestone}
           aircraftRegistration={aircraft.find(a => a.id === selectedMaintenance.aircraftId)?.registration || 'Unknown'}
           currentTach={aircraft.find(a => a.id === selectedMaintenance.aircraftId)?.totalHours || 0}
+          mode={selectedMaintenance.mode}
           onClose={() => setSelectedMaintenance(null)}
           onComplete={handleMaintenanceComplete}
           onCorrect={handleMaintenanceCorrect}

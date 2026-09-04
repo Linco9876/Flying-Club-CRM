@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { LessonStudyAsset, Student, StudentExamResult, TrainingRecord, TrainingModule, LessonGradingSystem, User as AppUser } from '../../types';
-import { ArrowLeft, User, Phone, Mail, Calendar, Award, Clock, FileText, Plus, CreditCard as Edit, CheckCircle, AlertTriangle, BookOpen, GraduationCap, Shield, Wallet, History, Save, X, Loader2, Plane, Upload, Download, ChevronDown, ChevronUp, Sparkles, RotateCcw, RefreshCw, Search, ChevronRight, Image, KeyRound, Trash2 } from 'lucide-react';
+import { ArrowLeft, User, Phone, Mail, Calendar, Award, Clock, FileText, Plus, CreditCard as Edit, CheckCircle, AlertTriangle, BookOpen, GraduationCap, Shield, Wallet, History, Save, X, Loader2, Upload, Download, ChevronDown, Sparkles, RotateCcw, RefreshCw, Search, ChevronRight, Image, KeyRound, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useStudents } from '../../hooks/useStudents';
 import { useTrainingRecords } from '../../hooks/useTrainingRecords';
@@ -76,6 +76,7 @@ import {
 } from '../../utils/examResultLogging';
 import { birthdayAtAge, findMedicalTypeDefinition } from '../../utils/medicalRequirements';
 import { TrainingRecordReassignmentModal } from './TrainingRecordReassignmentModal';
+import { LessonRecordCard } from './LessonRecordCard';
 
 interface StudentInfoForm {
   name: string;
@@ -401,7 +402,6 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     return 'training';
   });
   const [showMatrixView, setShowMatrixView] = useState(false);
-  const [expandedRecordMatrixIds, setExpandedRecordMatrixIds] = useState<Set<string>>(new Set());
   const [expandedAcknowledgedRecordIds, setExpandedAcknowledgedRecordIds] = useState<Set<string>>(new Set());
   const [selectedTrainingCourseId, setSelectedTrainingCourseId] = useState(() => searchParams.get('courseId') || '');
   const [dateFilter, setDateFilter] = useState({ start: '', end: '' });
@@ -2024,17 +2024,6 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
       totalCount: items.length,
     };
   }, [matrixAssessmentMeetsRequirement, selectedBestMatrixAssessmentByRow, selectedMatrixAssessments, selectedMatrixRequirements, selectedMatrixRowsById]);
-  const toggleRecordMatrix = useCallback((recordId: string) => {
-    setExpandedRecordMatrixIds(current => {
-      const next = new Set(current);
-      if (next.has(recordId)) {
-        next.delete(recordId);
-      } else {
-        next.add(recordId);
-      }
-      return next;
-    });
-  }, []);
   const setAcknowledgedRecordExpanded = useCallback((recordId: string, expanded: boolean) => {
     setExpandedAcknowledgedRecordIds(current => {
       const next = new Set(current);
@@ -4077,416 +4066,83 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                       );
                     }
 
-                    const totalTime = (record.dualTimeMin + record.soloTimeMin) / 60;
                     const matrixSummary = getRecordMatrixAssessmentSummary(record);
-                    const isMatrixExpanded = expandedRecordMatrixIds.has(record.id);
                     const latestRevision = [...(record.auditLog || [])]
                       .reverse()
                       .find(entry => entry.changes?.studentAcknowledgementRequired && Array.isArray(entry.changes?.summary));
                     const revisionSummary = latestRevision?.changes?.summary as string[] | undefined;
+                    const assessedCriteria = Object.entries(record.criteriaGrades || {})
+                      .filter(([, grade]) => Boolean(grade && grade !== '-'))
+                      .map(([criterionId, grade]) => ({
+                        id: criterionId,
+                        label: recordCourse?.assessmentCriteria.find(criterion => criterion.id === criterionId)?.name || 'Assessment item',
+                        grade,
+                      }));
+                    const matrixAssessment = matrixSummary
+                      ? {
+                          metCount: matrixSummary.metCount,
+                          totalCount: matrixSummary.totalCount,
+                          needsAttentionCount: matrixSummary.notMetItems.length,
+                          resolvedLaterCount: matrixSummary.resolvedLaterItems.length,
+                          unassessedCount: matrixSummary.unassessedCount,
+                          items: matrixSummary.items.map(({
+                            assessment,
+                            row,
+                            requirement,
+                            meetsRequirement,
+                            currentBestAssessment,
+                            attemptMeetsRequirement,
+                            resolvedLater,
+                          }) => ({
+                            id: assessment.matrixRowId,
+                            label: `${formatSyllabusMatrixText(row?.code)} ${formatSyllabusMatrixText(row?.description)}`.trim() || 'Matrix assessment item',
+                            comments: assessment.comments,
+                            attempt: matrixStandardShortLabel(assessment.achievedStandard),
+                            required: requirement?.requiredStandard
+                              ? matrixStandardShortLabel(requirement.requiredStandard)
+                              : 'Not set',
+                            current: matrixStandardShortLabel(currentBestAssessment?.achievedStandard),
+                            attemptMeetsRequirement,
+                            currentlyMeetsRequirement: meetsRequirement,
+                            resolvedLater,
+                          })),
+                        }
+                      : undefined;
 
                     return (
-                      <div
+                      <LessonRecordCard
                         key={record.id}
-                        id={`training-record-${record.id}`}
-                        className={`overflow-hidden rounded-lg border bg-white shadow-sm ${isRequestedTrainingRecord ? 'border-blue-400 ring-4 ring-blue-200 ring-offset-2' : 'border-gray-200'}`}
-                      >
-                        <div className="border-b border-gray-100 p-5">
-                          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <h3 className="text-base font-semibold text-gray-900">{lessonTitle}</h3>
-                                {lessonCode && (
-                                  <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{lessonCode}</span>
-                                )}
-                                <span className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${getStatusColor(record.status)}`}>
-                                  {record.status}
-                                </span>
-                                {record.recordOrigin === 'csv_import' && (
-                                  <span className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
-                                    Imported record
-                                  </span>
-                                )}
-                                {record.isFlightReview && (
-                                  <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
-                                    record.flightReviewResult === 'pass'
-                                      ? 'bg-emerald-100 text-emerald-800'
-                                      : record.flightReviewResult === 'fail'
-                                        ? 'bg-red-100 text-red-700'
-                                        : 'bg-orange-100 text-orange-800'
-                                  }`}>
-                                    {record.flightReviewType || 'Flight Review'}: {(record.flightReviewResult || 'not_assessed').replace('_', ' ')}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-600">
-                                <span className="inline-flex items-center gap-1.5">
-                                  <Calendar className="h-4 w-4 text-gray-400" />
-                                  {formatBookingDateTime(record)}
-                                </span>
-                                <span className="inline-flex items-center gap-1.5">
-                                  <Plane className="h-4 w-4 text-gray-400" />
-                                  {record.registration || 'Aircraft not recorded'}
-                                </span>
-                                <span className="inline-flex items-center gap-1.5">
-                                  <User className="h-4 w-4 text-gray-400" />
-                                  {record.sourceInstructorName || instructor?.name || 'Unknown instructor'}
-                                </span>
-                              </div>
-                              {record.recordOrigin === 'csv_import' && (record.sourceOrganisation || record.sourceReference) && (
-                                <p className="mt-2 text-xs text-gray-500">
-                                  Source: {record.sourceOrganisation || 'Historical records'}{record.sourceReference ? ` · Reference ${record.sourceReference}` : ''}
-                                </p>
-                              )}
-                            </div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              {record.studentAck && (
-                                <button
-                                  type="button"
-                                  onClick={() => setAcknowledgedRecordExpanded(record.id, false)}
-                                  className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                                >
-                                  <ChevronUp className="h-4 w-4" />
-                                  Minimise
-                                </button>
-                              )}
-                              {record.status === 'locked' && record.studentAck && (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 border border-emerald-200">
-                                  <CheckCircle className="h-3.5 w-3.5" />
-                                  Acknowledged
-                                </span>
-                              )}
-                              {canEditRecord(record) && (
-                                <button
-                                  type="button"
-                                  onClick={() => openTrainingRecordEditor(record)}
-                                  className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                                >
-                                  <Edit className="h-4 w-4" />
-                                  Edit
-                                </button>
-                              )}
-                              {canReassignRecord(record) && (
-                                <button
-                                  type="button"
-                                  onClick={() => setReassigningTrainingRecord(record)}
-                                  className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 px-3 py-1.5 text-sm font-medium text-blue-700 transition hover:bg-blue-50 dark:border-blue-400/30 dark:text-blue-200 dark:hover:bg-blue-950/25"
-                                >
-                                  <RotateCcw className="h-4 w-4" />
-                                  Reassign flight
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="p-5 space-y-5">
-                          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                            <div className="rounded-lg bg-gray-50 px-3 py-2">
-                              <p className="text-xs font-medium uppercase text-gray-500">Total</p>
-                              <p className="mt-1 text-lg font-semibold text-blue-600">{totalTime.toFixed(1)} hrs</p>
-                            </div>
-                            <div className="rounded-lg bg-gray-50 px-3 py-2">
-                              <p className="text-xs font-medium uppercase text-gray-500">Dual</p>
-                              <p className="mt-1 text-lg font-semibold text-gray-900">{formatDecimalTime(record.dualTimeMin)} hrs</p>
-                            </div>
-                            <div className="rounded-lg bg-gray-50 px-3 py-2">
-                              <p className="text-xs font-medium uppercase text-gray-500">Solo</p>
-                              <p className="mt-1 text-lg font-semibold text-gray-900">{formatDecimalTime(record.soloTimeMin)} hrs</p>
-                            </div>
-                            <div className="rounded-lg bg-gray-50 px-3 py-2">
-                              <p className="text-xs font-medium uppercase text-gray-500">Next Lesson</p>
-                              <p className="mt-1 truncate text-sm font-semibold text-gray-900" title={record.nextLesson || undefined}>
-                                {record.nextLesson || '-'}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
-                            <div className="space-y-4">
-                              <section>
-                                <h4 className="text-xs font-semibold uppercase text-gray-500">Lesson Comments</h4>
-                                <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 p-4">
-                                  <p className="whitespace-pre-wrap text-sm leading-6 text-gray-900">
-                                    {record.comments || 'No lesson comments recorded.'}
-                                  </p>
-                                </div>
-                              </section>
-
-                              {record.briefingComments && (
-                                <section>
-                                  <h4 className="text-xs font-semibold uppercase text-gray-500">Briefing Comments</h4>
-                                  <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50 p-4">
-                                    <p className="whitespace-pre-wrap text-sm leading-6 text-blue-950">{record.briefingComments}</p>
-                                  </div>
-                                </section>
-                              )}
-                            </div>
-
-                            <div className="space-y-4">
-                              <section className="rounded-lg border border-gray-200 p-4">
-                                <h4 className="text-xs font-semibold uppercase text-gray-500">Record Details</h4>
-                                <dl className="mt-3 space-y-2 text-sm">
-                                  <div className="flex justify-between gap-4">
-                                    <dt className="text-gray-500">Course</dt>
-                                    <dd className="text-right font-medium text-gray-900">{recordCourse?.title || 'Not recorded'}</dd>
-                                  </div>
-                                  <div className="flex justify-between gap-4">
-                                    <dt className="text-gray-500">Aircraft type</dt>
-                                    <dd className="text-right font-medium text-gray-900">{record.aircraftType || '-'}</dd>
-                                  </div>
-                                  <div className="flex justify-between gap-4">
-                                    <dt className="text-gray-500">Formal brief</dt>
-                                    <dd className="text-right font-medium text-gray-900">{record.formalBriefing ? 'Yes' : 'No'}</dd>
-                                  </div>
-                                  {record.instructorSignTimestamp && (
-                                    <div className="flex justify-between gap-4">
-                                      <dt className="text-gray-500">Submitted</dt>
-                                      <dd className="text-right font-medium text-gray-900">
-                                        {record.instructorSignTimestamp.toLocaleString('en-AU', {
-                                          day: '2-digit',
-                                          month: '2-digit',
-                                          hour: '2-digit',
-                                          minute: '2-digit',
-                                        })}
-                                      </dd>
-                                    </div>
-                                  )}
-                                  {record.studentAckTimestamp && (
-                                    <div className="flex justify-between gap-4">
-                                      <dt className="text-gray-500">Acknowledged</dt>
-                                      <dd className="text-right font-medium text-gray-900">{record.studentAckName || student.name}</dd>
-                                    </div>
-                                  )}
-                                </dl>
-                              </section>
-                          
-
-                              {record.criteriaGrades && Object.keys(record.criteriaGrades).length > 0 && (() => {
-                                const course = trainingCourses.find(c => c.id === record.courseId);
-                                if (!course) return null;
-                                const assessedCriteria = course.assessmentCriteria
-                                  .map(crit => ({ crit, grade: record.criteriaGrades[crit.id] }))
-                                  .filter(item => item.grade && item.grade !== '-');
-
-                                if (assessedCriteria.length === 0) {
-                                  return (
-                                    <section className="rounded-lg border border-gray-200 p-4">
-                                      <h4 className="text-xs font-semibold uppercase text-gray-500">Assessment</h4>
-                                      <p className="mt-2 text-sm text-gray-500">No criteria assessed in this record.</p>
-                                    </section>
-                                  );
-                                }
-
-                                return (
-                                  <section className="rounded-lg border border-gray-200 p-4">
-                                    <h4 className="text-xs font-semibold uppercase text-gray-500">Assessment</h4>
-                                    <div className="mt-3 flex flex-wrap gap-2">
-                                      {assessedCriteria.map(({ crit, grade }) => {
-                                        const isPilotReady = grade === 'C' || grade === 'Pass';
-                                        const isSoloReady = grade === 'S';
-                                        const isNotCompetent = grade === 'NC' || grade === 'Fail';
-                                        return (
-                                          <span
-                                            key={crit.id}
-                                            className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${
-                                              isPilotReady
-                                                ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                                                : isSoloReady
-                                                  ? 'border-amber-200 bg-amber-50 text-amber-800'
-                                                  : isNotCompetent
-                                                    ? 'border-red-200 bg-red-50 text-red-700'
-                                                    : 'border-gray-200 bg-gray-50 text-gray-700'
-                                            }`}
-                                          >
-                                            {crit.name}: {grade}
-                                          </span>
-                                        );
-                                      })}
-                                    </div>
-                                  </section>
-                                );
-                              })()}
-                              {matrixSummary && (
-                                <section className="rounded-lg border border-indigo-100 bg-indigo-50/60 p-4">
-                                  <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <div>
-                                      <h4 className="text-xs font-semibold uppercase text-indigo-700">Lesson Matrix</h4>
-                                      <p className="mt-1 text-xs text-indigo-900">
-                                        Current status for the CASA matrix items assessed in this lesson. Historical attempt results are shown in the detail view.
-                                      </p>
-                                    </div>
-                                    <div className="flex flex-wrap items-center gap-2 text-xs">
-                                      <span className="rounded-full bg-white px-2 py-0.5 font-semibold text-indigo-800 border border-indigo-100">
-                                        {matrixSummary.metCount}/{matrixSummary.totalCount} currently met
-                                      </span>
-                                      {matrixSummary.notMetItems.length > 0 && (
-                                        <span className="rounded-full bg-red-50 px-2 py-0.5 font-semibold text-red-700 border border-red-200">
-                                          {matrixSummary.notMetItems.length} need attention
-                                        </span>
-                                      )}
-                                      {matrixSummary.resolvedLaterItems.length > 0 && (
-                                        <span className="rounded-full bg-blue-50 px-2 py-0.5 font-semibold text-blue-700 border border-blue-200">
-                                          {matrixSummary.resolvedLaterItems.length} resolved later
-                                        </span>
-                                      )}
-                                      {matrixSummary.unassessedCount > 0 && (
-                                        <span className="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-800 border border-amber-200">
-                                          {matrixSummary.unassessedCount} carried forward
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-
-                                  {matrixSummary.notMetItems.length > 0 ? (
-                                    <div className="mt-3 rounded-lg border border-red-100 bg-white p-3">
-                                      <p className="text-xs font-semibold uppercase text-red-700">Needs attention</p>
-                                      <div className="mt-2 space-y-2">
-                                        {matrixSummary.notMetItems.map(({ assessment, row, requirement }) => (
-                                          <div key={assessment.matrixRowId} className="rounded-md border border-red-100 bg-red-50/70 px-3 py-2">
-                                            <div className="flex items-start justify-between gap-3">
-                                              <div className="min-w-0">
-                                                <p className="text-xs font-semibold text-red-950">
-                                                  {formatSyllabusMatrixText(row?.code)} {formatSyllabusMatrixText(row?.description)}
-                                                </p>
-                                                <p className="mt-1 text-xs leading-5 text-red-800">
-                                                  {assessment.comments || 'This matrix item was not recorded as meeting the required standard for this lesson.'}
-                                                </p>
-                                              </div>
-                                              <div className="flex shrink-0 items-center gap-1 text-xs font-semibold">
-                                                <span className="rounded-full border border-red-200 bg-white px-2 py-0.5 text-red-700">
-                                                  {matrixStandardShortLabel(assessment.achievedStandard)}
-                                                </span>
-                                                <span className="text-red-300">/</span>
-                                                <span className="rounded-full border border-red-200 bg-white px-2 py-0.5 text-red-700">
-                                                  {requirement?.requiredStandard
-                                                    ? `Req ${matrixStandardShortLabel(requirement.requiredStandard)}`
-                                                    : 'Req not set'}
-                                                </span>
-                                              </div>
-                                            </div>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <div className="mt-3 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2">
-                                      <p className="text-xs font-semibold text-emerald-800">
-                                        All matrix items from this attempt now meet the required standard.
-                                        {matrixSummary.resolvedLaterItems.length > 0
-                                          ? ` ${matrixSummary.resolvedLaterItems.length} were resolved in a later repeat or follow-up lesson.`
-                                          : ''}
-                                      </p>
-                                      {matrixSummary.attemptNotMetItems.length > 0 && (
-                                        <p className="mt-1 text-xs text-emerald-700">
-                                          Original attempt result: {matrixSummary.attemptMetCount}/{matrixSummary.totalCount} met.
-                                        </p>
-                                      )}
-                                    </div>
-                                  )}
-
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleRecordMatrix(record.id)}
-                                    className="mt-3 inline-flex w-full items-center justify-between rounded-lg border border-indigo-100 bg-white px-3 py-2 text-sm font-medium text-indigo-800 hover:bg-indigo-50"
-                                  >
-                                    <span>{isMatrixExpanded ? 'Hide full lesson matrix' : 'View full lesson matrix'}</span>
-                                    <ChevronDown className={`h-4 w-4 transition-transform ${isMatrixExpanded ? 'rotate-180' : ''}`} />
-                                  </button>
-
-                                  {isMatrixExpanded && (
-                                    <div className="mt-3 space-y-2">
-                                      {matrixSummary.items.map(({ assessment, row, requirement, meetsRequirement, currentBestAssessment, attemptMeetsRequirement, resolvedLater }) => (
-                                      <div key={assessment.matrixRowId} className="rounded-md border border-white/80 bg-white px-3 py-2">
-                                        <div className="flex items-start justify-between gap-3">
-                                          <div className="min-w-0">
-                                            <p className="text-xs font-semibold text-gray-900">
-                                              {formatSyllabusMatrixText(row?.code)} {formatSyllabusMatrixText(row?.description)}
-                                            </p>
-                                            {resolvedLater && (
-                                              <p className="mt-1 text-xs leading-5 text-blue-700">
-                                                This item was not met on this attempt, but it has since been resolved.
-                                              </p>
-                                            )}
-                                            {assessment.comments && (
-                                              <p className="mt-1 text-xs leading-5 text-gray-600">{assessment.comments}</p>
-                                            )}
-                                          </div>
-                                          <div className="flex shrink-0 items-center gap-1 text-xs font-semibold">
-                                            <span className={`rounded-full border px-2 py-0.5 ${
-                                              attemptMeetsRequirement
-                                                ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                                                : assessment.achievedStandard
-                                                  ? 'border-amber-200 bg-amber-50 text-amber-800'
-                                                  : 'border-gray-200 bg-gray-50 text-gray-500'
-                                            }`}>
-                                              Attempt {matrixStandardShortLabel(assessment.achievedStandard)}
-                                            </span>
-                                            <span className="text-gray-400">/</span>
-                                            <span className="rounded-full border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-indigo-700">
-                                              {requirement?.requiredStandard
-                                                ? `Req ${matrixStandardShortLabel(requirement.requiredStandard)}`
-                                                : 'Req not set'}
-                                            </span>
-                                            <span className="text-gray-400">/</span>
-                                            <span className={`rounded-full border px-2 py-0.5 ${
-                                              meetsRequirement
-                                                ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                                                : 'border-red-200 bg-red-50 text-red-700'
-                                            }`}>
-                                              Current {matrixStandardShortLabel(currentBestAssessment?.achievedStandard)}
-                                            </span>
-                                          </div>
-                                        </div>
-                                      </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                </section>
-                              )}
-                              {record.isFlightReview && record.flightReviewNotes && (
-                                <section className="rounded-lg border border-orange-200 bg-orange-50 p-4">
-                                  <h4 className="text-xs font-semibold uppercase text-orange-700">{FORMAL_REVIEW_FINDINGS_LABEL}</h4>
-                                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-orange-950">{record.flightReviewNotes}</p>
-                                </section>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="border-t border-gray-200 pt-4 space-y-3">
-                          {/* Student sign-off prompt */}
-                          {requiresAcknowledgement && record.status === 'submitted' && !record.studentAck && user?.id === studentId && (
-                            <div className="bg-amber-50 border border-amber-300 rounded-lg p-4">
-                              <p className="text-sm font-semibold text-amber-900 mb-1">Your acknowledgement is required</p>
-                              <p className="text-xs text-amber-700 mb-3">
-                                By acknowledging, you confirm you have read and agree with the lesson comments and assessment above.
-                              </p>
-                              {revisionSummary && revisionSummary.length > 0 && (
-                                <div className="mb-3 rounded-md border border-amber-200 bg-white/70 p-3">
-                                  <p className="text-xs font-semibold text-amber-900 mb-1">What changed</p>
-                                  <ul className="list-disc pl-4 text-xs text-amber-800 space-y-1">
-                                    {revisionSummary.map(change => (
-                                      <li key={change}>{change}</li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              )}
-                              <button
-                                onClick={() => handleAcknowledge(record.id)}
-                                disabled={acknowledgingId === record.id}
-                                className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                              >
-                                {acknowledgingId === record.id ? (
-                                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                ) : (
-                                  <CheckCircle className="h-4 w-4" />
-                                )}
-                                I have read and agree
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
+                        record={record}
+                        dateLabel={getBookingDateTime(record).toLocaleDateString('en-AU', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                        })}
+                        dateTimeLabel={formatBookingDateTime(record)}
+                        lessonName={lessonTitle}
+                        lessonCode={lessonCode}
+                        courseName={recordCourse?.title || 'Not recorded'}
+                        studentName={student.name}
+                        instructorName={record.sourceInstructorName || instructor?.name || 'Unknown instructor'}
+                        assessments={assessedCriteria}
+                        matrixAssessment={matrixAssessment}
+                        highlighted={isRequestedTrainingRecord}
+                        onEdit={canEditRecord(record) ? () => openTrainingRecordEditor(record) : undefined}
+                        onReassign={canReassignRecord(record) ? () => setReassigningTrainingRecord(record) : undefined}
+                        onMinimise={record.studentAck ? () => setAcknowledgedRecordExpanded(record.id, false) : undefined}
+                        acknowledgement={
+                          requiresAcknowledgement &&
+                          record.status === 'submitted' &&
+                          !record.studentAck &&
+                          user?.id === studentId
+                            ? {
+                                loading: acknowledgingId === record.id,
+                                revisionSummary,
+                                onAcknowledge: () => handleAcknowledge(record.id),
+                              }
+                            : undefined
+                        }
+                      />
                     );
                   })}
                 </div>
