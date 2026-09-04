@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, Loader2, Wrench, Edit } from 'lucide-react';
+import { X, Loader2 } from 'lucide-react';
 import { MaintenanceMilestone } from '../../hooks/useMaintenanceMilestones';
 import toast from 'react-hot-toast';
 import {
@@ -12,6 +12,7 @@ interface MaintenanceCompleteModalProps {
   milestone: MaintenanceMilestone;
   aircraftRegistration: string;
   currentTach: number;
+  mode: 'register' | 'correct';
   onClose: () => void;
   onComplete: (data: {
     completedDate: Date;
@@ -26,17 +27,15 @@ interface MaintenanceCompleteModalProps {
   }) => Promise<void>;
 }
 
-type ModalMode = 'choose' | 'register' | 'correct';
-
 export const MaintenanceCompleteModal: React.FC<MaintenanceCompleteModalProps> = ({
   milestone,
   aircraftRegistration,
   currentTach,
+  mode,
   onClose,
   onComplete,
   onCorrect
 }) => {
-  const [mode, setMode] = useState<ModalMode>('choose');
   const [saving, setSaving] = useState(false);
   const today = formatLocalDateInput(new Date());
 
@@ -68,8 +67,8 @@ export const MaintenanceCompleteModal: React.FC<MaintenanceCompleteModalProps> =
   ]);
 
   const [correctData, setCorrectData] = useState({
-    nextDueHours: milestone.nextDueHours || 0,
-    nextDueDate: milestone.nextDueDate ? milestone.nextDueDate.toISOString().split('T')[0] : ''
+    nextDueHours: milestone.nextDueHours ?? 0,
+    nextDueDate: milestone.nextDueDate ? formatLocalDateInput(milestone.nextDueDate) : ''
   });
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
@@ -168,7 +167,9 @@ export const MaintenanceCompleteModal: React.FC<MaintenanceCompleteModalProps> =
       <div role="dialog" aria-modal="true" aria-labelledby="maintenance-complete-title" className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-start p-6 border-b border-gray-200">
           <div>
-            <h2 id="maintenance-complete-title" className="text-xl font-semibold text-gray-900">Update Maintenance Deadline</h2>
+            <h2 id="maintenance-complete-title" className="text-xl font-semibold text-gray-900">
+              {mode === 'register' ? 'Register Maintenance' : 'Correct Deadline'}
+            </h2>
             <p className="text-sm text-gray-600 mt-1">{aircraftRegistration} - {milestone.title}</p>
           </div>
           <button
@@ -180,65 +181,9 @@ export const MaintenanceCompleteModal: React.FC<MaintenanceCompleteModalProps> =
           </button>
         </div>
 
-        {mode === 'choose' && (
-          <div className="p-6 space-y-4">
-            <p className="text-sm text-gray-700 mb-6">
-              Choose how you would like to proceed:
-            </p>
-
-            <button
-              onClick={() => setMode('register')}
-              className="w-full p-6 border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
-            >
-              <div className="flex items-start space-x-4">
-                <div className="p-3 bg-blue-100 rounded-lg">
-                  <Wrench className="h-6 w-6 text-blue-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                    Register Maintenance Completion
-                  </h3>
-                  <p className="text-sm text-gray-600">
-                    Record that the maintenance was performed, log it on the aircraft logbook,
-                    and set the reminder to the next deadline based on the milestone settings.
-                  </p>
-                </div>
-              </div>
-            </button>
-
-            <button
-              onClick={() => setMode('correct')}
-              className="w-full p-6 border-2 border-gray-200 rounded-lg hover:border-yellow-500 hover:bg-yellow-50 transition-colors text-left"
-            >
-              <div className="flex items-start space-x-4">
-                <div className="p-3 bg-yellow-100 rounded-lg">
-                  <Edit className="h-6 w-6 text-yellow-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                    Correct the Deadline
-                  </h3>
-                  <p className="text-sm text-gray-600">
-                    Update the deadline because the current value is inaccurate.
-                    This will not create a maintenance log entry.
-                  </p>
-                </div>
-              </div>
-            </button>
-          </div>
-        )}
-
         {mode === 'register' && (
           <form onSubmit={handleRegisterSubmit}>
             <div className="p-6 space-y-4">
-              <button
-                type="button"
-                onClick={() => setMode('choose')}
-                className="text-sm text-blue-600 hover:text-blue-700 mb-4"
-              >
-                ← Back to options
-              </button>
-
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -360,14 +305,6 @@ export const MaintenanceCompleteModal: React.FC<MaintenanceCompleteModalProps> =
         {mode === 'correct' && (
           <form onSubmit={handleCorrectSubmit}>
             <div className="p-6 space-y-4">
-              <button
-                type="button"
-                onClick={() => setMode('choose')}
-                className="text-sm text-blue-600 hover:text-blue-700 mb-4"
-              >
-                ← Back to options
-              </button>
-
               <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg mb-4">
                 <p className="text-sm text-yellow-800">
                   You are correcting the deadline values. This will NOT create a maintenance log entry

@@ -5,6 +5,7 @@ import type { TrainingRecord } from '../types';
 import {
   buildCompactLessonRecordSummary,
   formatLessonRecordHours,
+  lessonRecordAuditSummary,
   shouldUseCompactLessonRecord,
 } from './lessonRecordPresentation.ts';
 
@@ -91,6 +92,38 @@ test('hours and missing fields have safe, consistent fallbacks', () => {
       soloHours: '0.3 h',
     },
   );
+});
+
+test('lesson record history prefers human-written change summaries', () => {
+  assert.deepEqual(lessonRecordAuditSummary({
+    summary: ['Next lesson changed to Circuit consolidation', '', 42],
+    studentAcknowledgementRequired: true,
+  }), ['Next lesson changed to Circuit consolidation']);
+
+  assert.deepEqual(lessonRecordAuditSummary({
+    formalBriefing: { from: false, to: true },
+    next_lesson: { from: '', to: 'Circuits' },
+    studentAcknowledgementRequired: true,
+  }), ['Formal Briefing', 'Next Lesson']);
+});
+
+test('the scan-first card keeps requested fields visible and secondary data in more info', () => {
+  const source = readFileSync(
+    new URL('../components/Students/LessonRecordCard.tsx', import.meta.url),
+    'utf8',
+  );
+
+  for (const label of ['Date', 'Aircraft type', 'Aircraft reg', 'Dual', 'Solo', 'Total']) {
+    assert.match(source, new RegExp(`label="${label}"`));
+  }
+  assert.match(source, />Lesson<\/dt>/);
+  for (const label of ['Instructor', 'Student', 'Formal brief', 'Next lesson']) {
+    assert.match(source, new RegExp(`label="${label}"`));
+  }
+  assert.match(source, />Assessment</);
+  assert.match(source, /More info/);
+  assert.match(source, /Edit record/);
+  assert.match(source, /Change history/);
 });
 
 test('both student lesson-record views use the compact acknowledged summary', () => {
