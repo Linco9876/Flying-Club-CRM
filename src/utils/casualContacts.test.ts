@@ -4,10 +4,17 @@ import {
   bookingPurposeNeedsFormalProfile,
   bookingPurposeNeedsTrainingRecord,
   filterPastVisitors,
+  isValidGuestPromotionEmail,
   mapPastVisitorRow,
   normaliseGuestBookingPurpose,
   summarisePastVisitors,
 } from './casualContacts.ts';
+
+test('guest email is optional for booking but promotion requires a valid address', () => {
+  assert.equal(isValidGuestPromotionEmail(''), false);
+  assert.equal(isValidGuestPromotionEmail('not-an-email'), false);
+  assert.equal(isValidGuestPromotionEmail(' Visitor@Example.com '), true);
+});
 
 test('guest purpose is explicit and vouchers always remain trial flights', () => {
   assert.equal(normaliseGuestBookingPurpose(undefined), 'casual_flight');

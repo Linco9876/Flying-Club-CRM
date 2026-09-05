@@ -2,6 +2,7 @@ import React from 'react';
 import { ArrowRight, CheckCircle2, Loader2, Mail, ShieldCheck, UserPlus, Users, X } from 'lucide-react';
 import type { User } from '../../types';
 import { useGuestBookingConversion } from '../../hooks/useGuestBookingConversion';
+import { isValidGuestPromotionEmail } from '../../utils/casualContacts';
 import { SearchableSelect } from '../common/SearchableSelect';
 
 export interface GuestPromotionSource {
@@ -34,9 +35,10 @@ export const GuestPromotionModal: React.FC<GuestPromotionModalProps> = ({
     user.portalAccessScope !== 'guest_placeholder'
     && (reinstateArchivedProfiles || user.isActive !== false)
   ), [reinstateArchivedProfiles, users]);
-  const exactEmailMatch = React.useMemo(() => availableUsers.find(user =>
-    user.email.trim().toLowerCase() === source.email.trim().toLowerCase()
-  ), [availableUsers, source.email]);
+  const sourceEmail = source.email.trim().toLowerCase();
+  const exactEmailMatch = React.useMemo(() => sourceEmail
+    ? availableUsers.find(user => user.email.trim().toLowerCase() === sourceEmail)
+    : undefined, [availableUsers, sourceEmail]);
   const [mode, setMode] = React.useState<PromotionMode>(exactEmailMatch ? 'existing' : 'create');
   const [targetUserId, setTargetUserId] = React.useState(exactEmailMatch?.id || '');
   const [profileSearch, setProfileSearch] = React.useState(exactEmailMatch?.name || '');
@@ -44,6 +46,7 @@ export const GuestPromotionModal: React.FC<GuestPromotionModalProps> = ({
   const [role, setRole] = React.useState<'student' | 'pilot'>('student');
   const [linkAll, setLinkAll] = React.useState(true);
   const [sendInvitation, setSendInvitation] = React.useState(false);
+  const [email, setEmail] = React.useState(sourceEmail);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [error, setError] = React.useState('');
 
@@ -71,6 +74,11 @@ export const GuestPromotionModal: React.FC<GuestPromotionModalProps> = ({
   }, [isSubmitting, onClose]);
 
   const submit = async () => {
+    const normalisedEmail = email.trim().toLowerCase();
+    if (!isValidGuestPromotionEmail(normalisedEmail)) {
+      setError('Enter a valid email address before upgrading this visitor.');
+      return;
+    }
     if (mode === 'existing' && !targetUserId) {
       setError('Select the portal profile that should own this history.');
       return;
@@ -81,6 +89,7 @@ export const GuestPromotionModal: React.FC<GuestPromotionModalProps> = ({
       const result = await convertGuestBookingToMember({
         bookingId: source.bookingId,
         casualContactId: source.casualContactId,
+        email: normalisedEmail,
         targetUserId: mode === 'existing' ? targetUserId : undefined,
         role,
         linkAll,
@@ -103,7 +112,7 @@ export const GuestPromotionModal: React.FC<GuestPromotionModalProps> = ({
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-blue-600">Casual contact</p>
             <h2 id="guest-promotion-title" className="mt-1 text-lg font-bold text-slate-950">Create or attach an official profile</h2>
-            <p className="mt-1 text-sm text-slate-600">{source.name} · {source.email}</p>
+            <p className="mt-1 text-sm text-slate-600">{source.name} · {sourceEmail || 'No email recorded'}</p>
           </div>
           <button type="button" onClick={onClose} disabled={isSubmitting} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-slate-500 hover:bg-slate-100" aria-label="Close">
             <X className="h-5 w-5" />
@@ -116,6 +125,27 @@ export const GuestPromotionModal: React.FC<GuestPromotionModalProps> = ({
               <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
               <p>The original booking contact details stay preserved. Flights, lesson records, formal reviews, documents, charges, vouchers and notifications move to the official profile.</p>
             </div>
+          </div>
+
+          <div className="mt-4">
+            <label htmlFor="guest-promotion-email" className="mb-1 block text-sm font-semibold text-slate-800">
+              Email address <span className="text-rose-600">*</span>
+            </label>
+            <input
+              id="guest-promotion-email"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(event) => {
+                setEmail(event.target.value);
+                setError('');
+              }}
+              className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              placeholder="name@example.com"
+            />
+            <p className="mt-1 text-xs text-slate-600">Required for the portal login identity. Adding it here does not alter the original booking snapshot.</p>
           </div>
 
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -164,6 +194,7 @@ export const GuestPromotionModal: React.FC<GuestPromotionModalProps> = ({
                       onClick={() => {
                         setTargetUserId(candidate.id);
                         setProfileSearch(candidate.name);
+                        if (!email.trim()) setEmail(candidate.email);
                         setShowMatches(false);
                       }}
                       className="block w-full rounded-lg px-3 py-2 text-left hover:bg-blue-50"
@@ -174,7 +205,7 @@ export const GuestPromotionModal: React.FC<GuestPromotionModalProps> = ({
                   )) : <p className="px-3 py-2 text-sm text-slate-500">No profile starts with that search.</p>}
                 </div>
               )}
-              {selectedUser && selectedUser.email.toLowerCase() !== source.email.toLowerCase() && (
+              {selectedUser && selectedUser.email.toLowerCase() !== email.trim().toLowerCase() && (
                 <p className="mt-2 text-xs font-medium text-amber-700">The selected profile uses a different email. Confirm the identity before transferring records.</p>
               )}
               {selectedUser?.isActive === false && reinstateArchivedProfiles && (
@@ -213,7 +244,7 @@ export const GuestPromotionModal: React.FC<GuestPromotionModalProps> = ({
 
         <footer className="flex flex-col-reverse gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
           <button type="button" onClick={onClose} disabled={isSubmitting} className="h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50">Cancel</button>
-          <button type="button" onClick={() => void submit()} disabled={isSubmitting || (mode === 'existing' && !targetUserId)} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
+          <button type="button" onClick={() => void submit()} disabled={isSubmitting || !email.trim() || (mode === 'existing' && !targetUserId)} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
             {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
             {isSubmitting ? 'Transferring history...' : 'Confirm and transfer'}
             {!isSubmitting && <ArrowRight className="h-4 w-4" />}

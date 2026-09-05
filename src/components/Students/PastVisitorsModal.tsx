@@ -134,6 +134,7 @@ export const PastVisitorsModal: React.FC<PastVisitorsModalProps> = ({
     try {
       await convertGuestBookingToMember({
         casualContactId: visitor.id,
+        email: visitor.email || visitor.portalProfileEmail || '',
         targetUserId: visitor.promotedToUserId,
         reactivateProfile: true,
       });
@@ -260,7 +261,7 @@ export const PastVisitorsModal: React.FC<PastVisitorsModalProps> = ({
                           </span>
                         </div>
                         <div className="mt-2 space-y-1 text-xs text-slate-600">
-                          <p className="flex min-w-0 items-center gap-1.5"><Mail className="h-3.5 w-3.5 shrink-0 text-slate-400" /><span className="truncate">{visitor.email}</span></p>
+                          <p className="flex min-w-0 items-center gap-1.5"><Mail className="h-3.5 w-3.5 shrink-0 text-slate-400" /><span className="truncate">{visitor.email || 'No email recorded'}</span></p>
                           {visitor.phone && <p className="flex items-center gap-1.5"><Phone className="h-3.5 w-3.5 shrink-0 text-slate-400" />{visitor.phone}</p>}
                         </div>
                       </div>

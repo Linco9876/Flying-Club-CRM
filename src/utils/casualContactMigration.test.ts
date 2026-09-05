@@ -34,6 +34,22 @@ const conversionFunction = readFileSync(
   new URL('../../supabase/functions/convert-guest-booking-to-member/index.ts', import.meta.url),
   'utf8',
 );
+const optionalGuestEmailMigration = readFileSync(
+  new URL('../../supabase/migrations/20260905113000_allow_guest_bookings_without_email.sql', import.meta.url),
+  'utf8',
+).toLowerCase();
+const bookingsHook = readFileSync(
+  new URL('../hooks/useBookings.ts', import.meta.url),
+  'utf8',
+);
+const promotionModal = readFileSync(
+  new URL('../components/Bookings/GuestPromotionModal.tsx', import.meta.url),
+  'utf8',
+);
+const xeroSyncFunction = readFileSync(
+  new URL('../../supabase/functions/xero-sync/index.ts', import.meta.url),
+  'utf8',
+);
 
 test('casual contact migration keeps a reusable identity and booking snapshot link', () => {
   assert.match(migration, /create table if not exists public\.casual_contacts/);
@@ -115,4 +131,31 @@ test('visitor promotion can resolve a contact directly and restore an archived p
   assert.match(conversionFunction, /portal_access_scope: needsFullAccess \? "full"/);
   assert.match(conversionFunction, /action: profileReactivated \? "reactivated_profile"/);
   assert.match(conversionFunction, /\.eq\("casual_contact_id", contact\.id\)/);
+});
+
+test('guest bookings allow a missing email while retaining a reusable visitor identity', () => {
+  assert.match(optionalGuestEmailMigration, /alter column email drop not null/);
+  assert.match(optionalGuestEmailMigration, /if new\.guest_name is null then/);
+  assert.match(optionalGuestEmailMigration, /elsif new\.guest_phone is not null then/);
+  assert.match(optionalGuestEmailMigration, /regexp_replace\(coalesce\(contact\.phone/);
+  assert.match(optionalGuestEmailMigration, /email = coalesce\(new\.guest_email, email\)/);
+  assert.doesNotMatch(bookingForm, /Guest email is required/);
+  assert.match(bookingForm, /Guest email \(optional\)/);
+  assert.doesNotMatch(bookingsHook, /if \(!resolvedGuestEmail\) throw new Error\('Guest email is required'\)/);
+});
+
+test('promotion requires and records a valid email without changing booking snapshots', () => {
+  assert.match(promotionModal, /Email address/);
+  assert.match(promotionModal, /isValidGuestPromotionEmail/);
+  assert.match(conversionFunction, /const requestedEmail = cleanText\(body\.email\)\.toLowerCase\(\)/);
+  assert.match(conversionFunction, /Enter a valid email address before upgrading this visitor/);
+  assert.match(conversionFunction, /\.from\("casual_contacts"\)[\s\S]*\.update\(\{ email: guest\.email/);
+  assert.match(conversionFunction, /point-in-time guest_email snapshot untouched/);
+});
+
+test('Xero can create a stable visitor contact without an email', () => {
+  assert.doesNotMatch(xeroSyncFunction, /Guest booking is missing a guest email/);
+  assert.match(xeroSyncFunction, /if \(guestEmail\) payloadContact\.EmailAddress = guestEmail/);
+  assert.match(xeroSyncFunction, /BFC Visitor/);
+  assert.match(xeroSyncFunction, /xero_contact_email: clean\(contact\?\.EmailAddress\) \|\| guestEmail \|\| null/);
 });

@@ -1898,20 +1898,36 @@ const syncGuestContact = async (adminClient: SupabaseAdminClient, ctx: any, flig
   const guestEmail = clean(booking?.guest_email);
   const guestPhone = clean(booking?.guest_phone);
   if (!guestName) throw new Error("Guest booking is missing a guest name.");
-  if (!guestEmail) throw new Error("Guest booking is missing a guest email.");
 
-  const matches = await searchXeroContactsByEmail(ctx, guestEmail);
+  let linkedCasualContact: any = null;
+  if (booking?.casual_contact_id) {
+    const { data, error } = await adminClient
+      .from("casual_contacts")
+      .select("xero_contact_id,xero_contact_name,xero_contact_email")
+      .eq("id", booking.casual_contact_id)
+      .maybeSingle();
+    if (error) throw error;
+    linkedCasualContact = data;
+  }
+
+  const matches = guestEmail && !clean(linkedCasualContact?.xero_contact_id)
+    ? await searchXeroContactsByEmail(ctx, guestEmail)
+    : [];
   if (matches.length > 1) {
     throw makeXeroNeedsReviewError(
       "More than one Xero contact uses this guest email. Please link or merge the guest contact in Xero first.",
     );
   }
 
-  let contactId = matches.length === 1 ? clean(matches[0]?.ContactID) : "";
+  let contactId = clean(linkedCasualContact?.xero_contact_id)
+    || (matches.length === 1 ? clean(matches[0]?.ContactID) : "");
+  const contactName = guestEmail || contactId
+    ? guestName
+    : `${guestName} - BFC Visitor ${clean(booking?.casual_contact_id || booking?.id).slice(0, 8).toUpperCase()}`;
   const payloadContact: Record<string, unknown> = {
-    Name: guestName,
-    EmailAddress: guestEmail,
+    Name: contactName,
   };
+  if (guestEmail) payloadContact.EmailAddress = guestEmail;
   if (guestPhone) {
     payloadContact.Phones = [{ PhoneType: "MOBILE", PhoneNumber: guestPhone }];
   }
@@ -1936,8 +1952,8 @@ const syncGuestContact = async (adminClient: SupabaseAdminClient, ctx: any, flig
       .from("casual_contacts")
       .update({
         xero_contact_id: contactId,
-        xero_contact_name: clean(contact?.Name) || guestName,
-        xero_contact_email: clean(contact?.EmailAddress) || guestEmail,
+        xero_contact_name: clean(contact?.Name) || contactName,
+        xero_contact_email: clean(contact?.EmailAddress) || guestEmail || null,
         xero_contact_linked_at: linkedAt,
         updated_at: linkedAt,
       })
@@ -1950,7 +1966,7 @@ const syncGuestContact = async (adminClient: SupabaseAdminClient, ctx: any, flig
   return {
     linked: true,
     contactId,
-    contactName: clean(contact?.Name) || guestName,
+    contactName: clean(contact?.Name) || contactName,
     contactEmail: clean(contact?.EmailAddress) || guestEmail,
   };
 };

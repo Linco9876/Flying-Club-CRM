@@ -35,7 +35,7 @@ import { formatRichTextContent, richTextToPlainText } from '../../utils/richText
 import { InstructorComplianceProfilePanel } from '../Profile/InstructorComplianceProfilePanel';
 import { FlightReviewsTab } from './FlightReviewsTab';
 import { AcknowledgedLessonSummary } from './AcknowledgedLessonSummary';
-import { shouldUseCompactLessonRecord } from '../../utils/lessonRecordPresentation';
+import { orderLessonRecordAssessments, shouldUseCompactLessonRecord } from '../../utils/lessonRecordPresentation';
 import { formatBillingDescription } from '../../utils/billingDescription';
 import { StudentRecordImportModal } from './StudentRecordImportModal';
 import { StudentProfileSkeleton } from './StudentProfileSkeleton';
@@ -4071,13 +4071,10 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                       .reverse()
                       .find(entry => entry.changes?.studentAcknowledgementRequired && Array.isArray(entry.changes?.summary));
                     const revisionSummary = latestRevision?.changes?.summary as string[] | undefined;
-                    const assessedCriteria = Object.entries(record.criteriaGrades || {})
-                      .filter(([, grade]) => Boolean(grade && grade !== '-'))
-                      .map(([criterionId, grade]) => ({
-                        id: criterionId,
-                        label: recordCourse?.assessmentCriteria.find(criterion => criterion.id === criterionId)?.name || 'Assessment item',
-                        grade,
-                      }));
+                    const assessedCriteria = orderLessonRecordAssessments(
+                      record.criteriaGrades,
+                      recordCourse?.assessmentCriteria,
+                    );
                     const matrixAssessment = matrixSummary
                       ? {
                           metCount: matrixSummary.metCount,

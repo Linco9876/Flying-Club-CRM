@@ -16,6 +16,7 @@ const json = (body: Record<string, unknown>, status = 200) =>
 
 const cleanText = (value: unknown) => String(value || "").trim();
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type ProvisioningResult = {
   userId?: string;
@@ -99,6 +100,7 @@ Deno.serve(async (req: Request) => {
     const body = await req.json();
     const bookingId = cleanText(body.bookingId);
     const casualContactId = cleanText(body.casualContactId);
+    const requestedEmail = cleanText(body.email).toLowerCase();
     const requestedTargetUserId = cleanText(body.targetUserId);
     const role = body.role === "pilot" ? "pilot" : "student";
     const linkAll = body.linkAll !== false;
@@ -115,6 +117,9 @@ Deno.serve(async (req: Request) => {
     }
     if (requestedTargetUserId && !uuidPattern.test(requestedTargetUserId)) {
       return json({ error: "A valid target profile is required" }, 400);
+    }
+    if (!requestedEmail || !emailPattern.test(requestedEmail)) {
+      return json({ error: "Enter a valid email address before upgrading this visitor" }, 400);
     }
     const access = provisioningAccessFor(callerRoles, [role]);
     if (!access.allowed) return json({ error: access.error || "Only staff can promote casual contacts" }, 403);
@@ -154,7 +159,7 @@ Deno.serve(async (req: Request) => {
     let contact: {
       id: string;
       name: string;
-      email: string;
+      email: string | null;
       phone: string | null;
       status: string;
       promoted_to_user_id: string | null;
@@ -239,10 +244,19 @@ Deno.serve(async (req: Request) => {
 
     const guest = {
       name: cleanText(contact?.name || booking.guest_name),
-      email: cleanText(contact?.email || booking.guest_email).toLowerCase(),
+      email: requestedEmail,
       phone: cleanText(contact?.phone || booking.guest_phone),
     };
-    if (!guest.name || !guest.email) return json({ error: "Guest name and email are required" }, 409);
+    if (!guest.name) return json({ error: "Guest name is required" }, 409);
+
+    // Store the newly supplied current contact email for future visitor lookup,
+    // while leaving every booking's point-in-time guest_email snapshot untouched.
+    const promotionContactId = contact?.id || booking.casual_contact_id;
+    const { error: contactEmailError } = await adminClient
+      .from("casual_contacts")
+      .update({ email: guest.email, updated_at: new Date().toISOString() })
+      .eq("id", promotionContactId);
+    if (contactEmailError) throw contactEmailError;
 
     let targetUserId = requestedTargetUserId;
     let provisioning: ProvisioningResult | null = null;

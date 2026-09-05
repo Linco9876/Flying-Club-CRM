@@ -19,6 +19,9 @@ export interface PastVisitor {
 
 export type PastVisitorFilter = 'all' | 'needs_profile' | 'portal_profile';
 
+export const isValidGuestPromotionEmail = (value: string) =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim().toLowerCase());
+
 export const GUEST_BOOKING_PURPOSES: readonly BookingPurpose[] = [
   'trial_flight',
   'casual_flight',

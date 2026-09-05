@@ -9,6 +9,56 @@ export interface CompactLessonRecordSummary {
   soloHours: string;
 }
 
+export interface OrderedLessonAssessment {
+  id: string;
+  label: string;
+  grade: string;
+}
+
+type AssessmentCriterionDefinition = {
+  id?: string;
+  name?: string;
+};
+
+const hasRecordedGrade = (grade: unknown): grade is string => (
+  typeof grade === 'string' && grade.length > 0 && grade !== '-'
+);
+
+/**
+ * JSON object key order reflects how a record happened to be saved. Lesson cards
+ * should instead use the deliberate assessment order configured on the course.
+ * Unmatched historical criteria are retained at the end to avoid hiding data.
+ */
+export const orderLessonRecordAssessments = (
+  criteriaGrades: Record<string, string> | null | undefined,
+  courseCriteria: AssessmentCriterionDefinition[] | null | undefined,
+): OrderedLessonAssessment[] => {
+  const remainingGrades = new Map(
+    Object.entries(criteriaGrades ?? {}).filter(([, grade]) => hasRecordedGrade(grade)),
+  );
+  const ordered: OrderedLessonAssessment[] = [];
+
+  for (const criterion of courseCriteria ?? []) {
+    const criterionId = criterion.id?.trim();
+    if (!criterionId) continue;
+    const grade = remainingGrades.get(criterionId);
+    if (!hasRecordedGrade(grade)) continue;
+
+    ordered.push({
+      id: criterionId,
+      label: criterion.name?.trim() || 'Assessment item',
+      grade,
+    });
+    remainingGrades.delete(criterionId);
+  }
+
+  remainingGrades.forEach((grade, criterionId) => {
+    ordered.push({ id: criterionId, label: 'Assessment item', grade });
+  });
+
+  return ordered;
+};
+
 export const formatLessonRecordHours = (minutes: number) =>
   `${(Math.max(0, Number(minutes) || 0) / 60).toFixed(1)} h`;
 

@@ -6,6 +6,7 @@ import {
   buildCompactLessonRecordSummary,
   formatLessonRecordHours,
   lessonRecordAuditSummary,
+  orderLessonRecordAssessments,
   shouldUseCompactLessonRecord,
 } from './lessonRecordPresentation.ts';
 
@@ -105,6 +106,30 @@ test('lesson record history prefers human-written change summaries', () => {
     next_lesson: { from: '', to: 'Circuits' },
     studentAcknowledgementRequired: true,
   }), ['Formal Briefing', 'Next Lesson']);
+});
+
+test('lesson card assessments follow course order instead of JSON key order', () => {
+  const assessments = orderLessonRecordAssessments(
+    {
+      airmanship: 'C',
+      knowledge: 'S',
+      legacy_item: 'Pass',
+      handling: 'NC',
+      omitted: '-',
+    },
+    [
+      { id: 'handling', name: 'Aircraft handling' },
+      { id: 'knowledge', name: 'Knowledge' },
+      { id: 'airmanship', name: 'Airmanship' },
+    ],
+  );
+
+  assert.deepEqual(assessments, [
+    { id: 'handling', label: 'Aircraft handling', grade: 'NC' },
+    { id: 'knowledge', label: 'Knowledge', grade: 'S' },
+    { id: 'airmanship', label: 'Airmanship', grade: 'C' },
+    { id: 'legacy_item', label: 'Assessment item', grade: 'Pass' },
+  ]);
 });
 
 test('the scan-first card keeps requested fields visible and secondary data in more info', () => {

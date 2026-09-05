@@ -37,6 +37,7 @@ export const useGuestBookingConversion = () => {
   const convertGuestBookingToMember = async ({
     bookingId,
     casualContactId,
+    email,
     targetUserId,
     role = 'student',
     linkAll = true,
@@ -45,6 +46,7 @@ export const useGuestBookingConversion = () => {
   }: {
     bookingId?: string;
     casualContactId?: string;
+    email: string;
     targetUserId?: string;
     role?: 'student' | 'pilot';
     linkAll?: boolean;
@@ -60,6 +62,7 @@ export const useGuestBookingConversion = () => {
         body: {
           bookingId: bookingId || null,
           casualContactId: casualContactId || null,
+          email: email.trim().toLowerCase(),
           targetUserId: targetUserId || null,
           role,
           linkAll,
