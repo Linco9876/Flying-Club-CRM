@@ -593,10 +593,6 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
         toast.error('Guest name is required');
         return;
       }
-      if (!formData.guestEmail.trim()) {
-        toast.error('Guest email is required');
-        return;
-      }
       if (!formData.trialFlightVoucherId && !formData.guestPhone.trim()) {
         toast.error('Guest phone number is required');
         return;
@@ -1204,7 +1200,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                       value={formData.guestEmail}
                       onChange={(e) => setFormData(prev => ({ ...prev, guestEmail: e.target.value, casualContactId: '' }))}
                       className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="Guest email"
+                      placeholder="Guest email (optional)"
                     />
                     <input
                       type="tel"
@@ -1215,7 +1211,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                     />
                   </div>
                   <p className="text-xs text-gray-500">
-                    Contact details are saved for return visits, but no login or invitation is created. Each booking keeps the details used on that day.
+                    Name and phone are saved for return visits. Add an email to send booking confirmations; it can also be added later when upgrading the visitor to a portal user. No login or invitation is created by this booking.
                   </p>
                 </div>
               ) : (

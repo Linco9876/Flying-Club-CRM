@@ -661,7 +661,6 @@ export const useBookings = (enabled = true) => {
       }
       if (bookingData.isGuestBooking) {
         if (!resolvedGuestName) throw new Error('Guest name is required');
-        if (!resolvedGuestEmail) throw new Error('Guest email is required');
         if (!bookingData.trialFlightVoucherId && !resolvedGuestPhone) throw new Error('Guest phone number is required');
       }
 
@@ -871,7 +870,6 @@ export const useBookings = (enabled = true) => {
       }
       if (isGuestBooking) {
         if (!resolvedGuestName) throw new Error('Guest name is required');
-        if (!resolvedGuestEmail) throw new Error('Guest email is required');
         if (!trialFlightVoucherId && !resolvedGuestPhone) throw new Error('Guest phone number is required');
       }
 
@@ -1044,7 +1042,6 @@ export const useBookings = (enabled = true) => {
 
       if (bookingData.isGuestBooking) {
         if (!resolvedGuestName) throw new Error('Guest name is required');
-        if (!resolvedGuestEmail) throw new Error('Guest email is required');
         if (!bookingData.trialFlightVoucherId && !resolvedGuestPhone) throw new Error('Guest phone number is required');
       }
 
