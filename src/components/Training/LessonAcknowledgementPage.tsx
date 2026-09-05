@@ -2,6 +2,7 @@ import React from 'react';
 import { CheckCircle2, ClipboardCheck, Clock3, Loader2, Plane, ShieldAlert, UserRound } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
+import { orderLessonRecordAssessments } from '../../utils/lessonRecordPresentation';
 
 interface CourseCriterion {
   id?: string;
@@ -123,13 +124,8 @@ export const LessonAcknowledgementPage: React.FC = () => {
 
   const courseCriteria = Array.isArray(request?.courseCriteria) ? request.courseCriteria : [];
   const criteriaGrades = request?.criteriaGrades || {};
-  const criteriaRows = Object.entries(criteriaGrades)
-    .filter(([, grade]) => grade && grade !== '-')
-    .map(([criterionId, grade]) => ({
-      id: criterionId,
-      name: courseCriteria.find((criterion) => criterion.id === criterionId)?.name || 'Assessment item',
-      grade,
-    }));
+  const criteriaRows = orderLessonRecordAssessments(criteriaGrades, courseCriteria)
+    .map(item => ({ ...item, name: item.label }));
   const sequenceRows = (request?.sequenceResults || []).filter((sequence) => sequence.competence && sequence.competence !== '-');
 
   return (
