@@ -15,6 +15,7 @@ import { InstallPwaButton } from './InstallPwaButton';
 import { DutyHistoryModal } from './DutyHistoryModal';
 import { detachDutyClockPushSubscription, PhoneNotificationsCard } from './PhoneNotificationsCard';
 import { getDutyBreakReminderState } from '../utils/breakReminder';
+import { EndBreakModal } from './EndBreakModal';
 
 type Props = { user: User };
 
@@ -25,6 +26,7 @@ export const DutyScreen = ({ user }: Props) => {
   const [now, setNow] = useState(Date.now());
   const [startVisible, setStartVisible] = useState(false);
   const [endVisible, setEndVisible] = useState(false);
+  const [endBreakVisible, setEndBreakVisible] = useState(false);
   const [historyVisible, setHistoryVisible] = useState(false);
 
   useEffect(() => {
@@ -32,10 +34,9 @@ export const DutyScreen = ({ user }: Props) => {
     return () => clearInterval(timer);
   }, []);
 
-  const runBreakAction = async (action: 'start' | 'end') => {
+  const runBreakAction = async () => {
     try {
-      if (action === 'start') await startBreak();
-      else await endBreak();
+      await startBreak();
     } catch (caught) {
       Alert.alert('Break could not be updated', caught instanceof Error ? caught.message : 'Please try again.');
     }
@@ -166,7 +167,7 @@ export const DutyScreen = ({ user }: Props) => {
               </View>
               <Pressable
                 disabled={working}
-                onPress={() => void runBreakAction(context.activeBreak ? 'end' : 'start')}
+                onPress={() => context.activeBreak ? setEndBreakVisible(true) : void runBreakAction()}
                 style={({ pressed }) => [styles.breakButton, context.activeBreak && styles.breakButtonEnd, pressed && styles.pressed, working && styles.disabled]}
               >
                 <Text style={[styles.breakButtonText, context.activeBreak && styles.breakButtonEndText]}>{context.activeBreak ? 'End break' : 'Start break'}</Text>
@@ -207,6 +208,7 @@ export const DutyScreen = ({ user }: Props) => {
 
       <StartDutyModal visible={startVisible} context={context} working={working} onClose={() => setStartVisible(false)} onStart={startDuty} />
       <EndDutyModal visible={endVisible} context={context} working={working} onClose={() => setEndVisible(false)} onEnd={endDuty} />
+      <EndBreakModal visible={endBreakVisible} activeBreak={context.activeBreak} working={working} onClose={() => setEndBreakVisible(false)} onEnd={endBreak} />
       <DutyHistoryModal visible={historyVisible} userId={user.id} onClose={() => setHistoryVisible(false)} />
     </SafeAreaView>
   );

@@ -105,8 +105,8 @@ export const useDutyClock = (userId?: string) => {
     return { error: actionError };
   });
 
-  const endBreak = () => perform(async () => {
-    const { error: actionError } = await supabase.rpc('mobile_end_break', { p_ended_at: new Date().toISOString() });
+  const endBreak = (finishedAt: Date = new Date()) => perform(async () => {
+    const { error: actionError } = await supabase.rpc('mobile_end_break', { p_ended_at: finishedAt.toISOString() });
     return { error: actionError };
   });
 
