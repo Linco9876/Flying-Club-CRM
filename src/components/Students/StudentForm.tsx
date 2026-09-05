@@ -167,11 +167,6 @@ export const StudentForm: React.FC<StudentFormProps> = ({
       return;
     }
 
-    if (!newEndorsement.dateObtained) {
-      toast.error('Please select a date for the endorsement');
-      return;
-    }
-
     if (hasCredentialType(formData.endorsements, newEndorsement.type)) {
       toast.error('That endorsement is already recorded for this member');
       return;
@@ -180,7 +175,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
     const endorsement: Endorsement = {
       id: Date.now().toString(),
       type: newEndorsement.type,
-      dateObtained: new Date(newEndorsement.dateObtained),
+      dateObtained: newEndorsement.dateObtained ? new Date(newEndorsement.dateObtained) : undefined,
       expiryDate: newEndorsement.expiryDate ? new Date(newEndorsement.expiryDate) : undefined,
       instructorId: '',
       isActive: true
@@ -735,7 +730,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-600 mb-1">Obtained</label>
+                      <label className="block text-xs text-gray-600 mb-1">Issue date (optional)</label>
                       <input
                         type="date"
                         value={newEndorsement.dateObtained}
@@ -778,7 +773,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
                         {endorsement.type}
                       </span>
                       <span className="text-xs text-blue-700 ml-2">
-                        Obtained: {endorsement.dateObtained.toLocaleDateString()}
+                        {endorsement.dateObtained ? `Issued: ${endorsement.dateObtained.toLocaleDateString()}` : 'Issue date not recorded'}
                         {endorsement.expiryDate && ` | Expires: ${endorsement.expiryDate.toLocaleDateString()}`}
                       </span>
                     </div>

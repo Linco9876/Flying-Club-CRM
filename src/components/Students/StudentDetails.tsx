@@ -202,7 +202,7 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ isOpen, onClose,
                         {getEndorsementLabel(endorsement.type)}
                       </span>
                       <span className="text-xs text-blue-700 ml-2">
-                        Obtained: {endorsement.dateObtained ? endorsement.dateObtained.toLocaleDateString() : 'N/A'}
+                        {endorsement.dateObtained ? `Issued: ${endorsement.dateObtained.toLocaleDateString()}` : 'Issue date not recorded'}
                         {endorsement.expiryDate ? ` | Expires: ${endorsement.expiryDate.toLocaleDateString()}` : ''}
                       </span>
                     </div>

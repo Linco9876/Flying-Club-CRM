@@ -534,7 +534,7 @@ export interface FlightLog {
 export interface Endorsement {
   id: string;
   type: string;
-  dateObtained: Date;
+  dateObtained?: Date;
   expiryDate?: Date;
   instructorId?: string | null;
   isActive: boolean;

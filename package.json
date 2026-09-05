@@ -75,7 +75,7 @@
     "test:training-record-background": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/trainingRecordBackgroundQueue.test.ts",
     "test:training-deficiencies": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/trainingDeficiencies.test.ts",
     "test:draft-student-recommendation": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/draftStudentRecommendation.test.ts",
-    "test:credential-dropdowns": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/credentialDropdowns.test.ts",
+    "test:credential-dropdowns": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/credentialDropdowns.test.ts src/utils/endorsementIssueDate.test.ts",
     "test:portal-signup": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/portalSignup.test.ts src/utils/pendingAccountSetup.test.ts src/utils/accountEmailConflict.test.ts && npx --yes deno test --node-modules-dir=false supabase/functions/_shared/accountEmailReconciliation.test.ts",
     "test:settings-deep-links": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/settingsDeepLink.test.ts src/utils/bookingDefaults.test.ts src/utils/settingsSaveContract.test.ts src/utils/bookingSettingsRules.test.ts src/utils/cancellationReasonRules.test.ts src/utils/resourceSettingsRules.test.ts src/utils/rbacSettings.test.ts",
     "test:profile-picture": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/profilePicture.test.ts",

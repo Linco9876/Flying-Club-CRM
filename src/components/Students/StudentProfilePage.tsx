@@ -1175,11 +1175,6 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
       return;
     }
 
-    if (!infoEndorsementDraft.dateObtained) {
-      toast.error('Select the endorsement obtained date');
-      return;
-    }
-
     const nextType = infoEndorsementDraft.type.trim();
     if (hasCredentialType(infoForm.endorsements, nextType)) {
       toast.error('That endorsement is already on this member');
@@ -1193,7 +1188,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
         {
           id: `info-endorsement-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           type: nextType,
-          dateObtained: new Date(infoEndorsementDraft.dateObtained),
+          dateObtained: infoEndorsementDraft.dateObtained ? new Date(infoEndorsementDraft.dateObtained) : undefined,
           expiryDate: infoEndorsementDraft.expiryDate ? new Date(infoEndorsementDraft.expiryDate) : undefined,
           isActive: infoEndorsementDraft.isActive,
         },
@@ -4947,7 +4942,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                       </SearchableSelect>
                     </label>
                     <label className="block">
-                      <span className="block text-sm font-medium text-gray-700 mb-1">Obtained</span>
+                      <span className="block text-sm font-medium text-gray-700 mb-1">Issue date (optional)</span>
                       <input
                         type="date"
                         value={infoEndorsementDraft.dateObtained}
@@ -4993,7 +4988,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                           <div>
                             <p className="text-sm font-medium text-gray-900">{endorsement.type}</p>
                             <p className="text-xs text-gray-500">
-                              Obtained {endorsement.dateObtained?.toLocaleDateString() || 'N/A'}
+                              {endorsement.dateObtained ? `Issued ${endorsement.dateObtained.toLocaleDateString()}` : 'Issue date not recorded'}
                               {endorsement.expiryDate ? ` | Expires ${endorsement.expiryDate.toLocaleDateString()}` : ''}
                               {endorsement.isActive ? ' | Active' : ' | Inactive'}
                             </p>

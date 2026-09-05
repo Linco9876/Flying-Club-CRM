@@ -215,6 +215,10 @@ test('database and booking actions preserve the safety contract', () => {
     'supabase/migrations/20260903090000_support_calendar_supervision_reassignment.sql',
     'utf8',
   );
+  const requirementRefreshMigration = readFileSync(
+    'supabase/migrations/20260905153000_preserve_manual_supervision_on_requirement_refresh.sql',
+    'utf8',
+  );
   const calendar = readFileSync('src/components/Calendar/Calendar.tsx', 'utf8');
   const browserCalendar = readFileSync('src/utils/calendar.ts', 'utf8');
   const calendarFeed = readFileSync('supabase/functions/calendar-feed/index.ts', 'utf8');
@@ -249,6 +253,13 @@ test('database and booking actions preserve the safety contract', () => {
   assert.match(hook, /current_user_is_cfi/);
   assert.match(reassignmentMigration, /cfi_supervisor_reassigned/i);
   assert.match(reassignmentMigration, /supervision_status not in \('pending', 'assigned', 'acknowledged'\)/i);
+  assert.match(requirementRefreshMigration, /old\.supervision_required is not distinct from new\.supervision_required/i);
+  assert.match(requirementRefreshMigration, /old\.role_mandated is not distinct from new\.role_mandated/i);
+  assert.match(requirementRefreshMigration, /update of supervision_required,[\s\S]*role_mandated or delete/i);
+  assert.match(requirementRefreshMigration, /manual_supervisor_available_for_slot/i);
+  assert.match(requirementRefreshMigration, /lastRequirementRevalidatedAt/i);
+  assert.match(requirementRefreshMigration, /recoveredFromNoOpRequirementInvalidation/i);
+  assert.match(requirementRefreshMigration, /end_reason = 'Instructor supervision requirement changed'/i);
   assert.match(calendar, /<span>Supervision<\/span>/i);
   assert.match(calendar, /Supervision confirmed/i);
   assert.match(calendar, /data-supervision-block/i);
