@@ -223,6 +223,17 @@ export interface MembershipApplication {
   membershipClassCode?: MembershipClassCode;
 }
 
+export interface MembershipStatusEvent {
+  id: string;
+  membershipId?: string | null;
+  applicationId?: string | null;
+  userId: string;
+  eventType: string;
+  eventAt: string;
+  actorId?: string | null;
+  details: Record<string, unknown>;
+}
+
 export interface ClubMembership {
   id: string;
   userId: string;

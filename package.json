@@ -51,7 +51,7 @@
     "test:manual-supervision": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/manualBookingSupervision.test.ts",
     "test:membership-documents": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/membershipDocumentRules.test.ts",
     "test:membership-settings": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/membershipSettings.test.ts src/utils/existingMemberCsvImport.test.ts src/utils/membershipChangeRules.test.ts src/utils/membershipChangeWorkflow.test.ts",
-    "test:membership-dashboard": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/membershipDashboard.test.ts src/utils/membershipAdminActions.test.ts",
+    "test:membership-dashboard": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/membershipDashboard.test.ts src/utils/membershipAdminActions.test.ts src/utils/membershipAuditTrail.test.ts",
     "test:membership-setting-help": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/membershipSettingHelp.test.ts",
     "test:membership-scholarship-contrast": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/membershipScholarshipContrast.test.ts",
     "test:student-file-links": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/studentFileLinks.test.ts src/utils/studentDocumentUpload.test.ts",

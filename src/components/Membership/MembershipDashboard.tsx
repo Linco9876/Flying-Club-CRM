@@ -16,6 +16,7 @@ import {
   FileSpreadsheet,
   Heart,
   HelpCircle,
+  History,
   Landmark,
   Loader2,
   Plus,
@@ -51,6 +52,7 @@ import { FinancialProviderStatus } from '../Billing/FinancialProviderStatus';
 import { ExistingMemberCsvImportModal } from './ExistingMemberCsvImportModal';
 import { MembershipChangeModal } from './MembershipChangeModal';
 import { MembershipAdminControlModal } from './MembershipAdminControlModal';
+import { MembershipAuditTrailModal } from './MembershipAuditTrailModal';
 import {
   isUnder18On,
   localDateString,
@@ -1018,6 +1020,7 @@ const RegisterAdmin = ({
   const [showCsvImport, setShowCsvImport] = useState(false);
   const [changingMembership, setChangingMembership] = useState<ReturnType<typeof useMembership>['memberships'][number] | null>(null);
   const [managingMembership, setManagingMembership] = useState<ReturnType<typeof useMembership>['memberships'][number] | null>(null);
+  const [auditingMembership, setAuditingMembership] = useState<ReturnType<typeof useMembership>['memberships'][number] | null>(null);
   const [importForm, setImportForm] = useState({
     userId: "",
     membershipClassCode: "full",
@@ -1185,9 +1188,14 @@ const RegisterAdmin = ({
                       Stripe and Xero disconnected
                     </td>
                     <td data-label="Actions" className="px-4 py-3 text-right">
-                      <button type="button" onClick={() => setManagingMembership(membership)} className="rounded-lg border border-blue-300 px-2.5 py-1.5 text-xs font-bold text-blue-800 hover:bg-blue-50">
-                        Manage
-                      </button>
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <button type="button" onClick={() => setAuditingMembership(membership)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">
+                          <History className="h-3.5 w-3.5" /> History
+                        </button>
+                        <button type="button" onClick={() => setManagingMembership(membership)} className="rounded-lg border border-blue-300 px-2.5 py-1.5 text-xs font-bold text-blue-800 hover:bg-blue-50">
+                          Manage
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -1232,9 +1240,14 @@ const RegisterAdmin = ({
                     </td>
                     <td data-label="Actions" className="px-4 py-3 text-right">
                       <div className="flex flex-col items-end gap-1">
-                        <button type="button" onClick={() => setManagingMembership(membership)} className="rounded-lg border border-blue-300 px-2.5 py-1.5 text-xs font-bold text-blue-800 hover:bg-blue-50">
-                          Manage
-                        </button>
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <button type="button" onClick={() => setAuditingMembership(membership)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">
+                            <History className="h-3.5 w-3.5" /> History
+                          </button>
+                          <button type="button" onClick={() => setManagingMembership(membership)} className="rounded-lg border border-blue-300 px-2.5 py-1.5 text-xs font-bold text-blue-800 hover:bg-blue-50">
+                            Manage
+                          </button>
+                        </div>
                         <span className="text-xs text-slate-500">Link in Xero settings for billing</span>
                       </div>
                     </td>
@@ -1318,7 +1331,14 @@ const RegisterAdmin = ({
                     )}
                   </td>
                   <td data-label="Actions" className="px-4 py-3">
-                    <div className="flex justify-end gap-2">
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setAuditingMembership(membership)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                      >
+                        <History className="h-3.5 w-3.5" /> History
+                      </button>
                       <button
                         type="button"
                         onClick={() => setManagingMembership(membership)}
@@ -1394,6 +1414,15 @@ const RegisterAdmin = ({
           </tbody>
         </table>
       </div>
+      {auditingMembership && (
+        <MembershipAuditTrailModal
+          membership={auditingMembership}
+          applications={membershipApi.applications}
+          changes={membershipApi.changeRequests}
+          periods={membershipApi.periods}
+          onClose={() => setAuditingMembership(null)}
+        />
+      )}
       {managingMembership && (
         <MembershipAdminControlModal
           membership={managingMembership}
