@@ -187,7 +187,7 @@ export const useStudents = (options?: UseStudentsOptions) => {
         studentEndorsements.push({
           id: e.id,
           type: e.type,
-          dateObtained: new Date(e.date_obtained),
+          dateObtained: e.date_obtained ? new Date(e.date_obtained) : undefined,
           expiryDate: e.expiry_date ? new Date(e.expiry_date) : undefined,
           instructorId: e.instructor_id,
           isActive: e.is_active
@@ -407,7 +407,7 @@ export const useStudents = (options?: UseStudentsOptions) => {
         const endorsementsToInsert = studentData.endorsements.map(e => ({
           student_id: userData.id,
           type: e.type,
-          date_obtained: e.dateObtained,
+          date_obtained: e.dateObtained || null,
           expiry_date: e.expiryDate,
           instructor_id: e.instructorId || currentAuthUser?.id || null,
           is_active: e.isActive
@@ -579,7 +579,7 @@ export const useStudents = (options?: UseStudentsOptions) => {
         const endorsementsToInsert = studentData.endorsements.map(e => ({
           student_id: id,
           type: e.type,
-          date_obtained: e.dateObtained,
+          date_obtained: e.dateObtained || null,
           expiry_date: e.expiryDate,
           instructor_id: e.instructorId || currentAuthUser?.id || null,
           is_active: e.isActive

@@ -327,7 +327,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       setExistingEndorsements((endorsementsData || []).map(endorsement => ({
         id: endorsement.id,
         type: endorsement.type,
-        dateObtained: new Date(endorsement.date_obtained),
+        dateObtained: endorsement.date_obtained ? new Date(endorsement.date_obtained) : undefined,
         expiryDate: endorsement.expiry_date ? new Date(endorsement.expiry_date) : undefined,
         isActive: Boolean(endorsement.is_active),
       })));
@@ -855,10 +855,6 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
         toast.error('Choose an endorsement type before saving');
         throw new Error('Endorsement type is required');
       }
-      if (!endorsement.dateObtained) {
-        toast.error('Add the endorsement date before saving');
-        throw new Error('Endorsement date is required');
-      }
       if (!endorsement.proofFile) {
         toast.error(`Upload proof for ${endorsement.type.trim()} before saving`);
         throw new Error('Endorsement proof is required');
@@ -995,7 +991,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
           .insert({
             student_id: user.id,
             type: endorsement.type.trim(),
-            date_obtained: endorsement.dateObtained,
+            date_obtained: endorsement.dateObtained || null,
             expiry_date: endorsement.expiryDate || null,
             instructor_id: null,
             is_active: endorsement.isActive,
@@ -1594,7 +1590,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
                           </span>
                         </div>
                         <div className="mt-1 text-xs text-gray-500">
-                          Obtained {endorsement.dateObtained.toLocaleDateString()}
+                          {endorsement.dateObtained ? `Issued ${endorsement.dateObtained.toLocaleDateString()}` : 'Issue date not recorded'}
                           {endorsement.expiryDate ? ` • Expires ${endorsement.expiryDate.toLocaleDateString()}` : ' • No expiry recorded'}
                         </div>
                       </div>
@@ -1639,7 +1635,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
                           </SearchableSelect>
                         </div>
                         <div>
-                          <label className="mb-2 block text-sm font-medium text-gray-700">Date obtained</label>
+                          <label className="mb-2 block text-sm font-medium text-gray-700">Issue date (optional)</label>
                           <input
                             type="date"
                             value={endorsement.dateObtained}

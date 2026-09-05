@@ -70,11 +70,6 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
       toast.error('Select or enter an endorsement');
       return;
     }
-    if (!endorsementDraft.dateObtained) {
-      toast.error('Select the endorsement obtained date');
-      return;
-    }
-
     const nextType = endorsementDraft.type.trim();
     const duplicate = endorsements.some((endorsement) =>
       endorsement.type.trim().toLowerCase() === nextType.toLowerCase() &&
@@ -198,11 +193,11 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
           );
 
           const endorsementsToInsert = endorsements
-            .filter((endorsement) => !existingKeys.has(`${endorsement.type.trim().toLowerCase()}::${endorsement.dateObtained}`))
+            .filter((endorsement) => !existingKeys.has(`${endorsement.type.trim().toLowerCase()}::${endorsement.dateObtained || ''}`))
             .map((endorsement) => ({
               student_id: authData.user!.id,
               type: endorsement.type.trim(),
-              date_obtained: endorsement.dateObtained,
+              date_obtained: endorsement.dateObtained || null,
               expiry_date: endorsement.expiryDate || null,
               instructor_id: null,
               is_active: endorsement.isActive,
@@ -375,7 +370,7 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
                   />
                 </label>
                 <label className="block">
-                  <span className="mb-1 block text-sm font-medium text-gray-700">Obtained</span>
+                  <span className="mb-1 block text-sm font-medium text-gray-700">Issue date (optional)</span>
                   <input
                     type="date"
                     value={endorsementDraft.dateObtained}
@@ -421,7 +416,7 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
                       <div>
                         <p className="text-sm font-medium text-slate-900">{endorsement.type}</p>
                         <p className="text-xs text-gray-500">
-                          Obtained {endorsement.dateObtained || 'N/A'}
+                          {endorsement.dateObtained ? `Issued ${endorsement.dateObtained}` : 'Issue date not recorded'}
                           {endorsement.expiryDate ? ` | Expires ${endorsement.expiryDate}` : ''}
                           {endorsement.isActive ? ' | Active' : ' | Inactive'}
                         </p>

@@ -27,7 +27,7 @@ interface ProfileData {
 interface Endorsement {
   id: string;
   type: string;
-  date_obtained: string;
+  date_obtained: string | null;
   expiry_date: string | null;
   is_active: boolean;
 }
@@ -345,7 +345,7 @@ export const StudentProfile: React.FC = () => {
                       <span className="text-sm font-medium text-blue-900">{e.type.toUpperCase()}</span>
                     </div>
                     <span className="text-xs text-blue-600">
-                      {e.date_obtained ? new Date(e.date_obtained).toLocaleDateString() : ''}
+                      {e.date_obtained ? new Date(e.date_obtained).toLocaleDateString() : 'Issue date not recorded'}
                     </span>
                   </div>
                 ))}
