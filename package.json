@@ -38,7 +38,7 @@
     "test:xero-topup-account-rules": "npx --yes deno test --node-modules-dir=false supabase/functions/_shared/xeroAccountRules.test.ts",
     "test:automation-alerts": "node --test scripts/create-admin-notification.test.mjs scripts/backup-crm.test.mjs && npm run test:production-hardening",
     "test:production-hardening": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/productionHardening.test.ts",
-    "test:duty-break-rules": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test apps/duty-clock/src/utils/breakRequirement.test.ts apps/duty-clock/src/utils/dutyPeriodDetails.test.ts",
+    "test:duty-break-rules": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test apps/duty-clock/src/utils/breakRequirement.test.ts apps/duty-clock/src/utils/breakFinishTime.test.ts apps/duty-clock/src/utils/dutyPeriodDetails.test.ts",
     "test:duty-period-details": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test apps/duty-clock/src/utils/dutyPeriodDetails.test.ts apps/duty-clock/src/utils/dutyWeekSummary.test.ts apps/duty-clock/src/utils/breakReminder.test.ts",
     "test:duty-week-summary": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/dutyWeekSummary.test.ts",
     "test:duty-time-report": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/dutyTimeReport.test.ts",
