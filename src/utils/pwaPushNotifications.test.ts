@@ -13,6 +13,7 @@ const portalBootstrap = read('src/main.tsx');
 const dutyBootstrap = read('apps/duty-clock/public/duty-clock-bootstrap.js');
 const appSource = read('src/App.tsx');
 const promptSource = read('src/components/Layout/PwaNotificationPermissionPrompt.tsx');
+const notificationHook = read('src/hooks/useNotifications.ts');
 const monochromeBadgeSource = read('apps/duty-clock/assets/monochrome-icon-source.svg');
 const portalBadge = readFileSync(new URL('../../public/notification-badge.png', import.meta.url));
 const dutyBadge = readFileSync(new URL('../../apps/duty-clock/public/notification-badge.png', import.meta.url));
@@ -60,6 +61,18 @@ test('both installed apps display and route clicked push notifications', () => {
     assert.match(worker, /icon: notificationIcon/);
     assert.match(worker, /badge:[^\n]*notification-badge\.png/);
   }
+});
+
+test('the portal worker reconciles and clears stale taskbar notifications', () => {
+  assert.match(portalWorker, /SYNC_NOTIFICATION_BADGE/);
+  assert.match(portalWorker, /getNotifications\(\)/);
+  assert.match(portalWorker, /notification\.close\(\)/);
+  assert.match(portalWorker, /setAppBadge\(0\)/);
+});
+
+test('badge reconciliation waits for an authoritative notification fetch', () => {
+  assert.match(notificationHook, /if \(loading\) return;[\s\S]*syncAppNotificationBadge\(unreadCount\)/);
+  assert.match(notificationHook, /\[loading, unreadCount\]/);
 });
 
 test('Android notification badges are transparent 96px aircraft silhouettes', () => {
