@@ -3,7 +3,10 @@ import { supabase } from '../lib/supabase';
 import { Notification } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useLatestEffect } from './useLatestEffect';
-import { getUnreadNotificationCount } from '../utils/notificationBadge';
+import {
+  getUnreadNotificationCount,
+  syncAppNotificationBadge,
+} from '../utils/notificationBadge';
 
 export const useNotifications = () => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -15,16 +18,11 @@ export const useNotifications = () => {
   );
 
   useEffect(() => {
-    const badgeNavigator = navigator as Navigator & {
-      setAppBadge?: (contents?: number) => Promise<void>;
-      clearAppBadge?: () => Promise<void>;
-    };
-    if (unreadCount > 0 && badgeNavigator.setAppBadge) {
-      void badgeNavigator.setAppBadge(unreadCount).catch(() => undefined);
-    } else if (unreadCount === 0 && badgeNavigator.clearAppBadge) {
-      void badgeNavigator.clearAppBadge().catch(() => undefined);
-    }
-  }, [unreadCount]);
+    // The initial empty array is only a loading placeholder. Wait for the
+    // authoritative database result before clearing delivered OS notifications.
+    if (loading) return;
+    void syncAppNotificationBadge(unreadCount).catch(() => undefined);
+  }, [loading, unreadCount]);
 
   const fetchNotifications = async () => {
     if (!user?.id) {
@@ -131,6 +129,16 @@ export const useNotifications = () => {
 
   const deleteNotification = async (notificationId: string) => {
     try {
+      // Publish a read transition before deleting so every open portal window
+      // receives a filterable UPDATE event and can reconcile its app badge.
+      const { error: readError } = await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('id', notificationId)
+        .eq('is_read', false);
+
+      if (readError) throw readError;
+
       const { error } = await supabase
         .from('notifications')
         .delete()
@@ -152,7 +160,7 @@ export const useNotifications = () => {
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: '*',
           schema: 'public',
           table: 'notifications',
           filter: `user_id=eq.${user?.id}`
@@ -163,8 +171,19 @@ export const useNotifications = () => {
       )
       .subscribe();
 
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void fetchNotifications();
+    };
+    const refreshOnFocus = () => void fetchNotifications();
+    window.addEventListener('focus', refreshOnFocus);
+    window.addEventListener('pageshow', refreshOnFocus);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+
     return () => {
       supabase.removeChannel(channel);
+      window.removeEventListener('focus', refreshOnFocus);
+      window.removeEventListener('pageshow', refreshOnFocus);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
     };
   }, [user?.id]);
 

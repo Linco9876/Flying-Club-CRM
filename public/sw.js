@@ -1,4 +1,4 @@
-const CACHE = 'bfc-portal-shell-v4-notification-badge';
+const CACHE = 'bfc-portal-shell-v5-badge-reconciliation';
 const SHELL = ['/', '/offline.html', '/manifest.webmanifest', '/theme-init.js', '/favicon.svg', '/pwa-icon-192.png', '/pwa-icon-512.png', '/notification-badge.png'];
 
 self.addEventListener('install', (event) => {
@@ -73,6 +73,24 @@ self.addEventListener('push', (event) => {
     if (self.navigator && typeof self.navigator.setAppBadge === 'function') {
       if (badgeCount > 0) await self.navigator.setAppBadge(badgeCount);
       else if (typeof self.navigator.clearAppBadge === 'function') await self.navigator.clearAppBadge();
+    }
+  })());
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type !== 'SYNC_NOTIFICATION_BADGE') return;
+  event.waitUntil((async () => {
+    const unreadCount = Math.max(0, Math.floor(Number(event.data.unreadCount || 0)));
+    if (self.navigator && typeof self.navigator.setAppBadge === 'function') {
+      if (unreadCount > 0) await self.navigator.setAppBadge(unreadCount);
+      else {
+        if (typeof self.navigator.clearAppBadge === 'function') await self.navigator.clearAppBadge();
+        await self.navigator.setAppBadge(0);
+      }
+    }
+    if (unreadCount === 0) {
+      const deliveredNotifications = await self.registration.getNotifications();
+      deliveredNotifications.forEach((notification) => notification.close());
     }
   })());
 });
