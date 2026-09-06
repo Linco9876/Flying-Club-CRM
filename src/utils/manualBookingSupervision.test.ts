@@ -224,6 +224,10 @@ test('database and booking actions preserve the safety contract', () => {
     'utf8',
   );
   const calendar = readFileSync('src/components/Calendar/Calendar.tsx', 'utf8');
+  const supervisionActionModal = readFileSync(
+    'src/components/Bookings/SupervisionActionModal.tsx',
+    'utf8',
+  );
   const browserCalendar = readFileSync('src/utils/calendar.ts', 'utf8');
   const calendarFeed = readFileSync('supabase/functions/calendar-feed/index.ts', 'utf8');
 
@@ -272,8 +276,14 @@ test('database and booking actions preserve the safety contract', () => {
   assert.match(uniqueInstructorCapacityMigration, /public\.trial_voucher_instructor_available_for_slot/i);
   assert.match(uniqueInstructorCapacityMigration, /supervision_status = 'pending'/i);
   assert.match(calendar, /<span>Supervision<\/span>/i);
-  assert.match(calendar, /Supervision confirmed/i);
+  assert.match(calendar, /Supervision strip – acknowledged/i);
   assert.match(calendar, /data-supervision-block/i);
+  assert.match(calendar, /setSupervisionActionBooking\(booking\)/i);
+  assert.match(calendar, /layoutSupervisionMarkers/i);
+  assert.match(calendar, /width: '18px'/i);
+  assert.match(supervisionActionModal, /Add supervision to my calendar/i);
+  assert.match(supervisionActionModal, /cannot be edited here/i);
+  assert.doesNotMatch(supervisionActionModal, /Edit Booking|Copy Booking|Log Flight|Delete Booking/i);
   assert.match(browserCalendar, /!showSupervision && booking\.status === 'pending_supervision'/i);
   assert.match(browserCalendar, /showSupervision && booking\.supervisingInstructorName/i);
   assert.match(calendarFeed, /!showSupervision && booking\.status === "pending_supervision"/i);

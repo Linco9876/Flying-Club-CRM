@@ -5,9 +5,10 @@ import { BrowserCalendarEvent, downloadBookingIcs, googleCalendarUrl, outlookCal
 interface AddToCalendarModalProps {
   event: BrowserCalendarEvent;
   onClose: () => void;
+  itemLabel?: string;
 }
 
-export const AddToCalendarModal: React.FC<AddToCalendarModalProps> = ({ event, onClose }) => {
+export const AddToCalendarModal: React.FC<AddToCalendarModalProps> = ({ event, onClose, itemLabel = 'booking' }) => {
   React.useEffect(() => {
     const onKeyDown = (keyboardEvent: KeyboardEvent) => {
       if (keyboardEvent.key === 'Escape') onClose();
@@ -56,7 +57,7 @@ export const AddToCalendarModal: React.FC<AddToCalendarModalProps> = ({ event, o
           <button type="button" onClick={() => { downloadBookingIcs(event); onClose(); }} className="flex w-full items-center justify-between rounded-xl border border-slate-200 px-4 py-3 text-left font-medium text-slate-800 transition hover:border-slate-400 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800">
             <span><span className="block">Apple Calendar or other app</span><span className="mt-0.5 block text-xs font-normal text-slate-500 dark:text-slate-400">Downloads a standard .ics file</span></span><Download className="h-4 w-4 text-slate-400" />
           </button>
-          <p className="px-1 pt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">This adds a copy of the current booking. For automatic updates, subscribe to your private BFC calendar in Account Settings.</p>
+          <p className="px-1 pt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">This adds a copy of the current {itemLabel}. For automatic updates, subscribe to your private BFC calendar in Account Settings.</p>
         </div>
       </div>
     </div>
