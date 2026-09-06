@@ -219,6 +219,10 @@ test('database and booking actions preserve the safety contract', () => {
     'supabase/migrations/20260905153000_preserve_manual_supervision_on_requirement_refresh.sql',
     'utf8',
   );
+  const uniqueInstructorCapacityMigration = readFileSync(
+    'supabase/migrations/20260907120000_count_unique_instructors_for_supervision_capacity.sql',
+    'utf8',
+  );
   const calendar = readFileSync('src/components/Calendar/Calendar.tsx', 'utf8');
   const browserCalendar = readFileSync('src/utils/calendar.ts', 'utf8');
   const calendarFeed = readFileSync('supabase/functions/calendar-feed/index.ts', 'utf8');
@@ -260,6 +264,13 @@ test('database and booking actions preserve the safety contract', () => {
   assert.match(requirementRefreshMigration, /lastRequirementRevalidatedAt/i);
   assert.match(requirementRefreshMigration, /recoveredFromNoOpRequirementInvalidation/i);
   assert.match(requirementRefreshMigration, /end_reason = 'Instructor supervision requirement changed'/i);
+  assert.match(uniqueInstructorCapacityMigration, /count\(distinct supervised\.instructor_id\)/i);
+  assert.match(uniqueInstructorCapacityMigration, /union all[\s\S]*select p_trainee_instructor_id/i);
+  assert.match(uniqueInstructorCapacityMigration, /count\(distinct booking\.instructor_id\)/i);
+  assert.match(uniqueInstructorCapacityMigration, /private\.supervision_capacity_available_for_slot/i);
+  assert.match(uniqueInstructorCapacityMigration, /public\.assess_instructor_duty_booking/i);
+  assert.match(uniqueInstructorCapacityMigration, /public\.trial_voucher_instructor_available_for_slot/i);
+  assert.match(uniqueInstructorCapacityMigration, /supervision_status = 'pending'/i);
   assert.match(calendar, /<span>Supervision<\/span>/i);
   assert.match(calendar, /Supervision confirmed/i);
   assert.match(calendar, /data-supervision-block/i);
