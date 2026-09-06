@@ -30,7 +30,6 @@ import {
   Sun,
   Repeat2,
   ShieldCheck,
-  Check,
   X,
 } from 'lucide-react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -52,6 +51,7 @@ import { MonthView } from './MonthView';
 import { isPastBooking } from '../../utils/timeUtils';
 import { BookingActionMenu } from '../Bookings/BookingActionMenu';
 import { SupervisionReassignmentModal } from '../Bookings/SupervisionReassignmentModal';
+import { SupervisionActionModal } from '../Bookings/SupervisionActionModal';
 import { FlightLogModal } from '../Bookings/FlightLogModal';
 import { GroundSessionLogModal } from '../Bookings/GroundSessionLogModal';
 import { BookingCancellationModal } from '../Bookings/BookingCancellationModal';
@@ -89,6 +89,7 @@ import {
   type CalendarListStatus,
 } from '../../utils/calendarListView';
 import { getCalendarStickyHeaderTransition } from '../../utils/calendarStickyHeader';
+import { layoutSupervisionMarkers } from '../../utils/calendarSupervision';
 
 interface CalendarProps {
   bookings: Booking[];
@@ -184,8 +185,8 @@ const CALENDAR_BOOKING_LEGEND = [
 
 const CALENDAR_SUPERVISION_LEGEND = [
   { label: 'Supervisor needed', classes: 'border-orange-500 bg-orange-100 text-orange-900', pattern: 'diagonal' },
-  { label: 'Awaiting acknowledgement', classes: 'border-amber-500 border-dashed bg-amber-100/75 text-amber-950', pattern: 'solid' },
-  { label: 'Supervision confirmed', classes: 'border-cyan-600 bg-cyan-100/70 text-cyan-950', pattern: 'solid' },
+  { label: 'Supervision strip – awaiting acknowledgement', classes: 'border-amber-600 border-dashed bg-amber-200 text-amber-950', pattern: 'solid' },
+  { label: 'Supervision strip – acknowledged', classes: 'border-amber-700 bg-amber-400 text-amber-950', pattern: 'solid' },
 ] as const;
 
 const getStoredDaylightOverlayPreference = () => {
@@ -546,6 +547,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     supervisorId: string;
     supervisorName: string;
   } | null>(null);
+  const [supervisionActionBooking, setSupervisionActionBooking] = useState<Booking | null>(null);
   // Time selection states
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<{
@@ -2367,6 +2369,15 @@ export const Calendar: React.FC<CalendarProps> = ({
       ));
   };
 
+  const getSupervisionMarkerLayoutsForResource = (supervisorId: string, date: Date) => (
+    layoutSupervisionMarkers(
+      getSupervisionBookingsForResource(supervisorId, date).map((booking) => {
+        const coverage = getSupervisionCoverageWindow(booking);
+        return { item: booking, start: coverage.startTime, end: coverage.endTime };
+      }),
+    )
+  );
+
   const queueSupervisionReassignment = (booking: Booking, supervisorId: string) => {
     if (!canAssignManualSupervision(booking) || supervisorId === booking.supervisingInstructorId) return;
     const option = getAssignableSupervisors(booking).find(candidate => candidate.id === supervisorId);
@@ -2407,6 +2418,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     resourceIndex: number,
     supervisorId: string,
     keySuffix: string,
+    lane = 0,
   ) => {
     const coverage = getSupervisionCoverageWindow(booking);
     const displayDayStart = new Date(booking.startTime);
@@ -2419,10 +2431,6 @@ export const Calendar: React.FC<CalendarProps> = ({
     const acknowledged = booking.supervisionStatus === 'acknowledged';
     const canDrag = canAssignManualSupervision(booking);
     const instructorName = getInstructorName(booking) || 'Instructor';
-    const estimatedHeight = Math.max(
-      slotHeight,
-      (position.gridRowEnd - position.gridRowStart) * slotHeight - position.marginTop,
-    );
 
     return (
       <button
@@ -2442,39 +2450,36 @@ export const Calendar: React.FC<CalendarProps> = ({
         onDrop={event => handleSupervisionDrop(event, supervisorId)}
         onClick={event => {
           event.stopPropagation();
-          openBookingActionMenu(booking, { x: event.clientX, y: event.clientY });
+          bookingMenuOpenTokenRef.current += 1;
+          setActionMenuBooking(null);
+          setBookingMenuLoading(null);
+          setSupervisionActionBooking(booking);
         }}
-        className={`relative cursor-pointer overflow-hidden rounded-md border-2 px-1.5 py-1 text-[10px] shadow-sm transition hover:brightness-95 ${
-          acknowledged
-            ? 'border-cyan-600 bg-cyan-100/75 text-cyan-950 dark:border-cyan-500 dark:bg-cyan-950/65 dark:text-cyan-50'
-            : 'border-dashed border-amber-500 bg-amber-100/80 text-amber-950 dark:border-amber-400 dark:bg-amber-950/65 dark:text-amber-50'
-        } ${canDrag ? 'cursor-ew-resize' : ''}`}
+        className={`group relative cursor-pointer overflow-visible border-0 bg-transparent p-0 ${canDrag ? 'cursor-ew-resize' : ''}`}
         style={{
           gridColumn: resourceIndex + 2,
           gridRow: `${position.gridRowStart} / ${position.gridRowEnd}`,
           marginTop: position.marginTop,
           ...getBookingBlockStyle(position),
-          zIndex: 9,
-          width: '100%',
-          justifySelf: 'stretch',
+          zIndex: 32 + lane,
+          width: '18px',
+          justifySelf: 'end',
+          transform: `translateX(-${3 + lane * 18}px)`,
+          touchAction: 'manipulation',
         }}
-        title={`${acknowledged ? 'Supervision confirmed' : 'Awaiting acknowledgement'}: ${instructorName}. Coverage ${format(coverage.startTime, 'HH:mm')}–${format(coverage.endTime, 'HH:mm')}. ${canDrag ? 'Drag horizontally to change supervisor.' : 'Select for details.'}`}
+        title={`${acknowledged ? 'Supervision acknowledged' : 'Awaiting acknowledgement'}: supervising ${instructorName}. Coverage ${format(coverage.startTime, 'HH:mm')}–${format(coverage.endTime, 'HH:mm')}. Select for supervision actions${canDrag ? ' or drag to reallocate.' : '.'}`}
         aria-label={`${acknowledged ? 'Confirmed supervision' : 'Supervision awaiting acknowledgement'} for ${instructorName}`}
       >
-        <div className="flex items-center gap-1 font-black leading-tight">
-          {acknowledged ? <Check className="h-3 w-3 shrink-0" /> : <ShieldCheck className="h-3 w-3 shrink-0" />}
-          <span className="truncate">Supervising {instructorName}</span>
-        </div>
-        {estimatedHeight >= 48 && (
-          <div className="mt-0.5 truncate font-semibold opacity-80">
-            {format(coverage.startTime, 'HH:mm')}–{format(coverage.endTime, 'HH:mm')} cover
-          </div>
-        )}
-        {estimatedHeight >= 68 && (
-          <div className="mt-0.5 truncate opacity-75">
-            Flight {format(new Date(booking.startTime), 'HH:mm')}–{format(new Date(booking.endTime), 'HH:mm')}
-          </div>
-        )}
+        <span
+          className={`absolute inset-y-0 right-[5px] w-2 rounded-full border shadow-sm transition-[width,filter] group-hover:w-2.5 group-hover:brightness-95 group-focus-visible:w-2.5 group-focus-visible:ring-2 group-focus-visible:ring-amber-500 group-focus-visible:ring-offset-1 ${acknowledged
+            ? 'border-amber-700 bg-amber-400 dark:border-amber-300 dark:bg-amber-500'
+            : 'border-dashed border-amber-600 bg-amber-200 dark:border-amber-300 dark:bg-amber-700'}`}
+          aria-hidden="true"
+        />
+        <span className="pointer-events-none absolute right-full top-1 z-50 mr-1 hidden w-max max-w-56 rounded-lg bg-slate-950 px-2.5 py-1.5 text-left text-[11px] font-semibold leading-4 text-white shadow-xl group-hover:block group-focus-visible:block">
+          <span className="block font-black">Supervising {instructorName}</span>
+          <span className="block text-slate-300">{format(coverage.startTime, 'HH:mm')}–{format(coverage.endTime, 'HH:mm')} · {acknowledged ? 'Acknowledged' : 'Needs acknowledgement'}</span>
+        </span>
       </button>
     );
   };
@@ -3628,8 +3633,8 @@ export const Calendar: React.FC<CalendarProps> = ({
 
       {isStaffCalendarUser && !isKioskMode && (
         <label
-          className="inline-flex items-center gap-2 rounded-lg border border-cyan-300 bg-cyan-50 px-2.5 py-2 text-sm font-semibold text-cyan-900 hover:bg-cyan-100 dark:border-cyan-800 dark:bg-cyan-950/30 dark:text-cyan-100 dark:hover:bg-cyan-950/50"
-          title="Show supervision allocations in supervising instructors' columns"
+          className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100 dark:hover:bg-amber-950/50"
+          title="Show narrow supervision strips in supervising instructors' columns"
         >
           <input
             type="checkbox"
@@ -3643,7 +3648,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                 // The in-memory preference still works when storage is unavailable.
               }
             }}
-            className="h-4 w-4 rounded border-cyan-400 text-cyan-700 focus:ring-cyan-500"
+            className="h-4 w-4 rounded border-amber-400 text-amber-700 focus:ring-amber-500"
           />
           <ShieldCheck className="h-4 w-4" />
           <span>Supervision</span>
@@ -4172,8 +4177,8 @@ export const Calendar: React.FC<CalendarProps> = ({
 
             {/* Staff-only, non-blocking supervision allocations. */}
             {resources.map((resource, resourceIndex) => resource.type === 'instructor'
-              ? getSupervisionBookingsForResource(resource.id, currentDate)
-                .map(booking => renderSupervisionCalendarBlock(booking, resourceIndex, resource.id, resource.id))
+              ? getSupervisionMarkerLayoutsForResource(resource.id, currentDate)
+                .map(layout => renderSupervisionCalendarBlock(layout.item, resourceIndex, resource.id, resource.id, layout.lane))
               : null)}
 
             {/* Render bookings as grid items */}
@@ -4848,12 +4853,13 @@ export const Calendar: React.FC<CalendarProps> = ({
             {/* Staff-only supervision layer for the selected instructor. */}
             {hasInstructor && weekDays.map((day, dayIndex) => {
               const columnIndex = dayIndex * columnsPerDay + (hasAircraft ? 1 : 0);
-              return getSupervisionBookingsForResource(selectedInstructorId, day)
-                .map(booking => renderSupervisionCalendarBlock(
-                  booking,
+              return getSupervisionMarkerLayoutsForResource(selectedInstructorId, day)
+                .map(layout => renderSupervisionCalendarBlock(
+                  layout.item,
                   columnIndex,
                   selectedInstructorId,
                   `${dayIndex}-${selectedInstructorId}`,
+                  layout.lane,
                 ));
             })}
 
@@ -6145,6 +6151,55 @@ export const Calendar: React.FC<CalendarProps> = ({
           }}
         />
       )}
+
+      {supervisionActionBooking && (() => {
+        const coverage = getSupervisionCoverageWindow(supervisionActionBooking);
+        const calendarAircraft = aircraft.find(item => item.id === supervisionActionBooking.aircraftId);
+        const aircraftLabel = calendarAircraft
+          ? [calendarAircraft.registration, calendarAircraft.make, calendarAircraft.model].filter(Boolean).join(' ')
+          : undefined;
+        return (
+          <SupervisionActionModal
+            booking={supervisionActionBooking}
+            instructorName={getInstructorName(supervisionActionBooking) || 'Instructor'}
+            supervisorName={getSupervisingInstructorName(supervisionActionBooking)}
+            coverageStart={coverage.startTime}
+            coverageEnd={coverage.endTime}
+            aircraftLabel={aircraftLabel}
+            canAcknowledge={canAcknowledgeManualSupervision(supervisionActionBooking)}
+            acknowledging={acknowledgingBookingId === supervisionActionBooking.id}
+            onAcknowledge={async () => {
+              try {
+                await acknowledgeManualSupervision(supervisionActionBooking);
+                toast.success('Supervision assignment acknowledged');
+                setSupervisionActionBooking(null);
+                await Promise.resolve(onRefresh?.());
+              } catch (error) {
+                toast.error(error instanceof Error
+                  ? error.message
+                  : 'The supervision acknowledgement could not be saved.');
+              }
+            }}
+            canReallocate={canAssignManualSupervision(supervisionActionBooking)}
+            supervisors={getAssignableSupervisors(supervisionActionBooking)}
+            assigning={assigningBookingId === supervisionActionBooking.id}
+            onAssign={async (supervisorId) => {
+              try {
+                const result = await assignManualSupervision(supervisionActionBooking, supervisorId);
+                toast.success(`${result.supervisingInstructorName} has been allocated and notified`);
+                setSupervisionActionBooking(null);
+                await Promise.resolve(onRefresh?.());
+              } catch (error) {
+                toast.error(error instanceof Error
+                  ? error.message
+                  : 'The supervisor could not be reallocated.');
+                throw error;
+              }
+            }}
+            onClose={() => setSupervisionActionBooking(null)}
+          />
+        );
+      })()}
 
       {pendingSupervisionReassignment && (
         <SupervisionReassignmentModal
