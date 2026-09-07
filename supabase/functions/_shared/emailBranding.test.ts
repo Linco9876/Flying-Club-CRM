@@ -35,6 +35,24 @@ Deno.test("portal email branding is idempotent", async () => {
   assertEquals((twice.match(/data-bfc-email-logo/g) || []).length, 1);
 });
 
+Deno.test("portal email branding fills an in-card slot with the configured logo and business name", async () => {
+  const html = await brandPortalEmailHtml(
+    '<html><body><table data-bfc-email-branding-slot="true" role="presentation"><tr><td></td></tr></table><p>Feedback</p></body></html>',
+    {
+      clubName: "Example Aviation",
+      logoUrl: "https://cdn.example.com/logo.png",
+      portalUrl: "https://portal.example.com",
+    },
+  );
+
+  assertMatch(html, /data-bfc-email-logo="true"/);
+  assertMatch(html, /src="https:\/\/cdn\.example\.com\/logo\.png"/);
+  assertMatch(html, /alt="Example Aviation logo"/);
+  assertMatch(html, />Example Aviation<\/td>/);
+  assertEquals((html.match(/data-bfc-email-branding-slot/g) || []).length, 0);
+  assertEquals((html.match(/data-bfc-email-logo/g) || []).length, 1);
+});
+
 Deno.test("portal email branding rejects unsafe logo and portal URLs", async () => {
   const html = await brandPortalEmailHtml("<p>Hello</p>", {
     logoUrl: "javascript:alert(1)",

@@ -123,7 +123,9 @@ Deno.test("review request is attractive, neutral and gives every guest both feed
   assertStringIncludes(email.text, "Unsubscribe");
   assertStringIncludes(email.html, "Leave a Google review");
   assertStringIncludes(email.html, "Send private feedback");
-  assertStringIncludes(email.html, "Choose how you would like to respond");
+  assertStringIncludes(email.html, "We&rsquo;d love your feedback!");
+  assertStringIncludes(email.html, 'data-bfc-email-branding-slot="true"');
+  assertStringIncludes(email.html, "The Example Flying Club Team");
   assertStringIncludes(email.html, 'aria-label="Leave an honest Google review"');
   assertStringIncludes(email.html, 'aria-label="Send private feedback by email"');
   assertStringIncludes(email.html, "positive, negative or somewhere in between");

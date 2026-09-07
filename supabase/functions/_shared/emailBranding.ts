@@ -130,6 +130,25 @@ export const brandPortalEmailHtml = async (
       DEFAULT_PORTAL_EMAIL_BRANDING.portalUrl,
     ),
   };
+  const brandingSlot = /<table\s+data-bfc-email-branding-slot=["']true["'][^>]*>[\s\S]*?<\/table>/i;
+  if (brandingSlot.test(html)) {
+    const inCardLogo =
+      `<table data-bfc-email-logo="true" role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse">
+        <tr>
+          <td align="left" valign="middle" width="148" style="width:148px;padding:0">
+            <table role="presentation" cellspacing="0" cellpadding="0" style="border-collapse:separate;background:#ffffff;border-radius:12px">
+              <tr><td style="padding:7px 10px;line-height:0">
+                <a href="${escapeHtml(branding.portalUrl)}" style="display:block;width:128px;height:58px;line-height:0;text-decoration:none" target="_blank">
+                  <img src="${escapeHtml(branding.logoUrl)}" width="128" height="58" alt="${escapeHtml(branding.clubName)} logo" style="display:block;width:128px!important;max-width:128px!important;height:58px!important;max-height:58px!important;object-fit:contain;object-position:center;border:0;outline:none;text-decoration:none">
+                </a>
+              </td></tr>
+            </table>
+          </td>
+          <td align="right" valign="middle" style="padding:0 0 0 16px;color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:18px;font-weight:800;line-height:1.3">${escapeHtml(branding.clubName)}</td>
+        </tr>
+      </table>`;
+    return html.replace(brandingSlot, inCardLogo);
+  }
   const logo =
     `<table data-bfc-email-logo="true" role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;background:#ffffff;border-bottom:1px solid #dbe3ee">
       <tr>
