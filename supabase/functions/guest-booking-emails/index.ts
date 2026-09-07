@@ -228,7 +228,22 @@ Deno.serve(async (req: Request) => {
   if (action === "send_review_test") {
     const token = clean(req.headers.get("Authorization"), 10_000).replace(/^Bearer\s+/i, "").trim();
     if (!token) return json(req, { error: "Sign in before sending a review test." }, 401);
-    const serviceTest = timingSafeEqual(token, serviceRoleKey);
+    let serviceTest = timingSafeEqual(token, serviceRoleKey);
+    if (!serviceTest) {
+      // Supabase projects can expose either the legacy JWT service-role key or a
+      // newer secret key to deployment automation. The runtime's injected key
+      // is not guaranteed to use the same representation, so verify the
+      // caller's read-only Auth admin capability instead of relying only on a
+      // string comparison. User access tokens cannot call this endpoint.
+      const callerClient = createClient(supabaseUrl, token, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      });
+      const { error: serviceRoleError } = await callerClient.auth.admin.listUsers({
+        page: 1,
+        perPage: 1,
+      });
+      serviceTest = !serviceRoleError;
+    }
     let recipientEmail = "";
     let recipientName = "";
     if (serviceTest) {
