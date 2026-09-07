@@ -14,6 +14,10 @@ const spAssessmentMigration = readFileSync(
   new URL('../../supabase/migrations/20260907123000_allow_unassessed_sp_items.sql', import.meta.url),
   'utf8',
 );
+const spChecklistValidationMigration = readFileSync(
+  new URL('../../supabase/migrations/20260907124500_validate_instructor_compliance_checklist.sql', import.meta.url),
+  'utf8',
+);
 
 test('a satisfactory ordinary Instructor S&P check is due again in exactly 90 days', () => {
   assert.deepEqual(
@@ -82,4 +86,15 @@ test('the database permits neutral S&P items and forces needs-attention checks t
   assert.match(spAssessmentMigration, /NEW\.status := 'remedial_required'/);
   assert.match(spAssessmentMigration, /NEW\.outcome := 'satisfactory'/);
   assert.match(spAssessmentMigration, /NEW\.status := 'completed'/);
+});
+
+test('the database accepts only explicit valid results for every applicable checklist item', () => {
+  assert.match(spChecklistValidationMigration, /IF v_expected_items = 0 THEN/);
+  assert.match(spChecklistValidationMigration, /jsonb_array_length\(NEW\.checklist\) <> v_expected_items/);
+  assert.match(spChecklistValidationMigration, /checklist_item->>'itemId' = course_item\.id::text/);
+  assert.match(
+    spChecklistValidationMigration,
+    /'not_assessed',[\s\S]*'satisfactory',[\s\S]*'unsatisfactory'/,
+  );
+  assert.match(spChecklistValidationMigration, /\) <> 1;/);
 });
