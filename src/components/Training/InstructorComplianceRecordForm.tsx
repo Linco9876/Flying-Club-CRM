@@ -25,6 +25,10 @@ import {
 } from "../../hooks/useInstructorCompliance";
 import { getInstructorCurrencyAfterCheck } from "../../utils/instructorComplianceCurrency";
 import {
+  canLeaveRequiredItemNotAssessed,
+  deriveInstructorAssessmentOutcome,
+} from "../../utils/instructorComplianceAssessment";
+import {
   instructorComplianceSaveFailureMessage,
   type InstructorComplianceSaveStage,
 } from "../../utils/instructorComplianceSave";
@@ -172,17 +176,25 @@ export const InstructorComplianceRecordForm: React.FC<
   const unsatisfactoryCount = applicableItems.filter(
     (item) => results[item.id]?.result === "unsatisfactory",
   ).length;
-  const requiredIncomplete = applicableItems.filter(
-    (item) =>
-      item.required &&
-      (results[item.id]?.result || "not_assessed") === "not_assessed",
+  const notAssessedCount = applicableItems.length - assessedCount;
+  const requiredIncomplete = canLeaveRequiredItemNotAssessed(checkType)
+    ? []
+    : applicableItems.filter(
+        (item) =>
+          item.required &&
+          (results[item.id]?.result || "not_assessed") === "not_assessed",
+      );
+  const assessmentOutcome = deriveInstructorAssessmentOutcome(
+    applicableItems.map(
+      (item) => results[item.id]?.result || "not_assessed",
+    ),
   );
   const projectedCurrency = /^\d{4}-\d{2}-\d{2}$/.test(checkDate)
     ? getInstructorCurrencyAfterCheck(
         checkDate,
         instructorLevel,
         checkType,
-        unsatisfactoryCount > 0 ? "unsatisfactory" : "satisfactory",
+        assessmentOutcome,
       )
     : {
         nextSpCheckDue: "select a valid date",
@@ -286,8 +298,7 @@ export const InstructorComplianceRecordForm: React.FC<
         formUpload = await uploadRenewalForm(candidate.id, renewalForm);
       }
 
-      const outcome =
-        unsatisfactoryCount > 0 ? "unsatisfactory" : "satisfactory";
+      const outcome = assessmentOutcome;
       saveStage = "record-save";
       await saveRecord({
         courseId: course.id,
@@ -549,6 +560,11 @@ export const InstructorComplianceRecordForm: React.FC<
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                   {course?.name} &middot; version {course?.version}
                 </p>
+                {checkType === "sp_check" && (
+                  <p className="mt-1 text-xs font-medium text-gray-600 dark:text-gray-300">
+                    Not assessed is neutral. Any Needs attention item requires a redo.
+                  </p>
+                )}
               </div>
               <div className="rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-700 dark:bg-[#262b33] dark:text-gray-200">
                 {assessedCount}/{applicableItems.length} assessed
@@ -718,12 +734,23 @@ export const InstructorComplianceRecordForm: React.FC<
                 <p className="font-bold text-gray-900 dark:text-gray-100">
                   {unsatisfactoryCount > 0
                     ? "Remedial action required"
-                    : "Satisfactory when all required items are assessed"}
+                    : checkType === "sp_check"
+                      ? "Satisfactory — no items need attention"
+                      : "Satisfactory when all required items are assessed"}
                 </p>
                 <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-                  {requiredIncomplete.length} required item
-                  {requiredIncomplete.length === 1 ? "" : "s"} remaining;{" "}
-                  {unsatisfactoryCount} below standard.
+                  {checkType === "sp_check" ? (
+                    <>
+                      {notAssessedCount} not assessed; {unsatisfactoryCount} need
+                      {unsatisfactoryCount === 1 ? "s" : ""} attention.
+                    </>
+                  ) : (
+                    <>
+                      {requiredIncomplete.length} required item
+                      {requiredIncomplete.length === 1 ? "" : "s"} remaining;{" "}
+                      {unsatisfactoryCount} below standard.
+                    </>
+                  )}
                 </p>
                 {unsatisfactoryCount > 0 ? (
                   <p className="mt-2 text-sm font-semibold text-red-800 dark:text-red-200">
