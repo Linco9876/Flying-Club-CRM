@@ -13,6 +13,7 @@ import {
   normaliseMedicalTypes,
   resolveMedicalRequirement,
 } from '../utils/medicalRequirements';
+import { buildMemberProfileWritePayloads } from '../utils/memberProfileWritePayload';
 
 const getErrorMessage = (error: unknown, fallback: string) => {
   if (error instanceof Error) return error.message;
@@ -461,6 +462,7 @@ export const useStudents = (options?: UseStudentsOptions) => {
 
   const updateStudent = async (id: string, studentData: Omit<Student, 'id'>) => {
     try {
+      const profilePayloads = buildMemberProfileWritePayloads(studentData);
       const { data: existingUser, error: existingUserError } = await supabase
         .from('users')
         .select('email')
@@ -525,21 +527,7 @@ export const useStudents = (options?: UseStudentsOptions) => {
 
       const { data: updatedUsers, error: userError } = await supabase
         .from('users')
-        .update({
-          name: studentData.name,
-          phone: studentData.phone,
-          mobile_phone: studentData.mobilePhone,
-          home_phone: studentData.homePhone,
-          work_phone: studentData.workPhone,
-          address: studentData.address,
-          date_of_birth: studentData.dateOfBirth,
-          emergency_contact_name: studentData.emergencyContact?.name,
-          emergency_contact_phone: studentData.emergencyContact?.phone,
-          emergency_contact_relationship: studentData.emergencyContact?.relationship,
-          preferred_aircraft_id: studentData.preferredAircraftId,
-          avatar_url: studentData.avatar,
-          cover_url: studentData.coverPhoto
-        })
+        .update(profilePayloads.user)
         .eq('id', id)
         .select('id');
 
@@ -548,21 +536,7 @@ export const useStudents = (options?: UseStudentsOptions) => {
         throw new Error('You do not have permission to update this member.');
       }
 
-      const { error: studentError } = await writeStudentRow('update', {
-        raaus_id: studentData.raausId,
-        casa_id: studentData.casaId,
-        medical_type: studentData.medicalType,
-        medical_expiry: studentData.medicalExpiry,
-        licence_expiry: studentData.licenceExpiry,
-        last_raaus_bfr_date: studentData.lastRaausBfrDate || studentData.lastFlightReview,
-        last_casa_afr_date: studentData.lastCasaAfrDate,
-        occupation: studentData.occupation,
-        alternate_phone: studentData.alternatePhone,
-        date_of_birth: studentData.dateOfBirth,
-        emergency_contact_name: studentData.emergencyContact?.name,
-        emergency_contact_phone: studentData.emergencyContact?.phone,
-        emergency_contact_relationship: studentData.emergencyContact?.relationship
-      }, id);
+      const { error: studentError } = await writeStudentRow('update', profilePayloads.studentProfile, id);
 
       if (studentError) throw studentError;
 

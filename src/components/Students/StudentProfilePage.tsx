@@ -46,6 +46,7 @@ import { useFinancialProviders } from '../../context/financialProviderState';
 import { useAdminPasswordReset } from '../../hooks/useAdminPasswordReset';
 import { useAdminMfaReset } from '../../hooks/useAdminMfaReset';
 import { shouldShowXeroContactEditor } from '../../utils/studentProfileAdminActions';
+import { buildEmergencyContactWriteFields } from '../../utils/memberProfileWritePayload';
 import {
   FORMAL_REVIEW_FINDINGS_LABEL,
   requiresFormalReviewFindings,
@@ -1285,11 +1286,18 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     setSavingInfo(true);
 
     try {
+      const emergencyContactPayload = buildEmergencyContactWriteFields({
+        name: infoForm.emergencyContactName,
+        phone: infoForm.emergencyContactPhone,
+        relationship: infoForm.emergencyContactRelationship,
+      });
       const { data: updatedUsers, error: userError } = await supabase
         .from('users')
         .update({
           name: infoForm.name.trim() || student.name,
           phone: infoForm.phone.trim() || null,
+          date_of_birth: infoForm.dateOfBirth || null,
+          ...emergencyContactPayload,
         })
         .eq('id', student.id)
         .select('id');
@@ -1308,9 +1316,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
             : infoForm.medicalExpiry || null,
           casa_id: infoForm.casaArn.trim() || null,
           date_of_birth: infoForm.dateOfBirth || null,
-          emergency_contact_name: infoForm.emergencyContactName.trim() || null,
-          emergency_contact_phone: infoForm.emergencyContactPhone.trim() || null,
-          emergency_contact_relationship: infoForm.emergencyContactRelationship.trim() || null,
+          ...emergencyContactPayload,
       };
 
       const { data: updatedStudentRows, error: studentUpdateError } = await supabase

@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import { StudentTrainingRecords } from './StudentTrainingRecords';
 import { fetchUserXeroBalance } from '../../lib/xeroMemberBalance';
 import { useLatestEffect } from '../../hooks/useLatestEffect';
+import { buildEmergencyContactWriteFields } from '../../utils/memberProfileWritePayload';
 
 interface ProfileData {
   name: string;
@@ -119,9 +120,19 @@ export const StudentProfile: React.FC = () => {
     if (!user?.id) return;
     setSaving(true);
     try {
+      const emergencyContactPayload = buildEmergencyContactWriteFields({
+        name: draft.emergencyContactName,
+        phone: draft.emergencyContactPhone,
+        relationship: draft.emergencyContactRelationship,
+      });
       const { error: userError } = await supabase
         .from('users')
-        .update({ name: draft.name, phone: draft.phone || null })
+        .update({
+          name: draft.name,
+          phone: draft.phone || null,
+          date_of_birth: draft.dateOfBirth || null,
+          ...emergencyContactPayload,
+        })
         .eq('id', user.id);
       if (userError) throw userError;
 
@@ -131,9 +142,7 @@ export const StudentProfile: React.FC = () => {
         casa_id: draft.casaId || null,
         occupation: draft.occupation || null,
         alternate_phone: draft.alternatePhone || null,
-        emergency_contact_name: draft.emergencyContactName || null,
-        emergency_contact_phone: draft.emergencyContactPhone || null,
-        emergency_contact_relationship: draft.emergencyContactRelationship || null,
+        ...emergencyContactPayload,
         medical_type: draft.medicalType || null,
         medical_expiry: draft.medicalExpiry || null,
         licence_expiry: draft.licenceExpiry || null,

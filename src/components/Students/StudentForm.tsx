@@ -147,7 +147,9 @@ export const StudentForm: React.FC<StudentFormProps> = ({
       lastFlightReview: formData.lastRaausBfrDate ? new Date(formData.lastRaausBfrDate) : undefined,
       occupation: formData.occupation || undefined,
       alternatePhone: formData.alternatePhone || undefined,
-      emergencyContact: formData.emergencyContact.name ? formData.emergencyContact : undefined
+      // Keep the empty object on edits so the update layer can distinguish a
+      // deliberate clear from a field that was never supplied.
+      emergencyContact: formData.emergencyContact
     };
 
     try {
