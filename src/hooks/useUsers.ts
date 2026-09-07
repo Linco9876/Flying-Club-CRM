@@ -137,9 +137,9 @@ export const useUsers = (enabled = true) => {
       if (updates.address !== undefined) updateData.address = updates.address;
       if (updates.dateOfBirth !== undefined) updateData.date_of_birth = updates.dateOfBirth;
       if (updates.emergencyContact !== undefined) {
-        updateData.emergency_contact_name = updates.emergencyContact?.name;
-        updateData.emergency_contact_phone = updates.emergencyContact?.phone;
-        updateData.emergency_contact_relationship = updates.emergencyContact?.relationship;
+        updateData.emergency_contact_name = updates.emergencyContact?.name?.trim() || null;
+        updateData.emergency_contact_phone = updates.emergencyContact?.phone?.trim() || null;
+        updateData.emergency_contact_relationship = updates.emergencyContact?.relationship?.trim() || null;
       }
       if (updates.preferredAircraftId !== undefined) updateData.preferred_aircraft_id = updates.preferredAircraftId;
       if (updates.avatar !== undefined) updateData.avatar_url = updates.avatar;
