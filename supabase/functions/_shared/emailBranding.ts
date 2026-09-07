@@ -42,8 +42,10 @@ const emailOptimisedLogoUrl = (value: unknown, fallback: string) => {
         "/storage/v1/render/image/public/",
       );
       parsed.search = "";
-      parsed.searchParams.set("width", "288");
-      parsed.searchParams.set("height", "180");
+      // Give email clients a predictable canvas. `contain` preserves the whole
+      // logo (including tall or unusually wide uploads) without cropping it.
+      parsed.searchParams.set("width", "320");
+      parsed.searchParams.set("height", "144");
       parsed.searchParams.set("resize", "contain");
       parsed.searchParams.set("quality", "85");
     }
@@ -131,15 +133,15 @@ export const brandPortalEmailHtml = async (
   const logo =
     `<table data-bfc-email-logo="true" role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;background:#ffffff;border-bottom:1px solid #dbe3ee">
       <tr>
-        <td align="center" height="114" style="height:114px;padding:12px 20px;line-height:0">
+        <td align="center" style="padding:12px 20px;line-height:0">
           <a href="${
       escapeHtml(branding.portalUrl)
-    }" style="display:inline-block;width:144px;height:90px;line-height:0;text-decoration:none" target="_blank">
+    }" style="display:inline-block;width:160px;height:72px;line-height:0;text-decoration:none" target="_blank">
             <img src="${
       escapeHtml(branding.logoUrl)
-    }" width="144" height="90" alt="${
+    }" width="160" height="72" alt="${
       escapeHtml(branding.clubName)
-    } logo" style="display:block;width:144px!important;max-width:144px!important;height:90px!important;max-height:90px!important;object-fit:contain;object-position:center;border:0;outline:none;text-decoration:none">
+    } logo" style="display:block;width:160px!important;max-width:160px!important;height:72px!important;max-height:72px!important;object-fit:contain;object-position:center;border:0;outline:none;text-decoration:none">
           </a>
         </td>
       </tr>

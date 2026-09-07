@@ -300,8 +300,8 @@ export const buildGuestReviewRequestEmail = (details: GuestReviewRequestEmailDet
     ? `<tr><td style="padding:10px 20px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:800;text-align:center;letter-spacing:.3px;">EMAIL DESIGN PREVIEW — NO VISITOR WAS CONTACTED</td></tr>`
     : "";
   const privateFeedbackButton = feedbackEmail
-    ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:12px;">
-        <tr><td align="center"><a href="${escapeHtml(privateFeedbackUrl)}" style="display:inline-block;padding:11px 18px;color:#334155;text-decoration:none;font-size:14px;font-weight:800;border:1px solid #cbd5e1;border-radius:12px;background:#ffffff;">Send private feedback</a></td></tr>
+    ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;margin-top:12px;border-collapse:separate;">
+        <tr><td align="center" style="border:2px solid #b9cce2;border-radius:14px;background:#f8fbff;box-shadow:0 3px 8px rgba(15,49,95,.06);"><a href="${escapeHtml(privateFeedbackUrl)}" role="button" aria-label="Send private feedback by email" style="display:block;padding:15px 18px;color:#0f315f;text-decoration:none;font-size:16px;font-weight:800;line-height:1.25;">&#9993;&nbsp;&nbsp;Send private feedback&nbsp;&nbsp;&#8250;</a></td></tr>
       </table>`
     : "";
   const html = `<!doctype html>
@@ -323,12 +323,13 @@ export const buildGuestReviewRequestEmail = (details: GuestReviewRequestEmailDet
             <p style="margin:0 0 12px;font-size:17px;line-height:1.6;color:#0f172a;">Hi ${escapeHtml(guestName)},</p>
             <p style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#334155;">${escapeHtml(details.isTest ? "This is a preview of the post-flight email your visitors will receive." : `Thank you for flying with ${businessName}. We hope you enjoyed your experience.`)}</p>
             <div style="margin:0 0 22px;text-align:center;">${contextHtml}</div>
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-              <tr><td align="center" style="border-radius:14px;background:#1a73e8;box-shadow:0 8px 18px rgba(26,115,232,.25);">
-                <a href="${escapeHtml(reviewUrl)}" style="display:block;padding:16px 20px;color:#ffffff;text-decoration:none;font-size:16px;font-weight:800;line-height:1.2;">Leave a Google review</a>
+            <p style="margin:0 0 10px;text-align:center;color:#334155;font-size:13px;font-weight:800;letter-spacing:.2px;">Choose how you would like to respond</p>
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:separate;">
+              <tr><td align="center" style="border-radius:14px;background:#1a73e8;background-image:linear-gradient(135deg,#1a73e8 0%,#1557b0 100%);box-shadow:0 8px 18px rgba(26,115,232,.25);">
+                <a href="${escapeHtml(reviewUrl)}" role="button" aria-label="Leave an honest Google review" style="display:block;padding:16px 18px;color:#ffffff;text-decoration:none;font-size:16px;font-weight:800;line-height:1.25;">&#9733;&nbsp;&nbsp;Leave a Google review&nbsp;&nbsp;&#8250;</a>
               </td></tr>
             </table>
-            <p style="margin:12px 0 0;text-align:center;color:#64748b;font-size:12px;line-height:1.5;">Share an honest review — positive, negative or somewhere in between.</p>
+            <p style="margin:10px 0 0;text-align:center;color:#64748b;font-size:12px;line-height:1.5;">Share an honest review — positive, negative or somewhere in between.</p>
             ${privateFeedbackButton}
             <div style="margin-top:26px;padding-top:20px;border-top:1px solid #e2e8f0;text-align:center;">
               <p style="margin:0;color:#64748b;font-size:12px;line-height:1.6;">This one-time request was sent because you agreed to receive a post-flight feedback email.</p>
