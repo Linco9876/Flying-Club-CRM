@@ -57,6 +57,7 @@ interface BookingFormProps {
     guestName?: string;
     guestEmail?: string;
     guestPhone?: string;
+    guestReviewConsent?: boolean;
     trialFlightVoucherId?: string;
     casualContactId?: string;
     bookingPurpose?: Booking['bookingPurpose'];
@@ -146,6 +147,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
         guestName: booking.guestName || '',
         guestEmail: booking.guestEmail || '',
         guestPhone: booking.guestPhone || '',
+        guestReviewConsent: booking.guestReviewConsent || false,
         trialFlightVoucherId: booking.trialFlightVoucherId || '',
         casualContactId: booking.casualContactId || '',
         bookingPurpose: booking.bookingPurpose || (booking.isGuestBooking ? 'casual_flight' : 'standard'),
@@ -174,6 +176,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       guestName: prefilledData?.guestName || '',
       guestEmail: prefilledData?.guestEmail || '',
       guestPhone: prefilledData?.guestPhone || '',
+      guestReviewConsent: prefilledData?.guestReviewConsent || false,
       trialFlightVoucherId: prefilledData?.trialFlightVoucherId || '',
       casualContactId: prefilledData?.casualContactId || '',
       bookingPurpose: prefilledData?.bookingPurpose || (prefilledData?.isGuestBooking ? 'casual_flight' : 'standard'),
@@ -198,6 +201,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     prefilledData?.guestName,
     prefilledData?.guestEmail,
     prefilledData?.guestPhone,
+    prefilledData?.guestReviewConsent,
     prefilledData?.trialFlightVoucherId,
     prefilledData?.casualContactId,
     prefilledData?.bookingPurpose,
@@ -212,6 +216,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   ]);
 
   const [formData, setFormData] = useState(buildInitialFormData);
+  const guestEmailIsValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.guestEmail.trim());
   const [guestVoucherOptions, setGuestVoucherOptions] = useState<GuestVoucherOption[]>([]);
   const [guestVoucherSearch, setGuestVoucherSearch] = useState('');
   const [pilotSearch, setPilotSearch] = useState('');
@@ -542,6 +547,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       guestName: '',
       guestEmail: '',
       guestPhone: '',
+      guestReviewConsent: false,
       trialFlightVoucherId: '',
       casualContactId: '',
       bookingPurpose: 'standard',
@@ -591,6 +597,10 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       }
       if (!formData.guestName.trim()) {
         toast.error('Guest name is required');
+        return;
+      }
+      if (formData.guestEmail.trim() && !guestEmailIsValid) {
+        toast.error('Enter a valid guest email address or leave it blank');
         return;
       }
       if (!formData.trialFlightVoucherId && !formData.guestPhone.trim()) {
@@ -1060,6 +1070,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                         guestName: '',
                         guestEmail: '',
                         guestPhone: '',
+                        guestReviewConsent: false,
                         trialFlightVoucherId: '',
                         casualContactId: '',
                         bookingPurpose: 'standard',
@@ -1198,7 +1209,14 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                     <input
                       type="email"
                       value={formData.guestEmail}
-                      onChange={(e) => setFormData(prev => ({ ...prev, guestEmail: e.target.value, casualContactId: '' }))}
+                      onChange={(e) => setFormData(prev => ({
+                        ...prev,
+                        guestEmail: e.target.value,
+                        casualContactId: '',
+                        guestReviewConsent: prev.guestEmail.trim().toLowerCase() === e.target.value.trim().toLowerCase()
+                          ? prev.guestReviewConsent
+                          : false,
+                      }))}
                       className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                       placeholder="Guest email (optional)"
                     />
@@ -1213,6 +1231,20 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                   <p className="text-xs text-gray-500">
                     Name and phone are saved for return visits. Add an email to send booking confirmations; it can also be added later when upgrading the visitor to a portal user. No login or invitation is created by this booking.
                   </p>
+                  {guestEmailIsValid && (
+                    <label className="flex items-start gap-2.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs leading-5 text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={formData.guestReviewConsent}
+                        onChange={(event) => setFormData(prev => ({ ...prev, guestReviewConsent: event.target.checked }))}
+                        className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span>
+                        <strong className="font-semibold text-slate-900">Visitor agreed to one post-flight feedback email.</strong>{' '}
+                        Only select this after the visitor has agreed. They can leave an honest Google review, send private feedback or unsubscribe.
+                      </span>
+                    </label>
+                  )}
                 </div>
               ) : (
                 <div className="relative space-y-1">

@@ -1,6 +1,6 @@
 import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useState, useEffect, useRef } from 'react';
-import { Building2, Globe, Phone, Mail, MapPin, Plus, Trash2, X, Loader, Image as ImageIcon } from 'lucide-react';
+import { Building2, Globe, Phone, Mail, MapPin, Plus, Trash2, X, Loader, Image as ImageIcon, Star, Send, MessageSquare } from 'lucide-react';
 import { useOrganisationSettings } from '../../hooks/useSettings';
 import {
   OrganisationLocationDraft,
@@ -12,6 +12,9 @@ import { useLatestEffect } from '../../hooks/useLatestEffect';
 import { getOrganisationLocationValidationError } from '../../utils/organisationLocationRules';
 import { getOrganisationSettingsValidationError } from '../../utils/organisationSettingsRules';
 import { SettingsLoadError } from './SettingsLoadError';
+import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../lib/supabase';
+import toast from 'react-hot-toast';
 
 interface OrganisationSettingsProps {
   canEdit: boolean;
@@ -22,6 +25,7 @@ const CLUB_TIMEZONE = 'Australia/Melbourne';
 const CLUB_CURRENCY = 'AUD';
 
 export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canEdit, onFormChange }) => {
+  const { user } = useAuth();
   const { settings, loading, error, updateSettings, refetch } = useOrganisationSettings();
   const {
     locations,
@@ -43,11 +47,16 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
     bookingDayStart: '06:00',
     bookingDayEnd: '22:00',
     defaultSlotLength: 30,
+    guestReviewRequestsEnabled: false,
+    googleReviewUrl: '',
+    guestReviewDelayMinutes: 120,
+    guestReviewPrivateFeedbackEmail: '',
   });
 
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [locationDrafts, setLocationDrafts] = useState<OrganisationLocationDraft[]>([]);
+  const [sendingReviewTest, setSendingReviewTest] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logoImageSource = safeImageSource(logoPreview);
 
@@ -65,6 +74,10 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
         bookingDayStart: settings.booking_day_start ?? '06:00',
         bookingDayEnd: settings.booking_day_end ?? '22:00',
         defaultSlotLength: settings.default_slot_length ?? 30,
+        guestReviewRequestsEnabled: settings.guest_review_requests_enabled ?? false,
+        googleReviewUrl: settings.google_review_url ?? '',
+        guestReviewDelayMinutes: settings.guest_review_delay_minutes ?? 120,
+        guestReviewPrivateFeedbackEmail: settings.guest_review_private_feedback_email ?? '',
       });
       if (settings.logo_url && !logoPreview) {
         setLogoPreview(settings.logo_url);
@@ -79,7 +92,7 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
     })));
   }, [locations]);
 
-  const handleChange = (field: string, value: string | number) => {
+  const handleChange = (field: string, value: string | number | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     onFormChange();
   };
@@ -162,6 +175,10 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
           booking_day_start: formData.bookingDayStart,
           booking_day_end: formData.bookingDayEnd,
           default_slot_length: formData.defaultSlotLength,
+          guest_review_requests_enabled: formData.guestReviewRequestsEnabled,
+          google_review_url: formData.googleReviewUrl.trim(),
+          guest_review_delay_minutes: formData.guestReviewDelayMinutes,
+          guest_review_private_feedback_email: formData.guestReviewPrivateFeedbackEmail.trim(),
           ...(logoFile === null && logoPreview === null ? { logo_url: null } : {}),
         },
         logoFile
@@ -182,6 +199,10 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
         bookingDayStart: settings?.booking_day_start ?? '06:00',
         bookingDayEnd: settings?.booking_day_end ?? '22:00',
         defaultSlotLength: settings?.default_slot_length ?? 30,
+        guestReviewRequestsEnabled: settings?.guest_review_requests_enabled ?? false,
+        googleReviewUrl: settings?.google_review_url ?? '',
+        guestReviewDelayMinutes: settings?.guest_review_delay_minutes ?? 120,
+        guestReviewPrivateFeedbackEmail: settings?.guest_review_private_feedback_email ?? '',
       });
       setLogoFile(null);
       setLogoPreview(settings?.logo_url ?? null);
@@ -211,6 +232,30 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
       />
     );
   }
+
+  const sendReviewTestEmail = async () => {
+    if (!user?.email) {
+      toast.error('Your signed-in account does not have an email address.');
+      return;
+    }
+    if (!settings?.google_review_url) {
+      toast.error('Save a Google review link before sending a test.');
+      return;
+    }
+    setSendingReviewTest(true);
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke('guest-booking-emails', {
+        body: { action: 'send_review_test' },
+      });
+      if (invokeError) throw invokeError;
+      if (data?.error) throw new Error(data.error);
+      toast.success(`Review email sent to ${user.email}`);
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : 'The review test email could not be sent.');
+    } finally {
+      setSendingReviewTest(false);
+    }
+  };
 
   const inputClass = (disabled: boolean) =>
     `w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
@@ -509,6 +554,96 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
                 placeholder="https://portal.yourclub.com"
               />
             </div>
+          </div>
+        </section>
+
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-100 pb-2">
+            <div>
+              <h3 className="flex items-center gap-2 text-base font-semibold text-gray-900">
+                <Star className="h-4 w-4 text-amber-500" />
+                Guest Review Requests
+              </h3>
+              <p className="mt-1 max-w-3xl text-xs leading-5 text-gray-500">
+                Send one post-flight email only when a visitor has explicitly agreed. Every recipient receives equal access to an honest Google review and private feedback.
+              </p>
+            </div>
+            <label className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-700">
+              <input
+                type="checkbox"
+                checked={formData.guestReviewRequestsEnabled}
+                onChange={(event) => handleChange('guestReviewRequestsEnabled', event.target.checked)}
+                disabled={!canEdit}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              Enabled
+            </label>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="md:col-span-2">
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-600">
+                Google review link
+              </label>
+              <input
+                type="url"
+                value={formData.googleReviewUrl}
+                onChange={(event) => handleChange('googleReviewUrl', event.target.value)}
+                disabled={!canEdit}
+                className={inputClass(!canEdit)}
+                placeholder="https://g.page/r/.../review"
+              />
+              <p className="mt-1 text-xs text-gray-500">Use the direct “Ask for reviews” link from the Google Business Profile.</p>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-600">
+                Send after
+              </label>
+              <SearchableSelect
+                value={formData.guestReviewDelayMinutes}
+                onChange={(event) => handleChange('guestReviewDelayMinutes', Number(event.target.value))}
+                disabled={!canEdit}
+                className={inputClass(!canEdit)}
+              >
+                <option value={0}>Immediately after logging</option>
+                <option value={60}>1 hour after logging</option>
+                <option value={120}>2 hours after logging</option>
+                <option value={240}>4 hours after logging</option>
+                <option value={720}>12 hours after logging</option>
+                <option value={1440}>The next day</option>
+              </SearchableSelect>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-600">
+                <MessageSquare className="mr-1 inline h-3.5 w-3.5" />
+                Private feedback email
+              </label>
+              <input
+                type="email"
+                value={formData.guestReviewPrivateFeedbackEmail}
+                onChange={(event) => handleChange('guestReviewPrivateFeedbackEmail', event.target.value)}
+                disabled={!canEdit}
+                className={inputClass(!canEdit)}
+                placeholder={formData.contactEmail || 'feedback@yourclub.com'}
+              />
+              <p className="mt-1 text-xs text-gray-500">Leave blank to use the main contact email.</p>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 rounded-xl border border-blue-100 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-blue-950">Inspect the finished email</p>
+              <p className="mt-1 text-xs text-blue-800">The test uses the saved settings and is sent only to your signed-in address, {user?.email || 'your account email'}.</p>
+            </div>
+            <button
+              type="button"
+              onClick={sendReviewTestEmail}
+              disabled={!canEdit || sendingReviewTest || !settings?.google_review_url}
+              className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {sendingReviewTest ? <Loader className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              {sendingReviewTest ? 'Sending…' : 'Send test email'}
+            </button>
           </div>
         </section>
 

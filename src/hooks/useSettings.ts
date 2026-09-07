@@ -18,6 +18,10 @@ export interface OrganisationSettings {
   booking_day_end: string;
   default_slot_length: number;
   logo_url?: string | null;
+  guest_review_requests_enabled?: boolean;
+  google_review_url?: string;
+  guest_review_delay_minutes?: number;
+  guest_review_private_feedback_email?: string;
 }
 
 export interface CalendarSettings {
@@ -380,6 +384,10 @@ export const useOrganisationSettings = () => {
         booking_day_start: updates.booking_day_start ?? settings?.booking_day_start ?? '06:00',
         booking_day_end: updates.booking_day_end ?? settings?.booking_day_end ?? '22:00',
         default_slot_length: updates.default_slot_length ?? settings?.default_slot_length ?? 30,
+        guest_review_requests_enabled: updates.guest_review_requests_enabled ?? settings?.guest_review_requests_enabled ?? false,
+        google_review_url: updates.google_review_url ?? settings?.google_review_url ?? '',
+        guest_review_delay_minutes: updates.guest_review_delay_minutes ?? settings?.guest_review_delay_minutes ?? 120,
+        guest_review_private_feedback_email: updates.guest_review_private_feedback_email ?? settings?.guest_review_private_feedback_email ?? '',
         ...(logoUrl !== undefined ? { logo_url: logoUrl } : {}),
         updated_at: new Date().toISOString(),
         updated_by: userData.user?.id,
