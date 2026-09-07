@@ -17,10 +17,10 @@ Deno.test("portal email branding inserts the configured company logo after the b
   assertMatch(html, /<body class="mail"><table data-bfc-email-logo="true"/);
   assertMatch(html, /src="https:\/\/cdn\.example\.com\/company-logo\.png"/);
   assertMatch(html, /alt="Example &amp; Flying Club logo"/);
-  assertMatch(html, /<img[^>]+width="144" height="90"/);
+  assertMatch(html, /<img[^>]+width="160" height="72"/);
   assertMatch(
     html,
-    /width:144px!important;max-width:144px!important;height:90px!important;max-height:90px!important;object-fit:contain/,
+    /width:160px!important;max-width:160px!important;height:72px!important;max-height:72px!important;object-fit:contain/,
   );
   assertMatch(html, /<p>Hello<\/p>/);
 });
@@ -43,7 +43,7 @@ Deno.test("portal email branding rejects unsafe logo and portal URLs", async () 
 
   assertMatch(
     html,
-    /storage\/v1\/render\/image\/public\/org-logos\/logo\.png\?width=288&amp;height=180&amp;resize=contain&amp;quality=85/,
+    /storage\/v1\/render\/image\/public\/org-logos\/logo\.png\?width=320&amp;height=144&amp;resize=contain&amp;quality=85/,
   );
   assertMatch(html, /href="https:\/\/portal\.bendigoflyingclub\.com\.au\/?"/);
 });
