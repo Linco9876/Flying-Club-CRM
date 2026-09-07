@@ -10,6 +10,10 @@ const raausTemplateMigration = readFileSync(
   new URL('../../supabase/migrations/20260807133000_raaus_instructor_sp_and_renewal_templates.sql', import.meta.url),
   'utf8',
 );
+const spAssessmentMigration = readFileSync(
+  new URL('../../supabase/migrations/20260907123000_allow_unassessed_sp_items.sql', import.meta.url),
+  'utf8',
+);
 
 test('a satisfactory ordinary Instructor S&P check is due again in exactly 90 days', () => {
   assert.deepEqual(
@@ -69,4 +73,13 @@ test('the protected templates enforce the RAAus completion evidence and currency
   assert.match(raausTemplateMigration, /NEW\.authority_submission_confirmed/);
   assert.match(raausTemplateMigration, /compliance\.check_type = 'renewal'/);
   assert.match(raausTemplateMigration, /compliance\.outcome = 'satisfactory'/);
+});
+
+test('the database permits neutral S&P items and forces needs-attention checks to remedial', () => {
+  assert.match(spAssessmentMigration, /IF NEW\.check_type <> 'sp_check' THEN/);
+  assert.match(spAssessmentMigration, /WHERE result->>'result' = 'unsatisfactory'/);
+  assert.match(spAssessmentMigration, /NEW\.outcome := 'unsatisfactory'/);
+  assert.match(spAssessmentMigration, /NEW\.status := 'remedial_required'/);
+  assert.match(spAssessmentMigration, /NEW\.outcome := 'satisfactory'/);
+  assert.match(spAssessmentMigration, /NEW\.status := 'completed'/);
 });

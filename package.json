@@ -83,7 +83,7 @@
     "test:flight-log-booking": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/flightLogBookingRules.test.ts src/utils/bookingCalendarRefresh.test.ts",
     "test:casual-contacts": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/casualContacts.test.ts src/utils/casualContactMigration.test.ts",
     "test:flight-time-allocation": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/flightTimeAllocation.test.ts src/utils/logbookEntries.test.ts src/utils/billing.test.ts",
-    "test:instructor-compliance": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/instructorComplianceCurrency.test.ts src/utils/instructorComplianceSave.test.ts",
+    "test:instructor-compliance": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/instructorComplianceAssessment.test.ts src/utils/instructorComplianceCurrency.test.ts src/utils/instructorComplianceSave.test.ts",
     "test:logbook-filters": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/logbookFilters.test.ts src/utils/logbookEntries.test.ts src/utils/externalLogbook.test.ts",
     "test:lesson-record-presentation": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/lessonRecordPresentation.test.ts",
     "test:student-record-import": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/studentRecordImport.test.ts src/utils/studentReviewRecordTransfer.test.ts",
