@@ -154,6 +154,8 @@ export interface Booking {
   guestName?: string;
   guestEmail?: string;
   guestPhone?: string;
+  guestReviewConsent?: boolean;
+  guestReviewConsentAt?: Date;
   casualContactId?: string;
   bookingPurpose?: BookingPurpose;
   location?: string;

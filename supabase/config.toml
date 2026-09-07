@@ -88,3 +88,8 @@ verify_jwt = false
 # Invoked only by the database outbox worker and authenticated with the existing
 # high-entropy internal worker secret. No browser or anonymous email action exists.
 verify_jwt = false
+
+[functions.guest-review-preferences]
+# Public email preference links are authenticated with a high-entropy per-email
+# token and expose no booking or profile data.
+verify_jwt = false

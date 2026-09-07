@@ -1,0 +1,52 @@
+name: Send guest review email test
+
+on:
+  workflow_dispatch:
+    inputs:
+      recipient_email:
+        description: Verified recipient for the clearly marked design test
+        required: true
+        default: lincoln@bbkm.com.au
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  send-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: production
+    steps:
+      - name: Send marked review email preview
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_AU_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_AU_SERVICE_ROLE_KEY }}
+          RECIPIENT_EMAIL: ${{ inputs.recipient_email }}
+        run: |
+          set -euo pipefail
+          test -n "${SUPABASE_URL:-}"
+          test -n "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -n "${RECIPIENT_EMAIL:-}"
+          request_body="$(jq -n \
+            --arg recipientEmail "$RECIPIENT_EMAIL" \
+            --arg recipientName "Lincoln" \
+            --arg reviewUrl "https://www.google.com/maps/search/?api=1&query=Bendigo%20Flying%20Club%2C%20Victa%20Road%2C%20Bendigo%20VIC" \
+            '{action:"send_review_test",recipientEmail:$recipientEmail,recipientName:$recipientName,reviewUrl:$reviewUrl}')"
+          response_file="$(mktemp)"
+          status_code="$(curl --silent --show-error \
+            --request POST \
+            --header "Content-Type: application/json" \
+            --header "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+            --data "$request_body" \
+            --output "$response_file" \
+            --write-out "%{http_code}" \
+            "${SUPABASE_URL%/}/functions/v1/guest-booking-emails")"
+          cat "$response_file"
+          echo
+          if [ "$status_code" -lt 200 ] || [ "$status_code" -ge 300 ]; then
+            echo "::error::Guest review email test returned HTTP ${status_code}."
+            exit 1
+          fi
+          jq -e '.ok == true and .sentTo == env.RECIPIENT_EMAIL' "$response_file" >/dev/null

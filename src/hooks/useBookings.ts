@@ -37,6 +37,7 @@ const OPTIONAL_BOOKING_COLUMNS = new Set([
   'membership_overridden_at', 'membership_eligibility_snapshot', 'casual_contact_id',
   'booking_purpose', 'recurrence_series_id', 'recurrence_occurrence_index',
   'recurrence_occurrence_count', 'recurrence_notifications_finalised_at',
+  'guest_review_consent', 'guest_review_consent_at',
 ]);
 
 interface AddBookingOptions {
@@ -94,6 +95,8 @@ export const useBookings = (enabled = true) => {
         'guest_name',
         'guest_email',
         'guest_phone',
+        'guest_review_consent',
+        'guest_review_consent_at',
         'casual_contact_id',
         'booking_purpose',
         'cancellation_reason_id',
@@ -165,6 +168,8 @@ export const useBookings = (enabled = true) => {
     guestName: row.guest_name || undefined,
     guestEmail: row.guest_email || undefined,
     guestPhone: row.guest_phone || undefined,
+    guestReviewConsent: Boolean(row.guest_review_consent),
+    guestReviewConsentAt: row.guest_review_consent_at ? new Date(row.guest_review_consent_at) : undefined,
     casualContactId: row.casual_contact_id || undefined,
     bookingPurpose: row.booking_purpose || (row.is_guest_booking
       ? (row.trial_flight_voucher_id ? 'trial_flight' : 'casual_flight')
@@ -662,6 +667,7 @@ export const useBookings = (enabled = true) => {
       if (bookingData.isGuestBooking) {
         if (!resolvedGuestName) throw new Error('Guest name is required');
         if (!bookingData.trialFlightVoucherId && !resolvedGuestPhone) throw new Error('Guest phone number is required');
+        if (resolvedGuestEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(resolvedGuestEmail)) throw new Error('Enter a valid guest email address or leave it blank');
       }
 
       if (isStudentOnlyUser && !bookingData.instructorId) {
@@ -701,6 +707,7 @@ export const useBookings = (enabled = true) => {
         guest_name: bookingData.isGuestBooking ? resolvedGuestName || null : null,
         guest_email: bookingData.isGuestBooking ? resolvedGuestEmail || null : null,
         guest_phone: bookingData.isGuestBooking ? resolvedGuestPhone || null : null,
+        guest_review_consent: bookingData.isGuestBooking && Boolean(bookingData.guestReviewConsent),
         casual_contact_id: bookingData.casualContactId || null,
         booking_purpose: bookingPurpose,
         location: bookingData.location?.trim() || 'Bendigo',
@@ -871,6 +878,7 @@ export const useBookings = (enabled = true) => {
       if (isGuestBooking) {
         if (!resolvedGuestName) throw new Error('Guest name is required');
         if (!trialFlightVoucherId && !resolvedGuestPhone) throw new Error('Guest phone number is required');
+        if (resolvedGuestEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(resolvedGuestEmail)) throw new Error('Enter a valid guest email address or leave it blank');
       }
 
       for (const target of updatePlan) {
@@ -1020,6 +1028,9 @@ export const useBookings = (enabled = true) => {
       if (bookingData.guestName !== undefined || bookingData.trialFlightVoucherId) updateData.guest_name = resolvedGuestName || null;
       if (bookingData.guestEmail !== undefined || bookingData.trialFlightVoucherId) updateData.guest_email = resolvedGuestEmail || null;
       if (bookingData.guestPhone !== undefined || bookingData.trialFlightVoucherId) updateData.guest_phone = resolvedGuestPhone || null;
+      if (bookingData.guestReviewConsent !== undefined) {
+        updateData.guest_review_consent = Boolean(bookingData.isGuestBooking ?? currentBooking?.isGuestBooking) && Boolean(bookingData.guestReviewConsent);
+      }
       if (bookingData.casualContactId !== undefined) updateData.casual_contact_id = bookingData.casualContactId || null;
       if (bookingData.bookingPurpose !== undefined || bookingData.isGuestBooking !== undefined || bookingData.trialFlightVoucherId !== undefined) {
         const nextIsGuest = bookingData.isGuestBooking ?? currentBooking?.isGuestBooking ?? false;
@@ -1043,6 +1054,7 @@ export const useBookings = (enabled = true) => {
       if (bookingData.isGuestBooking) {
         if (!resolvedGuestName) throw new Error('Guest name is required');
         if (!bookingData.trialFlightVoucherId && !resolvedGuestPhone) throw new Error('Guest phone number is required');
+        if (resolvedGuestEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(resolvedGuestEmail)) throw new Error('Enter a valid guest email address or leave it blank');
       }
 
       const candidateBooking = currentBooking
