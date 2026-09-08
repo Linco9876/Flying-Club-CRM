@@ -7,6 +7,8 @@ export interface OutstandingFlightLog {
   id: string;
   booking_id?: string;
   aircraft_id: string;
+  private_aircraft_registration?: string;
+  private_aircraft_type?: string;
   student_id: string;
   instructor_id: string;
   start_time: string;
@@ -68,8 +70,8 @@ export function useOutstandingRecords(instructorId?: string, fetchAll?: boolean)
           student_name: userMap.get(log.student_id)?.name,
           student_email: userMap.get(log.student_id)?.email,
           instructor_name: userMap.get(log.instructor_id)?.name,
-          aircraft_registration: aircraftMap.get(log.aircraft_id)?.registration,
-          aircraft_type: [
+          aircraft_registration: log.private_aircraft_registration || aircraftMap.get(log.aircraft_id)?.registration,
+          aircraft_type: log.private_aircraft_type || [
             aircraftMap.get(log.aircraft_id)?.make,
             aircraftMap.get(log.aircraft_id)?.model,
           ].filter(Boolean).join(' ') || aircraftMap.get(log.aircraft_id)?.type,

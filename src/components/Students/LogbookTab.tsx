@@ -1,3 +1,4 @@
+import { isPrivateAircraft } from '../../utils/privateAircraft';
 import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
@@ -170,7 +171,7 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
     saveExternalEntry,
     deleteExternalEntry,
   } = useExternalLogbook(userId);
-  const { aircraft: aircraftList } = useAircraft();
+  const { aircraft: aircraftList } = useAircraft({ includePrivateOption: true });
   const { users } = useUsers();
   const {
     contextByFlightId,
@@ -657,7 +658,7 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
                         </div>
                         <p className="mt-1 text-sm text-gray-600">{log.aircraft ? `${log.aircraft.make} ${log.aircraft.model}`.trim() : 'Aircraft not recorded'}</p>
                       </div>
-                      {log.aircraft?.id ? (
+                      {log.aircraft?.id && !isPrivateAircraft(log.aircraft.id) ? (
                         <Link to={`/aircraft/${encodeURIComponent(log.aircraft.id)}`} className={`${linkClass} logbook-registration inline-flex rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs`}>
                           {log.aircraft.registration || 'Aircraft'}
                         </Link>
@@ -719,7 +720,7 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
                         </div>
                       </td>
                       <td className="px-3 py-3 text-gray-700 whitespace-nowrap">{log.aircraft ? `${log.aircraft.make} ${log.aircraft.model}`.trim() : '—'}</td>
-                      <td className="px-3 py-3 whitespace-nowrap">{log.aircraft?.id ? <Link to={`/aircraft/${encodeURIComponent(log.aircraft.id)}`} className={`${linkClass} logbook-registration inline-flex rounded border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs`}>{log.aircraft.registration || 'Aircraft'}</Link> : (log.aircraft?.registration || '—')}</td>
+                      <td className="px-3 py-3 whitespace-nowrap">{log.aircraft?.id && !isPrivateAircraft(log.aircraft.id) ? <Link to={`/aircraft/${encodeURIComponent(log.aircraft.id)}`} className={`${linkClass} logbook-registration inline-flex rounded border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs`}>{log.aircraft.registration || 'Aircraft'}</Link> : (log.aircraft?.registration || '—')}</td>
                       <td className="px-3 py-3 text-gray-900 whitespace-nowrap"><PersonLinkList people={log.pilotInCommandPeople} /></td>
                       <td className="px-3 py-3 text-gray-700 whitespace-nowrap">{log.otherPilotOrCrewId ? <Link to={`/students/${encodeURIComponent(log.otherPilotOrCrewId)}?tab=profile`} className={linkClass}>{log.otherPilotOrCrew}</Link> : (log.otherPilotOrCrew || '—')}</td>
                       <td className="px-3 py-3 text-center">{log.hoursDual > 0 ? <span className="logbook-hours-badge logbook-hours-badge--dual inline-flex w-14 items-center justify-center rounded border border-green-200 bg-green-50 py-0.5 text-xs font-semibold text-green-700">{formatHours(log.hoursDual)}</span> : <span className="text-gray-400">—</span>}</td>

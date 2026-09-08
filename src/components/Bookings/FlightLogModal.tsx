@@ -1,3 +1,4 @@
+import { isPrivateAircraft, normaliseAircraftRegistration, privateAircraftValidationError } from '../../utils/privateAircraft';
 import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useState, useEffect } from 'react';
 import { AlertTriangle, X, Lock, Copy, ExternalLink, Mail, QrCode, Loader2 } from 'lucide-react';
@@ -34,6 +35,8 @@ interface Booking {
   studentId: string;
   instructorId?: string;
   aircraftId: string;
+  privateAircraftType?: string;
+  privateAircraftRegistration?: string;
   startTime: Date | string;
   endTime: Date | string;
   notes?: string;
@@ -106,7 +109,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     effectiveSettings: settings,
     error: flightLogSettingsError,
   } = useFlightLogSettings(booking.aircraftId);
-  const { aircraft: aircraftList } = useAircraft();
+  const { aircraft: aircraftList } = useAircraft({ includePrivateOption: true });
   const { users } = useUsers();
   const {
     flightTypes,
@@ -123,7 +126,8 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const financialCaptureEnabled = shouldCaptureFinancialDetails(financialProviders);
 
   const aircraft = aircraftList.find((a) => a.id === booking.aircraftId);
-  const currentTach = aircraft?.totalHours || 0;
+  const isPrivateFlight = isPrivateAircraft(booking.aircraftId);
+  const currentTach = isPrivateFlight ? 0 : aircraft?.totalHours || 0;
 
   const startTimeValue = booking.startTime instanceof Date
     ? booking.startTime.getTime()
@@ -143,6 +147,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [tachAutoFilled, setTachAutoFilled] = useState(false);
   const [hobbsAutoFilled, setHobbsAutoFilled] = useState(false);
+  const [savedPrivateRate, setSavedPrivateRate] = useState<typeof aircraftRates[number] | null>(null);
   const [loadedFlightLogId, setLoadedFlightLogId] = useState<string>(flightLogId || '');
   const [showOverlapWarning, setShowOverlapWarning] = useState(false);
   const [adminChargeOverride, setAdminChargeOverride] = useState<number | ''>('');
@@ -196,6 +201,8 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const buildDefaultFormData = () => ({
     start_time: startTime.toISOString(),
     end_time: endTime.toISOString(),
+    private_aircraft_type: booking.privateAircraftType || '',
+    private_aircraft_registration: booking.privateAircraftRegistration || '',
     start_tach: currentTach,
     end_tach: '' as number | '',
     flight_duration: '' as number | '',
@@ -224,7 +231,9 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const [formData, setFormData] = useState(buildDefaultFormData);
 
   const selectedFlightType = flightTypes.find(ft => ft.id === formData.flight_type_id) ?? null;
-  const selectedRate = aircraftRates.find(r => r.flightTypeId === formData.flight_type_id) ?? null;
+  const selectedRate = isPrivateFlight && savedPrivateRate?.flightTypeId === formData.flight_type_id
+    ? savedPrivateRate
+    : aircraftRates.find(r => r.flightTypeId === formData.flight_type_id) ?? null;
   const isFree = selectedRate?.chargeType === 'free' || selectedRate?.chargeType === 'not_used';
   const isPrepaidSelectedFlightType = isPrepaidFlightType(selectedFlightType?.name);
   const isPaymentForced = isVoucherBooking || isPrepaidSelectedFlightType || (!isFree && !!selectedFlightType?.forcedPaymentMethodId);
@@ -241,8 +250,9 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     soloHours: formData.solo_time,
     passengerCount: formData.passengers,
     startTime: formData.start_time,
+    timeZone: isPrivateFlight ? 'Australia/Sydney' : undefined,
   });
-  const showAdminChargeOverride = financialCaptureEnabled && mode === 'create' && isAdmin && !!formData.flight_type_id && formData.flight_duration !== '' && !isVoucherBooking;
+  const showAdminChargeOverride = !isPrivateFlight && financialCaptureEnabled && mode === 'create' && isAdmin && !!formData.flight_type_id && formData.flight_duration !== '' && !isVoucherBooking;
   const finalCharge = showAdminChargeOverride && adminChargeOverride !== ''
     ? Number(adminChargeOverride)
     : estimatedCost;
@@ -382,11 +392,20 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
 
       const defaults = buildDefaultFormData();
       setLoadedFlightLogId(data.id);
+      const savedRate = data.private_aircraft_rate_snapshot;
+      setSavedPrivateRate(savedRate ? {
+        id: savedRate.id, aircraftId: data.aircraft_id, flightTypeId: data.flight_type_id,
+        chargeType: savedRate.charge_type, soloRate: Number(savedRate.solo_rate || 0), dualRate: Number(savedRate.dual_rate || 0),
+        flatSurcharge: Number(savedRate.flat_surcharge || 0), weekendSurcharge: Number(savedRate.weekend_surcharge || 0),
+        defaultPaymentMethodId: savedRate.default_payment_method_id, includedTaxes: Number(savedRate.included_taxes || 0),
+      } : null);
       setTachAutoFilled(false);
       setFormData({
         ...defaults,
         start_time: data.start_time ?? defaults.start_time,
         end_time: data.end_time ?? defaults.end_time,
+        private_aircraft_type: data.private_aircraft_type || defaults.private_aircraft_type,
+        private_aircraft_registration: data.private_aircraft_registration || defaults.private_aircraft_registration,
         start_tach: Number(data.start_tach ?? data.tach_start ?? defaults.start_tach),
         end_tach: data.end_tach ?? data.tach_end ?? '',
         flight_duration: data.flight_duration ?? data.duration ?? '',
@@ -419,7 +438,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   useEffect(() => {
     const calculateAutoFilledMeterStarts = async () => {
       if (mode === 'edit') return;
-      if (!booking.aircraftId) return;
+      if (!booking.aircraftId || isPrivateAircraft(booking.aircraftId)) return;
       if (!startTimeIso) return;
 
       if (!hobbsStartEnabled && !tachStartEnabled) return;
@@ -566,9 +585,12 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const isPaymentSelectorEnabled = financialCaptureEnabled && isFieldEnabled('payment_type');
 
   const validateForm = (): string | null => {
-    if (formData.end_tach === '') return 'Please enter end tach';
+    const privateError = privateAircraftValidationError({ aircraftId: booking.aircraftId, instructorId: booking.instructorId, privateAircraftType: formData.private_aircraft_type, privateAircraftRegistration: formData.private_aircraft_registration });
+    if (privateError) return privateError;
+    if (isPrivateFlight && formData.solo_time > 0) return 'Private aircraft instruction must be logged as dual time.';
+    if (!isPrivateFlight && formData.end_tach === '') return 'Please enter end tach';
     if (formData.flight_duration === '') return 'Please enter flight duration';
-    if (formData.start_tach >= formData.end_tach) return 'End tach must be greater than start tach';
+    if (!isPrivateFlight && formData.start_tach >= Number(formData.end_tach)) return 'End tach must be greater than start tach';
     if (formData.flight_duration <= 0) return 'Flight duration must be positive';
     const allocationError = validateFlightTimeAllocation({
       durationHours: Number(formData.flight_duration),
@@ -577,6 +599,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
       hasInstructor: isDualFlight,
     });
     if (allocationError) return allocationError;
+    if (financialCaptureEnabled && isPrivateFlight && (!selectedRate || selectedRate.chargeType === 'not_used')) return 'Select a Payment Type with a configured private aircraft instruction rate.';
     if (financialCaptureEnabled && !isVoucherBooking && !formData.flight_type_id) return 'Please select a Payment Type';
     if (
       financialCaptureEnabled
@@ -824,12 +847,14 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
       const logData = {
         booking_id: booking.id,
         aircraft_id: booking.aircraftId,
+        private_aircraft_type: isPrivateFlight ? formData.private_aircraft_type.trim() : undefined,
+        private_aircraft_registration: isPrivateFlight ? normaliseAircraftRegistration(formData.private_aircraft_registration) : undefined,
         student_id: booking.studentId,
         instructor_id: booking.instructorId,
         start_time: formData.start_time,
         end_time: formData.end_time,
-        start_tach: formData.start_tach,
-        end_tach: formData.end_tach,
+        start_tach: isPrivateFlight ? 0 : formData.start_tach,
+        end_tach: isPrivateFlight ? Number(formData.flight_duration) : formData.end_tach,
         flight_duration: roundFlightDecimal(Number(formData.flight_duration)),
         dual_time: roundFlightDecimal(formData.dual_time),
         solo_time: roundFlightDecimal(formData.solo_time),
@@ -917,6 +942,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     return !name.includes('pilot account') && !name.includes('prepaid') && !name.includes('pre-paid');
   });
   const availableFlightTypes = flightTypes.filter(ft =>
+    (!isPrivateFlight || ft.id === savedPrivateRate?.flightTypeId || aircraftRates.some(rate => rate.flightTypeId === ft.id && rate.chargeType !== 'not_used')) &&
     ft.active && isPaymentTypeAvailable(ft, paymentMethods, financialProviders)
   );
 
@@ -955,7 +981,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
             <div>
               <span className="text-xs font-medium text-gray-500 uppercase">Aircraft</span>
               <p className="font-medium text-gray-900">
-                {aircraft ? `${aircraft.registration} – ${aircraft.make} ${aircraft.model}` : 'Unknown'}
+                {isPrivateFlight ? `${formData.private_aircraft_registration} – ${formData.private_aircraft_type}` : aircraft ? `${aircraft.registration} – ${aircraft.make} ${aircraft.model}` : 'Unknown'}
               </p>
             </div>
             <div>
@@ -1000,9 +1026,9 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
 
           {/* Tach / Duration */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            <div>
+            <div hidden={isPrivateFlight}>
               <label className={labelClass}>
-                Start Tach <span className="text-red-500">*</span>
+                {isPrivateFlight ? 'Start hours' : 'Start Tach'} <span className="text-red-500">*</span>
               </label>
               <input
                 type="number"
@@ -1014,9 +1040,9 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
               />
               {tachAutoFilled && <p className="text-xs text-green-600 mt-1">Auto-filled from previous log</p>}
             </div>
-            <div>
+            <div hidden={isPrivateFlight}>
               <label className={labelClass}>
-                End Tach <span className="text-red-500">*</span>
+                {isPrivateFlight ? 'End hours' : 'End Tach'} <span className="text-red-500">*</span>
               </label>
               <input
                 type="number"
@@ -1029,7 +1055,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
             </div>
             <div>
               <label className={labelClass}>
-                Duration <span className="text-red-500">*</span>
+                {isPrivateFlight ? 'Flying time (hours)' : 'Duration'} <span className="text-red-500">*</span>
               </label>
               <input
                 type="number"
@@ -1061,7 +1087,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
           </div>
 
           {/* Student flight-time allocation */}
-          <div className="rounded-lg border border-blue-200 bg-blue-50/70 px-3 py-2">
+          {!isPrivateFlight && <div className="rounded-lg border border-blue-200 bg-blue-50/70 px-3 py-2">
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <h3 className="text-xs font-semibold text-blue-950">Dual / solo split</h3>
@@ -1106,7 +1132,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
             <p className="mt-1 text-[11px] font-medium leading-4 text-blue-900">
               {(formData.dual_time + formData.solo_time).toFixed(1)} / {Number(formData.flight_duration || 0).toFixed(1)} hours allocated
             </p>
-          </div>
+          </div>}
 
           {financialCaptureEnabled && isVoucherBooking && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
@@ -1117,6 +1143,13 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
             </div>
           )}
 
+          {isPrivateFlight && (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <label className={labelClass}>Aircraft type *<input required maxLength={100} value={formData.private_aircraft_type} onChange={e => setFormData(prev => ({ ...prev, private_aircraft_type: e.target.value }))} className={fieldClass} /></label>
+              <label className={labelClass}>Registration *<input required maxLength={30} value={formData.private_aircraft_registration} onChange={e => setFormData(prev => ({ ...prev, private_aircraft_registration: normaliseAircraftRegistration(e.target.value) }))} className={fieldClass} /></label>
+              <p className="text-xs text-gray-500 md:col-span-2">Enter actual flying hours. The configured rate covers instruction only. Record separately charged ground briefing using a ground session.</p>
+            </div>
+          )}
           {/* Payment Type + Payment Method */}
           {financialCaptureEnabled && (
           <div className={`${isVoucherBooking ? 'hidden' : 'grid'} grid-cols-1 md:grid-cols-2 gap-3`}>
@@ -1203,7 +1236,9 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                   <span className="font-semibold">${estimatedCost.toFixed(2)}</span>
                   {selectedRate && (
                     <span className="ml-2 text-xs text-blue-700">
-                      {selectedRate.chargeType === 'tach'
+                      {isPrivateFlight && selectedRate.chargeType === 'tach'
+                        ? 'Flying instruction rate'
+                        : selectedRate.chargeType === 'tach'
                         ? flightTimeAllocationLabel === 'Mixed dual / solo'
                           ? 'Mixed dual / solo tach rates'
                           : `${flightTimeAllocationLabel} tach rate`

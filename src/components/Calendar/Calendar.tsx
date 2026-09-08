@@ -1,3 +1,4 @@
+import { isPrivateAircraft } from '../../utils/privateAircraft';
 import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } from 'react';
 import {
@@ -281,7 +282,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { aircraft, loading: aircraftLoading } = useAircraft({ participateInPageLoad: false });
+  const { aircraft, loading: aircraftLoading } = useAircraft({ participateInPageLoad: false, includePrivateOption: true });
   const { users, loading: usersLoading } = useUsers();
   const [publicInstructorDirectory, setPublicInstructorDirectory] = useState<Array<{ id: string; name: string; email: string }>>([]);
   const { deleteFlightLog, getFlightLogDeleteImpact, findFlightLogForBooking } = useFlightLogs(undefined, { participateInPageLoad: false });
@@ -322,12 +323,12 @@ export const Calendar: React.FC<CalendarProps> = ({
   const lastKnownUsersRef = useRef<typeof users>([]);
   const lastKnownInstructorsRef = useRef<typeof instructors>([]);
   useEffect(() => {
-    const activeAircraft = aircraft.filter(item => !item.isArchived);
+    const activeAircraft = aircraft.filter(item => !item.isArchived && (!isPrivateAircraft(item.id) || item.privateBookingEnabled || bookings.some(booking => booking.aircraftId === item.id)));
     if (activeAircraft.length > 0) lastKnownAircraftRef.current = activeAircraft;
     if (users.length > 0) lastKnownUsersRef.current = users;
     if (instructors.length > 0) lastKnownInstructorsRef.current = instructors;
   }, [aircraft, users, instructors]);
-  const activeAircraft = useMemo(() => aircraft.filter(item => !item.isArchived), [aircraft]);
+  const activeAircraft = useMemo(() => aircraft.filter(item => !item.isArchived && (!isPrivateAircraft(item.id) || item.privateBookingEnabled || bookings.some(booking => booking.aircraftId === item.id))), [aircraft, bookings]);
   const displayAircraft = activeAircraft.length > 0 ? activeAircraft : lastKnownAircraftRef.current;
   const aircraftForLookup = aircraft.length > 0 ? aircraft : displayAircraft;
   const displayUsers = users.length > 0 ? users : lastKnownUsersRef.current;
@@ -1198,6 +1199,7 @@ export const Calendar: React.FC<CalendarProps> = ({
 
   const getAircraftName = (booking: Booking) => {
     if (booking.bookingKind === 'ground') return 'Ground session';
+    if (isPrivateAircraft(booking.aircraftId)) return ['Private flight', booking.privateAircraftRegistration, booking.privateAircraftType].filter(Boolean).join(' · ');
     const bookedAircraft = aircraftForLookup.find((a) => a.id === booking.aircraftId);
     if (!bookedAircraft) return 'Unknown Aircraft';
     return `${bookedAircraft.registration} ${bookedAircraft.make || ''} ${bookedAircraft.model || ''}`.trim();
@@ -6022,7 +6024,7 @@ export const Calendar: React.FC<CalendarProps> = ({
           booking={actionMenuBooking}
           calendarAircraftLabel={(() => {
             const calendarAircraft = aircraft.find(item => item.id === actionMenuBooking.aircraftId);
-            return calendarAircraft ? [calendarAircraft.registration, calendarAircraft.make, calendarAircraft.model].filter(Boolean).join(' ') : undefined;
+            return isPrivateAircraft(actionMenuBooking.aircraftId) ? getAircraftName(actionMenuBooking) : calendarAircraft ? [calendarAircraft.registration, calendarAircraft.make, calendarAircraft.model].filter(Boolean).join(' ') : undefined;
           })()}
           position={actionMenuPosition}
           canEdit={canUseBookingActions(actionMenuBooking)}

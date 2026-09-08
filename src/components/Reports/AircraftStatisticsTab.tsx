@@ -1,3 +1,4 @@
+import { isPrivateAircraft } from '../../utils/privateAircraft';
 import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useState, useMemo } from 'react';
 import { Download, Search, ChevronUp, ChevronDown, ChevronsUpDown, Loader, CheckCircle, AlertTriangle } from 'lucide-react';
@@ -35,7 +36,7 @@ export const AircraftStatisticsTab: React.FC = () => {
   const stats = useMemo((): AircraftStats[] => {
     const map = new Map<string, AircraftStats>();
 
-    aircraft.forEach(a => {
+    aircraft.filter(a => !isPrivateAircraft(a.id)).forEach(a => {
       map.set(a.id, {
         id: a.id,
         registration: a.registration,
@@ -159,7 +160,7 @@ export const AircraftStatisticsTab: React.FC = () => {
   }
 
   const totalFleetHours = sorted.reduce((s, a) => s + a.totalHours, 0);
-  const serviceableCount = aircraft.filter(a => a.status === 'serviceable').length;
+  const serviceableCount = aircraft.filter(a => !isPrivateAircraft(a.id) && a.status === 'serviceable').length;
 
   return (
     <div className="space-y-5">
@@ -246,7 +247,7 @@ export const AircraftStatisticsTab: React.FC = () => {
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
-          { label: 'Total Aircraft', value: aircraft.length, color: 'bg-blue-50 text-blue-700 border-blue-100' },
+          { label: 'Total Aircraft', value: aircraft.filter(item => !isPrivateAircraft(item.id)).length, color: 'bg-blue-50 text-blue-700 border-blue-100' },
           { label: 'Serviceable', value: serviceableCount, color: 'bg-green-50 text-green-700 border-green-100' },
           { label: 'Fleet Hours (filtered)', value: totalFleetHours.toFixed(1), color: 'bg-sky-50 text-sky-700 border-sky-100' },
           { label: 'Total Bookings', value: sorted.reduce((s, a) => s + a.totalBookings, 0), color: 'bg-amber-50 text-amber-700 border-amber-100' },

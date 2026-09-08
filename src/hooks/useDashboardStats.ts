@@ -1,3 +1,4 @@
+import { isPrivateAircraft } from '../utils/privateAircraft';
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { fetchOwnXeroBalance } from '../lib/xeroMemberBalance';
@@ -80,7 +81,7 @@ export function useDashboardStats(userId?: string, userRole?: string, scheduleSc
       let todaysScheduleQuery = supabase
         .from('bookings')
         .select(`
-          id, start_time, end_time, status,
+          id, start_time, end_time, status, private_aircraft_registration,
           student:student_id (id, name),
           instructor:instructor_id (name),
           aircraft:aircraft_id (registration)
@@ -115,7 +116,7 @@ export function useDashboardStats(userId?: string, userRole?: string, scheduleSc
           .lt('start_time', todayEnd),
         supabase
           .from('flight_logs')
-          .select('flight_duration, aircraft_id')
+          .select('flight_duration, aircraft_id, calculated_cost')
           .gte('start_time', monthStart)
           .lte('end_time', monthEnd),
         supabase
@@ -126,7 +127,7 @@ export function useDashboardStats(userId?: string, userRole?: string, scheduleSc
         todaysScheduleQuery,
       ]);
 
-      const allAircraft = aircraftResult.data || [];
+      const allAircraft = (aircraftResult.data || []).filter(aircraft => !isPrivateAircraft(aircraft.id));
       const serviceableCount = allAircraft.filter(a => a.status === 'serviceable').length;
       const unserviceableCount = allAircraft.filter(a => a.status !== 'serviceable').length;
 
@@ -134,25 +135,26 @@ export function useDashboardStats(userId?: string, userRole?: string, scheduleSc
       let monthlyRevenue = 0;
       const aircraftMap = new Map(allAircraft.map(a => [a.id, a]));
       for (const log of flightLogs) {
+        if (isPrivateAircraft(log.aircraft_id)) { monthlyRevenue += Number(log.calculated_cost || 0); continue; }
         const aircraft = aircraftMap.get(log.aircraft_id);
         if (aircraft) {
           monthlyRevenue += (log.flight_duration || 0) * parseFloat(aircraft.hourly_rate || 0);
         }
       }
 
-      const totalMonthlyHours = flightLogs.reduce((sum, log) => sum + (log.flight_duration || 0), 0);
+      const totalFleetMonthlyHours = flightLogs.filter(log => !isPrivateAircraft(log.aircraft_id)).reduce((sum, log) => sum + (log.flight_duration || 0), 0);
       const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
       const availableHoursPerDay = 8;
       const totalAvailableHours = serviceableCount * availableHoursPerDay * daysInMonth;
       const fleetUtilization = totalAvailableHours > 0
-        ? Math.min(100, Math.round((totalMonthlyHours / totalAvailableHours) * 100))
+        ? Math.min(100, Math.round((totalFleetMonthlyHours / totalAvailableHours) * 100))
         : 0;
 
       const recentBookings = (allBookingsTodayResult.data || []).map((b: any) => ({
         id: b.id,
         studentId: b.student?.id,
         studentName: b.student?.name || 'Unknown',
-        aircraftRegistration: b.aircraft?.registration || 'Unknown',
+        aircraftRegistration: b.private_aircraft_registration || b.aircraft?.registration || 'Unknown',
         startTime: new Date(b.start_time),
         endTime: new Date(b.end_time),
         status: b.status,
@@ -223,7 +225,7 @@ export function useDashboardStats(userId?: string, userRole?: string, scheduleSc
         const nextBookingResult = await supabase
           .from('bookings')
           .select(`
-            id, start_time, end_time, status, location,
+            id, start_time, end_time, status, private_aircraft_registration, location,
             aircraft:aircraft_id (registration),
             student:student_id (name),
             supervisor:supervising_instructor_id (name)
@@ -244,7 +246,7 @@ export function useDashboardStats(userId?: string, userRole?: string, scheduleSc
             endTime: new Date(nb.end_time),
             status: nb.status,
             location: nb.location || undefined,
-            aircraftRegistration: nb.aircraft?.registration || 'Unknown',
+            aircraftRegistration: nb.private_aircraft_registration || nb.aircraft?.registration || 'Unknown',
             instructorName: nb.student?.name,
             supervisorName: nb.supervisor?.name,
           };
@@ -260,7 +262,7 @@ export function useDashboardStats(userId?: string, userRole?: string, scheduleSc
           supabase
             .from('bookings')
             .select(`
-              id, start_time, end_time, status, location,
+              id, start_time, end_time, status, private_aircraft_registration, location,
               aircraft:aircraft_id (registration),
               instructor:instructor_id (name)
             `)
@@ -295,7 +297,7 @@ export function useDashboardStats(userId?: string, userRole?: string, scheduleSc
             endTime: new Date(nb.end_time),
             status: nb.status === 'pending_supervision' ? 'confirmed' : nb.status,
             location: nb.location || undefined,
-            aircraftRegistration: nb.aircraft?.registration || 'Unknown',
+            aircraftRegistration: nb.private_aircraft_registration || nb.aircraft?.registration || 'Unknown',
             instructorName: nb.instructor?.name,
           };
         }

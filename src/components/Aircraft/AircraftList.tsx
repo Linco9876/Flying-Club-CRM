@@ -1,3 +1,4 @@
+import { isPrivateAircraft } from '../../utils/privateAircraft';
 import React, { useRef, useEffect } from 'react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -20,7 +21,8 @@ export const AircraftList: React.FC = () => {
     || user?.role === 'senior_instructor'
     || user?.roles?.some(role => role === 'instructor' || role === 'senior_instructor'));
   const canSeeMaintenancePlanning = isStaff;
-  const { aircraft, loading, addAircraft, updateAircraft, reportDefect, archiveAircraft, restoreAircraft } = useAircraft({ includeRates: false });
+  const { aircraft: allAircraft, loading, addAircraft, updateAircraft, reportDefect, archiveAircraft, restoreAircraft } = useAircraft({ includeRates: false });
+  const aircraft = allAircraft.filter(item => !isPrivateAircraft(item.id));
   const { milestones, loading: milestonesLoading } = useMaintenanceMilestones({ enabled: canSeeMaintenancePlanning });
   const [showAircraftForm, setShowAircraftForm] = useState(false);
   const [showDefectForm, setShowDefectForm] = useState(false);

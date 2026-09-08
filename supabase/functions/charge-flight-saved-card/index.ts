@@ -59,7 +59,7 @@ const markFlightPaid = async ({
 }) => {
   const now = new Date().toISOString();
   const aircraft = firstJoinRow(flightLog.aircraft) as { registration?: unknown } | undefined;
-  const aircraftRegistration = cleanText(aircraft?.registration) || "aircraft";
+  const aircraftRegistration = cleanText(flightLog.private_aircraft_registration) || cleanText(aircraft?.registration) || "aircraft";
   const flightDate = flightLog.start_time ? new Date(flightLog.start_time).toLocaleDateString("en-AU") : "flight";
   const description = `Stripe saved card payment (${paymentIntent.id}) - ${aircraftRegistration} flight on ${flightDate}`;
   const flightCost = Number(flightLog.calculated_cost || 0);
@@ -164,6 +164,8 @@ Deno.serve(async (req: Request) => {
         student_id,
         start_time,
         flight_duration,
+        private_aircraft_registration,
+        private_aircraft_type,
         calculated_cost,
         payment_status,
         payment_type,
@@ -219,7 +221,7 @@ Deno.serve(async (req: Request) => {
     const aircraft = firstJoinRow(flightLog.aircraft) as { registration?: unknown } | undefined;
     const student = firstJoinRow(flightLog.users) as { name?: unknown; email?: unknown } | undefined;
     const flightType = firstJoinRow(flightLog.flight_types) as { name?: unknown } | undefined;
-    const aircraftRegistration = cleanText(aircraft?.registration) || "aircraft";
+    const aircraftRegistration = cleanText(flightLog.private_aircraft_registration) || cleanText(aircraft?.registration) || "aircraft";
     const studentName = cleanText(student?.name) || "Member";
     const flightTypeName = cleanText(flightType?.name) || "Flight";
     const flightDate = flightLog.start_time ? new Date(flightLog.start_time).toLocaleDateString("en-AU") : "flight";

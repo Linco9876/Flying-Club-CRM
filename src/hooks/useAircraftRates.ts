@@ -17,6 +17,7 @@ export interface AircraftRate {
 }
 
 export const useAircraftRates = (aircraftId?: string, enabled = true) => {
+  const [error, setError] = useState<string | null>(null);
   const [rates, setRates] = useState<AircraftRate[]>([]);
   const [loading, setLoading] = useState(enabled && Boolean(aircraftId));
 
@@ -33,6 +34,7 @@ export const useAircraftRates = (aircraftId?: string, enabled = true) => {
     if (!aircraftId) return;
 
     try {
+      setError(null);
       const { data, error } = await supabase
         .from('aircraft_rates')
         .select('*')
@@ -55,6 +57,7 @@ export const useAircraftRates = (aircraftId?: string, enabled = true) => {
         })));
       }
     } catch (error) {
+      setError('Could not load aircraft rates.');
       console.error('Error fetching aircraft rates:', error);
     } finally {
       setLoading(false);
@@ -120,6 +123,7 @@ export const useAircraftRates = (aircraftId?: string, enabled = true) => {
   return {
     rates,
     loading,
+    error,
     upsertRate,
     deleteRate,
     refetch: fetchRates

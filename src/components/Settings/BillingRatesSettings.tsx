@@ -1,3 +1,4 @@
+import { PrivateAircraftSettings } from './PrivateAircraftSettings';
 import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, CreditCard, DollarSign, GripVertical, Link2, Loader2, Lock, Plus, Trash2, Users } from 'lucide-react';
@@ -33,7 +34,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
     error: groundDescriptionsError,
     refetch: refetchGroundDescriptions,
   } = useGroundSessionDescriptions();
-  const { aircraft } = useAircraft();
+  const { aircraft } = useAircraft({ includePrivateOption: true });
   const [draftFlightTypes, setDraftFlightTypes] = useState<FlightType[]>([]);
   const [draftPaymentMethods, setDraftPaymentMethods] = useState<PaymentMethod[]>([]);
   const {
@@ -364,6 +365,8 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
         </h2>
         <p className="text-gray-600">Configure payment types, payment methods and the rate rules used when flights or ground sessions are logged.</p>
       </div>
+
+      <PrivateAircraftSettings canEdit={canEdit} />
 
       <div className="flex gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950">
         <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" aria-hidden="true" />

@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { isPrivateAircraft } from '../utils/privateAircraft';
+import { useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Aircraft, Defect } from '../types';
 import toast from 'react-hot-toast';
@@ -77,6 +78,7 @@ const getSignedDefectAttachmentUrls = async (photos?: string[] | null) => {
 };
 
 interface UseAircraftOptions {
+  includePrivateOption?: boolean;
   participateInPageLoad?: boolean;
   includeRates?: boolean;
   includeResolvedDefects?: boolean;
@@ -208,6 +210,7 @@ export const useAircraft = (options?: UseAircraftOptions) => {
         return {
           id: a.id,
           registration: a.registration,
+        privateBookingEnabled: a.private_booking_enabled,
           make: a.make,
           model: a.model,
           type: a.type,
@@ -771,8 +774,9 @@ export const useAircraft = (options?: UseAircraftOptions) => {
     fetchAircraft();
   }, [canSeePrivateAircraftData, includeRates, includeResolvedDefects]);
 
+  const visibleAircraft = useMemo(() => options?.includePrivateOption ? aircraft : aircraft.filter(item => !isPrivateAircraft(item.id)), [aircraft, options?.includePrivateOption]);
   return {
-    aircraft,
+    aircraft: visibleAircraft,
     loading,
     error,
     reportDefect,

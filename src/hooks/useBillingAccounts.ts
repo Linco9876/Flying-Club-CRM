@@ -282,6 +282,7 @@ const fetchUnpaidFlights = async (
           student_id,
           start_time,
           flight_duration,
+          private_aircraft_registration,
           calculated_cost,
           flight_type_id,
           payment_status,
@@ -336,7 +337,7 @@ const fetchUnpaidFlights = async (
           userId: row.student_id,
           userName: isGuestBooking ? (booking?.guest_name ?? 'Guest') : (row.users?.name ?? 'Unknown'),
           userEmail: isGuestBooking ? (booking?.guest_email ?? '') : (row.users?.email ?? ''),
-          aircraftRegistration: row.aircraft?.registration ?? 'Unknown',
+          aircraftRegistration: row.private_aircraft_registration || row.aircraft?.registration || 'Unknown',
           flightDate: row.start_time,
           flightDuration: parseFloat(row.flight_duration ?? 0),
           calculatedCost,
@@ -711,7 +712,7 @@ const fetchUnpaidFlights = async (
 
       const { data: flightLog, error: flightError } = await supabase
         .from('flight_logs')
-        .select('id, student_id, start_time, calculated_cost, payment_status, aircraft!flight_logs_aircraft_id_fkey(registration)')
+        .select('id, student_id, start_time, calculated_cost, payment_status, private_aircraft_registration, aircraft!flight_logs_aircraft_id_fkey(registration)')
         .eq('id', flightLogId)
         .maybeSingle();
       if (flightError) throw flightError;
@@ -750,7 +751,7 @@ const fetchUnpaidFlights = async (
       const newBalance = Math.round((currentBalance - paymentAmount + Number.EPSILON) * 100) / 100;
       const paymentMethodId = await getPilotAccountPaymentMethodId();
       const aircraft = Array.isArray(flightLog.aircraft) ? flightLog.aircraft[0] : flightLog.aircraft;
-      const description = `Pilot account split payment - ${aircraft?.registration ?? 'aircraft'} flight on ${new Date(flightLog.start_time).toLocaleDateString('en-AU')}`;
+      const description = `Pilot account split payment - ${flightLog.private_aircraft_registration || aircraft?.registration || 'aircraft'} flight on ${new Date(flightLog.start_time).toLocaleDateString('en-AU')}`;
 
       const { error: insertError } = await supabase
         .from('account_transactions')

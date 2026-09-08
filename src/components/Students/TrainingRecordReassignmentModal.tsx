@@ -75,6 +75,7 @@ export const TrainingRecordReassignmentModal: React.FC<TrainingRecordReassignmen
               dual_time,
               solo_time,
               training_record_status,
+              private_aircraft_registration,
               aircraft:aircraft_id ( registration ),
               instructor:instructor_id ( name ),
               booking:booking_id ( notes )
@@ -105,7 +106,7 @@ export const TrainingRecordReassignmentModal: React.FC<TrainingRecordReassignmen
             dualTime: Number(row.dual_time ?? 0),
             soloTime: Number(row.solo_time ?? 0),
             trainingRecordStatus: (row.training_record_status || 'pending') as TrainingRecordReassignmentFlight['trainingRecordStatus'],
-            registration: aircraft?.registration,
+            registration: row.private_aircraft_registration || aircraft?.registration,
             instructorName: instructor?.name,
             bookingNotes: booking?.notes,
           };

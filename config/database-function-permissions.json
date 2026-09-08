@@ -2070,7 +2070,75 @@
       "security_definer": true,
       "fixed_search_path": true,
       "rationale": "Creates an idempotent push outbox entry when an in-app notification is inserted."
+    },
+    {
+      "signature": "public.validate_private_aircraft_booking()",
+      "function_name": "validate_private_aircraft_booking",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Requires actual aircraft details and an instructor; preserves disabled historical bookings."
+    },
+    {
+      "signature": "public.validate_private_aircraft_log()",
+      "function_name": "validate_private_aircraft_log",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Validates private instruction and snapshots authoritative rates before billing."
+    },
+    {
+      "signature": "public.hydrate_private_aircraft_training_record()",
+      "function_name": "hydrate_private_aircraft_training_record",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Copies actual private aircraft details into linked training records."
+    },
+    {
+      "signature": "public.sync_private_aircraft_training_records()",
+      "function_name": "sync_private_aircraft_training_records",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Keeps training records aligned with corrected logged aircraft details."
+    },
+    {
+      "signature": "public.protect_private_aircraft_option()",
+      "function_name": "protect_private_aircraft_option",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": false,
+      "fixed_search_path": true,
+      "rationale": "Protects the preloaded booking option from fleet mutations."
+    },
+    {
+      "signature": "public.save_private_aircraft_configuration(p_enabled boolean, p_rates jsonb)",
+      "function_name": "save_private_aircraft_configuration",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Administrator-only atomic private aircraft configuration."
+    },
+    {
+      "signature": "public.update_recurring_booking_series_with_aircraft_details(p_booking_id uuid, p_new_start timestamp with time zone, p_new_end timestamp with time zone, p_student_id uuid, p_instructor_id uuid, p_aircraft_id uuid, p_payment_type text, p_notes text, p_booking_kind text, p_flight_type_id uuid, p_is_guest_booking boolean, p_guest_name text, p_guest_email text, p_guest_phone text, p_trial_flight_voucher_id uuid, p_casual_contact_id uuid, p_booking_purpose text, p_location text, p_location_id uuid, p_duty_override_reason text, p_membership_override_reason text, p_private_aircraft_type text, p_private_aircraft_registration text)",
+      "function_name": "update_recurring_booking_series_with_aircraft_details",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Authorised atomic recurring edits including private aircraft identity."
     }
   ]
 }
-

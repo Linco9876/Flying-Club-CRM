@@ -64,8 +64,8 @@ export const TrainingRecordForm: React.FC<TrainingRecordFormProps> = ({
     date: existingRecord?.date.toISOString().split('T')[0] || booking?.startTime.toISOString().split('T')[0] || new Date().toISOString().split('T')[0],
     studentId: existingRecord?.studentId || booking?.studentId || '',
     instructorId: existingRecord?.instructorId || booking?.instructorId || user?.id || '',
-    aircraftRegistration: existingRecord?.registration || aircraft?.registration || '',
-    aircraftType: existingRecord?.aircraftType || aircraft?.type || 'single-engine',
+    aircraftRegistration: existingRecord?.registration || booking?.privateAircraftRegistration || aircraft?.registration || '',
+    aircraftType: existingRecord?.aircraftType || booking?.privateAircraftType || aircraft?.type || 'single-engine',
     formalBriefing: existingRecord?.formalBriefing || false,
     
     // Flight Time

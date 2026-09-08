@@ -10,6 +10,7 @@ export interface BillingCalculationInput {
   soloHours?: number | null;
   passengerCount?: number | null;
   startTime?: string | Date | null;
+  timeZone?: string;
 }
 
 export const isPrepaidPaymentMethod = (paymentType?: string | null) => {
@@ -29,8 +30,12 @@ export const isVoucherPaymentMethod = (paymentType?: string | null) => {
 export const isNoChargeRate = (chargeType?: ChargeType | null) =>
   chargeType === 'free' || chargeType === 'not_used';
 
-export const isWeekend = (date?: string | Date | null) => {
+export const isWeekend = (date?: string | Date | null, timeZone?: string) => {
   if (!date) return false;
+  if (timeZone) {
+    const day = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone }).format(new Date(date));
+    return day === 'Sat' || day === 'Sun';
+  }
   const day = new Date(date).getDay();
   return day === 0 || day === 6;
 };
@@ -43,6 +48,7 @@ export const calculateFlightCost = ({
   soloHours,
   passengerCount,
   startTime,
+  timeZone,
 }: BillingCalculationInput) => {
   if (!rate || isNoChargeRate(rate.chargeType)) return 0;
 
@@ -50,7 +56,7 @@ export const calculateFlightCost = ({
   const soloRate = Number(rate.soloRate) || 0;
   const baseRate = isDual ? dualRate : soloRate;
   const flatSurcharge = Number(rate.flatSurcharge) || 0;
-  const weekendSurcharge = isWeekend(startTime) ? Number(rate.weekendSurcharge) || 0 : 0;
+  const weekendSurcharge = isWeekend(startTime, timeZone) ? Number(rate.weekendSurcharge) || 0 : 0;
   const duration = Math.max(0, Number(durationHours) || 0);
   const passengers = Math.max(1, Number(passengerCount) || 1);
 

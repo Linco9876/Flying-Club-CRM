@@ -1,3 +1,4 @@
+import { aircraftResourcesConflict, normaliseAircraftRegistration, hasPrivateRegistrationOverlap, privateAircraftValidationError } from '../utils/privateAircraft';
 import { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { Booking, DutyAssessment, FlightLog, GroundSessionLog } from '../types';
@@ -83,6 +84,8 @@ export const useBookings = (enabled = true) => {
         'student_id',
         'instructor_id',
         'aircraft_id',
+        'private_aircraft_type',
+        'private_aircraft_registration',
         'start_time',
         'end_time',
         'payment_type',
@@ -152,6 +155,8 @@ export const useBookings = (enabled = true) => {
     pilotId: row.student_id,
     instructorId: row.instructor_id,
     aircraftId: row.aircraft_id || undefined,
+    privateAircraftType: row.private_aircraft_type || undefined,
+    privateAircraftRegistration: row.private_aircraft_registration || undefined,
     startTime: new Date(row.start_time),
     endTime: new Date(row.end_time),
     paymentType: row.payment_type || '',
@@ -608,14 +613,18 @@ export const useBookings = (enabled = true) => {
     (existing.status === 'confirmed' || existing.status === 'pending_supervision') &&
     timeRangesOverlap(bookingData.startTime, bookingData.endTime, existing.startTime, existing.endTime) &&
     (
-      existing.aircraftId === bookingData.aircraftId ||
+      aircraftResourcesConflict(existing.aircraftId, bookingData.aircraftId) ||
       Boolean(bookingData.instructorId && existing.instructorId === bookingData.instructorId)
     )
   );
 
   const addBooking = async (bookingData: Omit<Booking, 'id' | 'flightLog'>, options: AddBookingOptions = {}) => {
     try {
-      console.log('Creating booking with data:', bookingData);
+      const privateError = privateAircraftValidationError(bookingData);
+      if (privateError) throw new Error(privateError);
+      if (hasPrivateRegistrationOverlap(bookingData, bookings)) {
+        toast('Another booking uses this private aircraft registration at the same time. Check the aircraft arrangements.', { icon: '⚠️', duration: 8000 });
+      }
 
       let resolvedStudentId = bookingData.studentId;
       let resolvedGuestName = bookingData.guestName?.trim() || '';
@@ -698,6 +707,8 @@ export const useBookings = (enabled = true) => {
         student_id: resolvedStudentId,
         instructor_id: bookingData.instructorId && bookingData.instructorId.trim() !== '' ? bookingData.instructorId : null,
         aircraft_id: effectiveKind === 'ground' ? null : bookingData.aircraftId,
+        private_aircraft_type: bookingData.privateAircraftType?.trim() || null,
+        private_aircraft_registration: normaliseAircraftRegistration(bookingData.privateAircraftRegistration) || null,
         start_time: bookingData.startTime.toISOString(),
         end_time: bookingData.endTime.toISOString(),
         payment_type: bookingData.paymentType,
@@ -904,7 +915,7 @@ export const useBookings = (enabled = true) => {
         : bookingData.bookingPurpose ?? currentBooking.bookingPurpose ?? 'standard';
 
       const runSeriesUpdate = async (dutyOverrideReason?: string) => supabase.rpc(
-        'update_recurring_booking_series_from_occurrence',
+        'update_recurring_booking_series_with_aircraft_details',
         {
           p_booking_id: id,
           p_new_start: newStartTime.toISOString(),
@@ -912,6 +923,8 @@ export const useBookings = (enabled = true) => {
           p_student_id: resolvedStudentId,
           p_instructor_id: instructorId || null,
           p_aircraft_id: aircraftId || null,
+          p_private_aircraft_type: bookingData.privateAircraftType ?? currentBooking.privateAircraftType ?? null,
+          p_private_aircraft_registration: bookingData.privateAircraftRegistration ?? currentBooking.privateAircraftRegistration ?? null,
           p_payment_type: bookingData.paymentType ?? currentBooking.paymentType ?? '',
           p_notes: bookingData.notes ?? currentBooking.notes ?? null,
           p_booking_kind: bookingKind,
@@ -980,7 +993,12 @@ export const useBookings = (enabled = true) => {
   const updateBooking = async (id: string, bookingData: Partial<Omit<Booking, 'id' | 'flightLog'>>, silent = false) => {
     try {
       const updateData: any = {};
+      if (bookingData.privateAircraftType !== undefined) updateData.private_aircraft_type = bookingData.privateAircraftType.trim() || null;
+      if (bookingData.privateAircraftRegistration !== undefined) updateData.private_aircraft_registration = normaliseAircraftRegistration(bookingData.privateAircraftRegistration) || null;
       const currentBooking = bookings.find(b => b.id === id);
+      if (currentBooking && hasPrivateRegistrationOverlap({ ...currentBooking, ...bookingData, id }, bookings)) {
+        toast('Another booking uses this private aircraft registration at the same time. Check the aircraft arrangements.', { icon: '⚠️', duration: 8000 });
+      }
       let resolvedStudentId = bookingData.studentId;
       let resolvedGuestName = bookingData.guestName?.trim();
       let resolvedGuestEmail = bookingData.guestEmail?.trim();
@@ -1414,7 +1432,7 @@ export const useBookings = (enabled = true) => {
           existing.end_time
         ) &&
         (
-          existing.aircraft_id === bookingToApprove.aircraft_id ||
+          aircraftResourcesConflict(existing.aircraft_id, bookingToApprove.aircraft_id) ||
           Boolean(bookingToApprove.instructor_id && existing.instructor_id === bookingToApprove.instructor_id)
         )
       );
