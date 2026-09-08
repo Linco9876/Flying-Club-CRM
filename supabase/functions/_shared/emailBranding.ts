@@ -135,11 +135,11 @@ export const brandPortalEmailHtml = async (
     const inCardLogo =
       `<table data-bfc-email-logo="true" role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse">
         <tr>
-          <td align="left" valign="middle" width="148" style="width:148px;padding:0">
+          <td align="left" valign="middle" width="132" style="width:132px;padding:0">
             <table role="presentation" cellspacing="0" cellpadding="0" style="border-collapse:separate;background:#ffffff;border-radius:12px">
               <tr><td style="padding:7px 10px;line-height:0">
-                <a href="${escapeHtml(branding.portalUrl)}" style="display:block;width:128px;height:58px;line-height:0;text-decoration:none" target="_blank">
-                  <img src="${escapeHtml(branding.logoUrl)}" width="128" height="58" alt="${escapeHtml(branding.clubName)} logo" style="display:block;width:128px!important;max-width:128px!important;height:58px!important;max-height:58px!important;object-fit:contain;object-position:center;border:0;outline:none;text-decoration:none">
+                <a href="${escapeHtml(branding.portalUrl)}" style="display:block;width:112px;line-height:0;text-decoration:none" target="_blank">
+                  <img src="${escapeHtml(branding.logoUrl)}" width="112" alt="${escapeHtml(branding.clubName)} logo" style="display:block;width:112px!important;max-width:112px!important;height:auto!important;border:0;outline:none;text-decoration:none">
                 </a>
               </td></tr>
             </table>
@@ -155,12 +155,12 @@ export const brandPortalEmailHtml = async (
         <td align="center" style="padding:12px 20px;line-height:0">
           <a href="${
       escapeHtml(branding.portalUrl)
-    }" style="display:inline-block;width:160px;height:72px;line-height:0;text-decoration:none" target="_blank">
+    }" style="display:inline-block;width:128px;line-height:0;text-decoration:none" target="_blank">
             <img src="${
       escapeHtml(branding.logoUrl)
-    }" width="160" height="72" alt="${
+    }" width="128" alt="${
       escapeHtml(branding.clubName)
-    } logo" style="display:block;width:160px!important;max-width:160px!important;height:72px!important;max-height:72px!important;object-fit:contain;object-position:center;border:0;outline:none;text-decoration:none">
+    } logo" style="display:block;width:128px!important;max-width:128px!important;height:auto!important;border:0;outline:none;text-decoration:none">
           </a>
         </td>
       </tr>
