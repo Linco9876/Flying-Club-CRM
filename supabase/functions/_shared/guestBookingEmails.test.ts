@@ -128,6 +128,10 @@ Deno.test("review request is attractive, neutral and gives every guest both feed
   assertStringIncludes(email.html, "The Example Flying Club Team");
   assertStringIncludes(email.html, 'aria-label="Leave an honest Google review"');
   assertStringIncludes(email.html, 'aria-label="Send private feedback by email"');
+  assertStringIncludes(email.html, '<table role="presentation" align="center"');
+  assertStringIncludes(email.html, 'style="padding:14px 18px;border-radius:10px;background:#1769e0');
+  assert(!email.html.includes('class="context-chip"'));
+  assert(!email.html.includes("display:inline-block;width:28px"));
   assertStringIncludes(email.html, "positive, negative or somewhere in between");
   assert(!email.html.toLowerCase().includes("frowny"));
   assert(!email.html.toLowerCase().includes("5-star review"));
