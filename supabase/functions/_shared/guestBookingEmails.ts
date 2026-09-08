@@ -309,8 +309,9 @@ export const buildGuestReviewRequestEmail = (details: GuestReviewRequestEmailDet
     ? `<tr><td style="padding:10px 20px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:800;text-align:center;letter-spacing:.3px;">EMAIL DESIGN PREVIEW — NO VISITOR WAS CONTACTED</td></tr>`
     : "";
   const privateFeedbackButton = feedbackEmail
-    ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;margin-top:12px;border-collapse:separate;">
-        <tr><td align="center" style="padding:14px 16px;border:2px solid #315b88;border-radius:10px;background:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:800;line-height:1.25;"><a href="${escapeHtml(privateFeedbackUrl)}" role="button" aria-label="Send private feedback by email" style="display:block;color:#123c70;text-decoration:none;">&#9993;&nbsp;&nbsp;Send private feedback</a></td></tr>
+    ? `<table data-review-action="private" role="presentation" align="center" width="100%" cellspacing="0" cellpadding="0" style="width:100%;max-width:440px;border-collapse:separate;">
+        <tr><td height="12" style="height:12px;font-size:0;line-height:0;">&nbsp;</td></tr>
+        <tr><td align="center" valign="middle" height="50" style="height:50px;border:2px solid #315b88;border-radius:10px;background:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:800;line-height:20px;"><a href="${escapeHtml(privateFeedbackUrl)}" role="button" aria-label="Send private feedback by email" style="display:block;color:#123c70;text-decoration:none;">&#9993;&nbsp;&nbsp;Send private feedback</a></td></tr>
       </table>`
     : "";
   const html = `<!doctype html>
@@ -337,19 +338,19 @@ export const buildGuestReviewRequestEmail = (details: GuestReviewRequestEmailDet
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;margin:18px 0 14px;border-collapse:collapse;">${contextHtml}</table>
             <p style="margin:0 auto;max-width:520px;color:#1f3658;font-size:17px;line-height:1.6;">Would you consider sharing your honest feedback? It helps future visitors know what to expect.</p>
             <div aria-hidden="true" style="margin:20px 0 18px;color:#ffb317;font-size:34px;line-height:1;letter-spacing:5px;">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;max-width:440px;border-collapse:separate;">
-              <tr><td align="center" style="padding:14px 18px;border-radius:10px;background:#1769e0;background-image:linear-gradient(135deg,#1976f3 0%,#0b5bd3 100%);box-shadow:0 7px 16px rgba(23,105,224,.24);font-family:Arial,Helvetica,sans-serif;font-size:17px;font-weight:800;line-height:1.25;">
+            <table data-review-action="google" role="presentation" align="center" width="100%" cellspacing="0" cellpadding="0" style="width:100%;max-width:440px;border-collapse:separate;">
+              <tr><td align="center" valign="middle" height="50" style="height:50px;border-radius:10px;background:#1769e0;background-image:linear-gradient(135deg,#1976f3 0%,#0b5bd3 100%);box-shadow:0 7px 16px rgba(23,105,224,.24);font-family:Arial,Helvetica,sans-serif;font-size:17px;font-weight:800;line-height:21px;">
                 <a href="${escapeHtml(reviewUrl)}" role="button" aria-label="Leave an honest Google review" style="display:block;color:#ffffff;text-decoration:none;">Leave a Google review</a>
               </td></tr>
             </table>
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;max-width:440px;border-collapse:separate;">${privateFeedbackButton ? `<tr><td>${privateFeedbackButton}</td></tr>` : ""}</table>
-            <p style="margin:24px auto 0;max-width:470px;color:#526984;font-size:14px;line-height:1.6;">It only takes a minute, and your feedback helps others learn about ${escapeHtml(businessName)}.</p>
-            <p style="margin:8px auto 0;max-width:470px;color:#71839a;font-size:12px;line-height:1.5;">Every experience is welcome&mdash;positive, negative or somewhere in between.</p>
+            ${privateFeedbackButton}
+            <p style="margin:24px auto 0;max-width:470px;color:#526984;font-size:15px;line-height:1.6;">It only takes a minute, and your feedback helps others learn about ${escapeHtml(businessName)}.</p>
+            <p style="margin:8px auto 0;max-width:470px;color:#71839a;font-size:13px;line-height:1.5;">Every experience is welcome&mdash;positive, negative or somewhere in between.</p>
             <div style="margin-top:28px;padding-top:22px;border-top:1px solid #dce5ef;text-align:center;">
               <p style="margin:0;color:#0b2d59;font-family:Georgia,'Times New Roman',serif;font-size:27px;font-style:italic;line-height:1.25;">Thank you!</p>
               <p style="margin:5px 0 0;color:#193c68;font-size:15px;font-weight:700;line-height:1.5;">The ${escapeHtml(businessName)} Team</p>
-              <p style="margin:0;color:#64748b;font-size:12px;line-height:1.6;">This one-time request was sent because you agreed to receive a post-flight feedback email.</p>
-              <p style="margin:7px 0 0;color:#94a3b8;font-size:11px;line-height:1.5;"><a href="${escapeHtml(unsubscribeUrl)}" style="color:#64748b;text-decoration:underline;">Unsubscribe from future post-flight feedback emails</a></p>
+              <p style="margin:0;color:#64748b;font-size:13px;line-height:1.6;">This one-time request was sent because you agreed to receive a post-flight feedback email.</p>
+              <p style="margin:7px 0 0;color:#94a3b8;font-size:12px;line-height:1.5;"><a href="${escapeHtml(unsubscribeUrl)}" style="color:#64748b;text-decoration:underline;">Unsubscribe from future post-flight feedback emails</a></p>
             </div>
           </td></tr>
         </table>
