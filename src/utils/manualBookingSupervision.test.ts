@@ -223,6 +223,10 @@ test('database and booking actions preserve the safety contract', () => {
     'supabase/migrations/20260907120000_count_unique_instructors_for_supervision_capacity.sql',
     'utf8',
   );
+  const deduplicatedWorkloadMigration = readFileSync(
+    'supabase/migrations/20260908113000_deduplicate_supervision_duty_workload.sql',
+    'utf8',
+  );
   const calendar = readFileSync('src/components/Calendar/Calendar.tsx', 'utf8');
   const supervisionActionModal = readFileSync(
     'src/components/Bookings/SupervisionActionModal.tsx',
@@ -275,6 +279,13 @@ test('database and booking actions preserve the safety contract', () => {
   assert.match(uniqueInstructorCapacityMigration, /public\.assess_instructor_duty_booking/i);
   assert.match(uniqueInstructorCapacityMigration, /public\.trial_voucher_instructor_available_for_slot/i);
   assert.match(uniqueInstructorCapacityMigration, /supervision_status = 'pending'/i);
+  assert.match(deduplicatedWorkloadMigration, /private\.supervisor_scheduled_workload_hours/i);
+  assert.match(deduplicatedWorkloadMigration, /max\(ends_at\) over/i);
+  assert.match(deduplicatedWorkloadMigration, /group by interval_group/i);
+  assert.match(deduplicatedWorkloadMigration, /warning_code\.code <> 'MAX_DAILY_BOOKED_FLIGHT'/i);
+  assert.match(deduplicatedWorkloadMigration, /private\.supervisor_duty_available_for_slot/i);
+  assert.match(deduplicatedWorkloadMigration, /private\.supervision_capacity_available_for_slot/i);
+  assert.match(deduplicatedWorkloadMigration, /select private\.assert_function_permission_manifest\(\)/i);
   assert.match(calendar, /<span>Supervision<\/span>/i);
   assert.match(calendar, /Supervision strip – acknowledged/i);
   assert.match(calendar, /data-supervision-block/i);
