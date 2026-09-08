@@ -27,6 +27,7 @@ import { loadStudentProfileModule } from './components/Students/studentProfileLo
 import { syncExistingPwaPushSubscription } from './utils/pushNotifications';
 import { PwaNotificationPermissionPrompt } from './components/Layout/PwaNotificationPermissionPrompt';
 import { openOutstandingRecordPopup, OUTSTANDING_RECORD_POPUP_EVENT, type OutstandingRecordPopupRequest } from './utils/outstandingRecordPopup';
+import type { RecurringBookingEditScope } from './utils/recurringBookingEdits';
 
 const ResetPasswordPage = lazy(() => import('./components/Auth/ResetPasswordPage').then(module => ({ default: module.ResetPasswordPage })));
 const AcceptInvitationPage = lazy(() => import('./components/Auth/AcceptInvitationPage').then(module => ({ default: module.AcceptInvitationPage })));
@@ -727,7 +728,7 @@ const KioskAuthenticatedRoute: React.FC<{
   setBookingFormData,
 }) => {
   const { logout } = useAuth();
-  const { bookings, addBooking, finaliseRecurringBookingSeries, updateRecurringBookingSeries, updateBooking, deleteBooking, restoreBooking, approveBooking, refetch: refetchBookings } = useBookings(true);
+  const { bookings, addBooking, finaliseRecurringBookingSeries, updateRecurringBookingSeries, updateBooking, deleteBooking, deleteRecurringBookingSeries, restoreBooking, approveBooking, refetch: refetchBookings } = useBookings(true);
   const { settings: portalSettings } = usePortalUxSettings();
   const userRoles = user?.roles && user.roles.length > 0 ? user.roles : [user?.role];
   const isAdminUser = userRoles.includes('admin');
@@ -903,12 +904,20 @@ const KioskAuthenticatedRoute: React.FC<{
               setBookingFormData(buildCopiedBookingFormData(booking));
               setShowBookingForm(true);
             }}
-            onUpdateBooking={async (bookingId, updates, silent) => {
-              await updateBooking(bookingId, updates, silent);
+            onUpdateBooking={async (bookingId, updates, silent, recurringScope) => {
+              if (recurringScope === 'future') {
+                await updateRecurringBookingSeries(bookingId, updates, silent);
+              } else {
+                await updateBooking(bookingId, updates, silent);
+              }
             }}
             onDeleteBooking={async (bookingId, cancellation) => {
               try {
-                await deleteBooking(bookingId, cancellation);
+                if (cancellation?.recurringScope === 'future') {
+                  await deleteRecurringBookingSeries(bookingId, cancellation);
+                } else {
+                  await deleteBooking(bookingId, cancellation);
+                }
               } catch (error) {
                 console.error('Error deleting booking:', error);
                 throw error;
@@ -986,7 +995,7 @@ const AuthenticatedApp: React.FC<{
   const location = useLocation();
   const activeView = getViewForPath(location.pathname);
   const bookingsEnabled = activeView === 'calendar' || showBookingForm || showTrainingRecordForm || Boolean(editingBooking || selectedBookingForRecord);
-  const { bookings, addBooking, finaliseRecurringBookingSeries, updateRecurringBookingSeries, updateBooking, deleteBooking, restoreBooking, approveBooking, refetch: refetchBookings } = useBookings(bookingsEnabled);
+  const { bookings, addBooking, finaliseRecurringBookingSeries, updateRecurringBookingSeries, updateBooking, deleteBooking, deleteRecurringBookingSeries, restoreBooking, approveBooking, refetch: refetchBookings } = useBookings(bookingsEnabled);
   const { settings: portalSettings, loading: portalSettingsLoading } = usePortalUxSettings();
   const { preferences: userPreferences, loading: userPreferencesLoading } = useUserPreferences(user?.id || '');
   const effectiveTheme = userPreferences?.theme || getStoredPortalTheme(user?.id) || 'auto';
@@ -1147,9 +1156,18 @@ const AuthenticatedApp: React.FC<{
     }
   };
 
-  const handleUpdateBooking = async (bookingId: string, updates: Partial<Booking>, silent?: boolean) => {
+  const handleUpdateBooking = async (
+    bookingId: string,
+    updates: Partial<Booking>,
+    silent?: boolean,
+    recurringScope?: RecurringBookingEditScope,
+  ) => {
     try {
-      await updateBooking(bookingId, updates, silent);
+      if (recurringScope === 'future') {
+        await updateRecurringBookingSeries(bookingId, updates, silent);
+      } else {
+        await updateBooking(bookingId, updates, silent);
+      }
     } catch (error) {
       console.error('Error updating booking:', error);
       throw error;
@@ -1210,7 +1228,11 @@ const AuthenticatedApp: React.FC<{
               onUpdateBooking={handleUpdateBooking}
               onDeleteBooking={async (bookingId, cancellation) => {
                 try {
-                  await deleteBooking(bookingId, cancellation);
+                  if (cancellation?.recurringScope === 'future') {
+                    await deleteRecurringBookingSeries(bookingId, cancellation);
+                  } else {
+                    await deleteBooking(bookingId, cancellation);
+                  }
                 } catch (error) {
                   console.error('Error deleting booking:', error);
                   throw error;

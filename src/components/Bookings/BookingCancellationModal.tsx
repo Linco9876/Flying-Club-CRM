@@ -5,6 +5,10 @@ import type { Booking } from '../../types';
 import type { BookingCancellationInput } from '../../hooks/useBookings';
 import { useBookingCancellationReasons } from '../../hooks/useBookingCancellationReasons';
 import { useBookingRulesSettings } from '../../hooks/useSettings';
+import {
+  getExpectedFutureOccurrenceCount,
+  type RecurringBookingEditScope,
+} from '../../utils/recurringBookingEdits';
 
 interface BookingCancellationModalProps {
   booking: Booking;
@@ -17,6 +21,7 @@ export const BookingCancellationModal = ({ booking, onClose, onConfirm }: Bookin
   const { settings } = useBookingRulesSettings();
   const [reasonId, setReasonId] = useState('');
   const [notes, setNotes] = useState('');
+  const [recurringScope, setRecurringScope] = useState<RecurringBookingEditScope>('single');
   const [submitting, setSubmitting] = useState(false);
 
   const insideNoticePeriod = Boolean(
@@ -26,13 +31,19 @@ export const BookingCancellationModal = ({ booking, onClose, onConfirm }: Bookin
   const activeReasons = useMemo(() => reasons.filter(reason => reason.isActive), [reasons]);
   const selectedReason = activeReasons.find(reason => reason.id === reasonId);
   const needsNotes = selectedReason?.name.toLowerCase() === 'other';
+  const isRecurringBooking = Boolean(booking.recurrenceSeriesId);
+  const futureOccurrenceCount = getExpectedFutureOccurrenceCount(booking);
 
   const submit = async () => {
     if (insideNoticePeriod && !reasonId) return;
     if (needsNotes && !notes.trim()) return;
     setSubmitting(true);
     try {
-      await onConfirm({ reasonId: reasonId || undefined, notes: notes.trim() || undefined });
+      await onConfirm({
+        reasonId: reasonId || undefined,
+        notes: notes.trim() || undefined,
+        recurringScope: isRecurringBooking ? recurringScope : 'single',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -52,6 +63,43 @@ export const BookingCancellationModal = ({ booking, onClose, onConfirm }: Bookin
         </div>
 
         <div className="space-y-4 p-5">
+          {isRecurringBooking && (
+            <fieldset className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 dark:border-blue-800/70 dark:bg-blue-950/30">
+              <legend className="px-1 text-xs font-bold text-blue-950 dark:text-blue-100">Apply cancellation to</legend>
+              <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setRecurringScope('single')}
+                  aria-pressed={recurringScope === 'single'}
+                  className={`min-h-12 rounded-lg border px-3 py-2 text-left text-sm font-semibold transition-colors ${
+                    recurringScope === 'single'
+                      ? 'border-blue-600 bg-white text-blue-900 shadow-sm dark:bg-blue-950 dark:text-blue-100'
+                      : 'border-blue-200 bg-blue-50 text-blue-800 hover:bg-white dark:border-blue-800 dark:bg-blue-950/20 dark:text-blue-200'
+                  }`}
+                >
+                  This booking only
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRecurringScope('future')}
+                  aria-pressed={recurringScope === 'future'}
+                  className={`min-h-12 rounded-lg border px-3 py-2 text-left text-sm font-semibold transition-colors ${
+                    recurringScope === 'future'
+                      ? 'border-blue-600 bg-white text-blue-900 shadow-sm dark:bg-blue-950 dark:text-blue-100'
+                      : 'border-blue-200 bg-blue-50 text-blue-800 hover:bg-white dark:border-blue-800 dark:bg-blue-950/20 dark:text-blue-200'
+                  }`}
+                >
+                  This and all future
+                </button>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-blue-800 dark:text-blue-200">
+                {recurringScope === 'future'
+                  ? `Cancels up to ${futureOccurrenceCount || 'all remaining'} active bookings from this point. Earlier, completed and already-cancelled bookings stay unchanged.`
+                  : 'Only this occurrence will be cancelled. The rest of the series stays unchanged.'}
+              </p>
+            </fieldset>
+          )}
+
           {insideNoticePeriod && (
             <div className="flex gap-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-100">
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
@@ -86,7 +134,7 @@ export const BookingCancellationModal = ({ booking, onClose, onConfirm }: Bookin
           <button type="button" onClick={onClose} disabled={submitting} className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-[#454b56] dark:bg-[#171a21] dark:text-gray-200">Keep booking</button>
           <button type="button" onClick={submit} disabled={submitting || loading || (insideNoticePeriod && !reasonId) || (needsNotes && !notes.trim())} className="inline-flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            Confirm cancellation
+            {recurringScope === 'future' && isRecurringBooking ? 'Cancel selected series' : 'Confirm cancellation'}
           </button>
         </div>
       </div>
