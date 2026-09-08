@@ -16,6 +16,11 @@ export interface TemporaryDowntimeDraft {
   reason?: string;
 }
 
+export interface CalendarBookingPeriod {
+  startTime: string | Date;
+  endTime: string | Date;
+}
+
 export type DowntimeRecurrenceFrequency = 'daily' | 'weekly' | 'monthly';
 export type DowntimeRecurrenceEndMode = 'never' | 'on' | 'after';
 
@@ -63,6 +68,69 @@ export const canManageCalendarDowntime = (
   currentUserId: string | null | undefined,
   isAdmin: boolean,
 ) => Boolean(downtimeOwnerId && currentUserId && (isAdmin || downtimeOwnerId === currentUserId));
+
+const getSydneyDateTimeParts = (value: string | Date) => {
+  const date = value instanceof Date ? value : new Date(value);
+  const parts = new Intl.DateTimeFormat('en-AU', {
+    timeZone: 'Australia/Sydney',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const valueFor = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find(part => part.type === type)?.value || '';
+
+  return {
+    date: `${valueFor('year')}-${valueFor('month')}-${valueFor('day')}`,
+    time: `${valueFor('hour')}:${valueFor('minute')}`,
+  };
+};
+
+const nextDate = (value: string) => {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
+};
+
+const previousDate = (value: string) => {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() - 1);
+  return date.toISOString().slice(0, 10);
+};
+
+/**
+ * Matches the database's downtime rules: an all-day period affects every booking
+ * on its dates, while a timed multi-day period repeats the same time window on
+ * each included Sydney calendar day.
+ */
+export const doesTemporaryDowntimeOverlapBooking = (
+  downtime: Pick<TemporaryDowntimeDraft, 'startDate' | 'endDate' | 'startTime' | 'endTime'>,
+  booking: CalendarBookingPeriod,
+) => {
+  const bookingStart = getSydneyDateTimeParts(booking.startTime);
+  const bookingEnd = getSydneyDateTimeParts(booking.endTime);
+  const bookingLastDate = bookingEnd.time === '00:00' && bookingEnd.date > bookingStart.date
+    ? previousDate(bookingEnd.date)
+    : bookingEnd.date;
+  const firstDate = bookingStart.date > downtime.startDate ? bookingStart.date : downtime.startDate;
+  const lastDate = bookingLastDate < downtime.endDate ? bookingLastDate : downtime.endDate;
+
+  if (firstDate > lastDate) return false;
+  if (!downtime.startTime || !downtime.endTime) return true;
+
+  for (let date = firstDate; date <= lastDate; date = nextDate(date)) {
+    const bookingStartTime = date === bookingStart.date ? bookingStart.time : '00:00';
+    const bookingEndTime = date === bookingEnd.date ? bookingEnd.time : '24:00';
+    if (bookingStartTime < downtime.endTime && bookingEndTime > downtime.startTime) {
+      return true;
+    }
+  }
+
+  return false;
+};
 
 export const getTemporaryDowntimeValidationError = (draft: TemporaryDowntimeDraft) => {
   if (!draft.startDate || !draft.endDate) return 'Choose a start and end date';

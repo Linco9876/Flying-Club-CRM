@@ -3,6 +3,10 @@ import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { hasAnyRole } from '../utils/rbac';
+import {
+  doesTemporaryDowntimeOverlapBooking,
+  type TemporaryDowntimeDraft,
+} from '../utils/calendarDowntime';
 import { useLatestEffect } from './useLatestEffect';
 
 const AVAILABILITY_UPDATED_EVENT = 'instructor-availability-updated';
@@ -145,7 +149,11 @@ export const useInstructorAvailability = (instructorId?: string) => {
     throw new Error(message);
   };
 
-  const confirmSupervisionImpact = async (targetUserId: string, context: string) => {
+  const confirmSupervisionImpact = async (
+    targetUserId: string,
+    context: string,
+    downtimePeriods?: Pick<TemporaryDowntimeDraft, 'startDate' | 'endDate' | 'startTime' | 'endTime'>[],
+  ) => {
     const { data, error } = await supabase
       .from('bookings')
       .select('id,start_time,end_time')
@@ -153,22 +161,38 @@ export const useInstructorAvailability = (instructorId?: string) => {
       .in('supervision_status', ['assigned', 'acknowledged'])
       .gte('end_time', new Date().toISOString());
     if (error || !data?.length) return;
-    const confirmed = window.confirm(`${context} currently affects ${data.length} upcoming supervised ${data.length === 1 ? 'booking' : 'bookings'}. The system will attempt reassignment; any booking without replacement coverage will return to pending supervision. Continue?`);
+
+    const affectedBookings = downtimePeriods?.length
+      ? data.filter(booking => downtimePeriods.some(period =>
+        doesTemporaryDowntimeOverlapBooking(period, {
+          startTime: booking.start_time,
+          endTime: booking.end_time,
+        })
+      ))
+      : data;
+    if (affectedBookings.length === 0) return;
+
+    const confirmed = window.confirm(`${context} overlaps ${affectedBookings.length} upcoming supervised ${affectedBookings.length === 1 ? 'booking' : 'bookings'}. The system will attempt reassignment; any booking without replacement coverage will return to pending supervision. Continue?`);
     if (!confirmed) throw new Error('Availability change cancelled');
   };
 
-  const getAbsenceOwner = async (id: string) => {
+  const getAbsence = async (id: string) => {
     const existing = absences.find(item => item.id === id);
-    if (existing) return existing.userId;
+    if (existing) return existing;
 
     const { data, error } = await supabase
       .from('instructor_absences')
-      .select('user_id, instructor_id')
+      .select('*')
       .eq('id', id)
       .maybeSingle();
 
     if (error) throw error;
-    return data?.user_id || data?.instructor_id;
+    return data ? mapAbsenceRow(data) : undefined;
+  };
+
+  const getAbsenceOwner = async (id: string) => {
+    const existing = await getAbsence(id);
+    return existing?.userId;
   };
 
   const notifyAvailabilityUpdated = () => {
@@ -373,7 +397,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
   const addAbsence = async (absence: Omit<Absence, 'id'>) => {
     try {
       requireAbsencePermission(absence.userId);
-      await confirmSupervisionImpact(absence.userId, 'This absence');
+      await confirmSupervisionImpact(absence.userId, 'This absence', [absence]);
 
       const { error } = await supabase
         .from('instructor_absences')
@@ -408,7 +432,8 @@ export const useInstructorAvailability = (instructorId?: string) => {
     let originalUpdated = false;
 
     try {
-      const ownerId = await getAbsenceOwner(id);
+      const existingAbsence = await getAbsence(id);
+      const ownerId = existingAbsence?.userId;
       requireAbsencePermission(ownerId);
       if (!ownerId) throw new Error('The downtime owner could not be found. Refresh and retry.');
       if (copies.length === 0) throw new Error('Choose a recurrence that creates at least one new downtime period.');
@@ -416,7 +441,22 @@ export const useInstructorAvailability = (instructorId?: string) => {
         throw new Error('Recurring downtime copies must belong to the same instructor.');
       }
 
-      await confirmSupervisionImpact(ownerId, 'This recurring absence');
+      const updatedAbsence = existingAbsence
+        ? { ...existingAbsence, ...absence }
+        : absence;
+      if (!updatedAbsence.startDate || !updatedAbsence.endDate) {
+        throw new Error('The downtime dates could not be found. Refresh and retry.');
+      }
+      const updatedPeriod: TemporaryDowntimeDraft = {
+        startDate: updatedAbsence.startDate,
+        endDate: updatedAbsence.endDate,
+        startTime: updatedAbsence.startTime,
+        endTime: updatedAbsence.endTime,
+      };
+      await confirmSupervisionImpact(ownerId, 'This recurring absence', [
+        updatedPeriod,
+        ...copies,
+      ]);
 
       const copyRows = copies.map(copy => {
         const copyId = crypto.randomUUID();
@@ -475,9 +515,15 @@ export const useInstructorAvailability = (instructorId?: string) => {
 
   const updateAbsence = async (id: string, absence: Partial<Omit<Absence, 'id' | 'userId'>>) => {
     try {
-      const ownerId = await getAbsenceOwner(id);
+      const existingAbsence = await getAbsence(id);
+      const ownerId = existingAbsence?.userId;
       requireAbsencePermission(ownerId);
-      if (ownerId) await confirmSupervisionImpact(ownerId, 'This absence change');
+      if (ownerId && existingAbsence) {
+        await confirmSupervisionImpact(ownerId, 'This absence change', [{
+          ...existingAbsence,
+          ...absence,
+        }]);
+      }
 
       const updateData: any = { updated_at: new Date().toISOString() };
 
