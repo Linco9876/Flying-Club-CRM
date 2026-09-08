@@ -5,6 +5,7 @@ import {
   buildDefaultDowntimeRecurrence,
   buildRecurringDowntimeOccurrences,
   canManageCalendarDowntime,
+  doesTemporaryDowntimeOverlapBooking,
   getDowntimeRecurrenceValidationError,
   getCalendarUnavailabilityBackground,
   getTemporaryDowntimeValidationError,
@@ -38,6 +39,66 @@ test('downtime edits require valid dates, paired times and a reason', () => {
   assert.equal(getTemporaryDowntimeValidationError({ ...validDraft, endTime: '09:30' }), 'The end time must be after the start time');
   assert.equal(getTemporaryDowntimeValidationError({ ...validDraft, reason: ' ' }), 'Enter a short reason for the downtime');
   assert.equal(getTemporaryDowntimeValidationError({ ...validDraft, startTime: undefined, endTime: undefined }), null);
+});
+
+test('supervision impact only includes bookings that overlap the selected downtime dates', () => {
+  const downtime = {
+    startDate: '2026-09-21',
+    endDate: '2026-09-21',
+  };
+
+  assert.equal(doesTemporaryDowntimeOverlapBooking(downtime, {
+    startTime: '2026-09-13T10:30:00+10:00',
+    endTime: '2026-09-13T12:00:00+10:00',
+  }), false);
+  assert.equal(doesTemporaryDowntimeOverlapBooking(downtime, {
+    startTime: '2026-09-27T07:30:00+10:00',
+    endTime: '2026-09-27T09:00:00+10:00',
+  }), false);
+  assert.equal(doesTemporaryDowntimeOverlapBooking(downtime, {
+    startTime: '2026-09-21T08:30:00+10:00',
+    endTime: '2026-09-21T17:00:00+10:00',
+  }), true);
+});
+
+test('timed downtime only affects overlapping times in the Sydney calendar day', () => {
+  const downtime = {
+    startDate: '2026-10-05',
+    endDate: '2026-10-05',
+    startTime: '12:00',
+    endTime: '14:00',
+  };
+
+  // Sydney is UTC+11 on this date. These values also prove the comparison is
+  // based on the club timezone rather than the browser or test runner timezone.
+  assert.equal(doesTemporaryDowntimeOverlapBooking(downtime, {
+    startTime: '2026-10-05T00:30:00.000Z',
+    endTime: '2026-10-05T02:00:00.000Z',
+  }), true);
+  assert.equal(doesTemporaryDowntimeOverlapBooking(downtime, {
+    startTime: '2026-10-04T22:00:00.000Z',
+    endTime: '2026-10-05T00:00:00.000Z',
+  }), false);
+  assert.equal(doesTemporaryDowntimeOverlapBooking(downtime, {
+    startTime: '2026-10-05T03:00:00.000Z',
+    endTime: '2026-10-05T04:00:00.000Z',
+  }), false);
+});
+
+test('a booking ending at midnight does not affect downtime on the following day', () => {
+  assert.equal(doesTemporaryDowntimeOverlapBooking({
+    startDate: '2026-09-21',
+    endDate: '2026-09-21',
+  }, {
+    startTime: '2026-09-20T20:00:00+10:00',
+    endTime: '2026-09-21T00:00:00+10:00',
+  }), false);
+});
+
+test('the absence mutation warning passes the selected periods into impact checking', () => {
+  const source = readFileSync(new URL('../hooks/useInstructorAvailability.ts', import.meta.url), 'utf8');
+  assert.match(source, /confirmSupervisionImpact\(absence\.userId, 'This absence', \[absence\]\)/);
+  assert.match(source, /doesTemporaryDowntimeOverlapBooking\(period/);
 });
 
 test('calendar exposes click-to-edit, save and permanent delete actions for temporary downtime', () => {
