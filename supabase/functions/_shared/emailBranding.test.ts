@@ -17,11 +17,12 @@ Deno.test("portal email branding inserts the configured company logo after the b
   assertMatch(html, /<body class="mail"><table data-bfc-email-logo="true"/);
   assertMatch(html, /src="https:\/\/cdn\.example\.com\/company-logo\.png"/);
   assertMatch(html, /alt="Example &amp; Flying Club logo"/);
-  assertMatch(html, /<img[^>]+width="160" height="72"/);
+  assertMatch(html, /<img[^>]+width="128" alt=/);
   assertMatch(
     html,
-    /width:160px!important;max-width:160px!important;height:72px!important;max-height:72px!important;object-fit:contain/,
+    /width:128px!important;max-width:128px!important;height:auto!important/,
   );
+  assertEquals(/<img[^>]+height="\d+"/.test(html), false);
   assertMatch(html, /<p>Hello<\/p>/);
 });
 
@@ -48,6 +49,9 @@ Deno.test("portal email branding fills an in-card slot with the configured logo 
   assertMatch(html, /data-bfc-email-logo="true"/);
   assertMatch(html, /src="https:\/\/cdn\.example\.com\/logo\.png"/);
   assertMatch(html, /alt="Example Aviation logo"/);
+  assertMatch(html, /<img[^>]+width="112" alt=/);
+  assertMatch(html, /width:112px!important;max-width:112px!important;height:auto!important/);
+  assertEquals(/<img[^>]+height="\d+"/.test(html), false);
   assertMatch(html, />Example Aviation<\/td>/);
   assertEquals((html.match(/data-bfc-email-branding-slot/g) || []).length, 0);
   assertEquals((html.match(/data-bfc-email-logo/g) || []).length, 1);
