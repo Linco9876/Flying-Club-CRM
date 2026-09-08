@@ -2550,7 +2550,7 @@ const getFlightLog = async (
   const { data, error } = await adminClient
     .from("flight_logs")
     .select(`
-      id, booking_id, student_id, instructor_id, aircraft_id, start_time, end_time, flight_duration,
+      id, booking_id, student_id, instructor_id, aircraft_id, start_time, end_time, flight_duration, private_aircraft_registration, private_aircraft_type,
       calculated_cost, total_cost, payment_status, payment_type, flight_type_id,
       xero_invoice_id, xero_invoice_number, xero_invoice_status, xero_payment_id,
       booking:booking_id(
@@ -2578,6 +2578,12 @@ const getFlightLog = async (
     .maybeSingle();
   if (error) throw error;
   if (!data) throw new Error("Flight log not found.");
+  if (data.private_aircraft_registration && data.aircraft) {
+    const aircraft = Array.isArray(data.aircraft) ? data.aircraft[0] : data.aircraft;
+    aircraft.registration = data.private_aircraft_registration;
+    aircraft.make = '';
+    aircraft.model = data.private_aircraft_type || '';
+  }
   return data;
 };
 

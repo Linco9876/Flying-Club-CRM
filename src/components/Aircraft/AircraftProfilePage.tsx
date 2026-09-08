@@ -1,3 +1,4 @@
+import { isPrivateAircraft } from '../../utils/privateAircraft';
 import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -70,7 +71,7 @@ export const AircraftProfilePage: React.FC = () => {
   const [bookingSearch, setBookingSearch] = useState('');
   const [savingRateId, setSavingRateId] = useState<string | null>(null);
 
-  const selectedAircraft = aircraft.find(item => item.id === aircraftId);
+  const selectedAircraft = aircraft.filter(item => !isPrivateAircraft(item.id)).find(item => item.id === aircraftId);
   const aircraftIconSrc = getAircraftIconSrc(selectedAircraft?.iconKey);
 
   useEffect(() => {

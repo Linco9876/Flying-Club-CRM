@@ -215,6 +215,8 @@ Deno.serve(async (req: Request) => {
         instructor_id,
         start_time,
         flight_duration,
+        private_aircraft_registration,
+        private_aircraft_type,
         calculated_cost,
         payment_status,
         payment_type,
@@ -271,7 +273,7 @@ Deno.serve(async (req: Request) => {
     const isGuestBooking = Boolean(booking?.is_guest_booking);
     const studentName = cleanText(isGuestBooking ? booking?.guest_name : student?.name) || "Member";
     const studentEmail = cleanText(isGuestBooking ? booking?.guest_email : student?.email);
-    const aircraftRegistration = cleanText(aircraft?.registration) || "aircraft";
+    const aircraftRegistration = cleanText(flightLog.private_aircraft_registration) || cleanText(aircraft?.registration) || "aircraft";
     const flightTypeName = cleanText(flightType?.name) || "Flight";
     const flightDate = flightLog.start_time ? new Date(flightLog.start_time).toLocaleDateString("en-AU") : "flight";
 

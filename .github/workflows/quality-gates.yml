@@ -34,6 +34,8 @@ jobs:
         run: npm run audit:function-permissions
       - name: Test automation alert handling
         run: npm run test:automation-alerts
+      - name: Test private aircraft bookings and pricing
+        run: npm run test:private-aircraft
       - name: Build portal and PWAs
         run: npm run build
         env:

@@ -239,7 +239,7 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
     () => allCourses.filter(course => (course.coursePurpose ?? 'training') === 'training'),
     [allCourses]
   );
-  const { aircraft: aircraftList, loading: aircraftLoading } = useAircraft();
+  const { aircraft: aircraftList, loading: aircraftLoading } = useAircraft({ includePrivateOption: true });
   const { users, loading: usersLoading } = useUsers();
 
   const [activeLog, setActiveLog] = useState<OutstandingFlightLog | null>(null);
@@ -1058,7 +1058,7 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
       studentId: student.id,
       studentName: student.name,
       aircraftId: aircraft?.id || record?.aircraftId || undefined,
-      aircraftRegistration: aircraft?.registration || record?.registration || undefined,
+      aircraftRegistration: record?.registration || aircraft?.registration || undefined,
       startedAt,
     });
     setActiveLog({
@@ -1074,8 +1074,8 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
       student_name: student.name,
       student_email: student.email,
       instructor_name: user?.name,
-      aircraft_registration: aircraft?.registration || record?.registration || undefined,
-      aircraft_type: aircraft?.type || record?.aircraftType || undefined,
+      aircraft_registration: record?.registration || aircraft?.registration || undefined,
+      aircraft_type: record?.aircraftType || aircraft?.type || undefined,
     });
     setActiveDraftRecord(record ?? null);
     setRecordEntryType(record ? (record.isFlightReview ? 'review_test' : 'lesson') : (isCfi ? null : 'lesson'));
@@ -1549,8 +1549,8 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
         lessonId: form.lessonId,
         date: new Date(activeLog.start_time).toISOString(),
         aircraftId: activeLog.aircraft_id,
-        aircraftType: aircraft?.type ?? 'single-engine',
-        registration: aircraft?.registration ?? activeLog.aircraft_registration ?? '',
+        aircraftType: activeLog.aircraft_type ?? aircraft?.type ?? 'single-engine',
+        registration: activeLog.aircraft_registration ?? aircraft?.registration ?? '',
         instructorId: user.id,
         dualTimeMin: Math.round((activeLog.dual_time ?? 0) * 60),
         soloTimeMin: Math.round((activeLog.solo_time ?? 0) * 60),
@@ -1662,8 +1662,8 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
       lessonId: form.lessonId,
       date: new Date(activeLog.start_time),
       aircraftId: activeLog.aircraft_id,
-      aircraftType: aircraft?.type ?? activeLog.aircraft_type ?? 'single-engine',
-      registration: aircraft?.registration ?? activeLog.aircraft_registration ?? '',
+      aircraftType: activeLog.aircraft_type ?? aircraft?.type ?? 'single-engine',
+      registration: activeLog.aircraft_registration ?? aircraft?.registration ?? '',
       instructorId: user.id,
       dualTimeMin: 0,
       soloTimeMin: 0,

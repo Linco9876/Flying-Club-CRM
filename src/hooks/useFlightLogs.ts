@@ -1,3 +1,4 @@
+import { isPrivateAircraft, withPrivateAircraftDetails } from '../utils/privateAircraft';
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { calculateFlightCost, isNoChargeRate, isPrepaidPaymentMethod, isVoucherPaymentMethod } from '../utils/billing';
@@ -29,6 +30,8 @@ export interface FlightLog {
   id: string;
   booking_id?: string;
   aircraft_id: string;
+  private_aircraft_registration?: string;
+  private_aircraft_type?: string;
   student_id: string;
   instructor_id?: string;
   start_time: string;
@@ -82,6 +85,8 @@ export interface FlightLog {
 export interface CreateFlightLogData {
   booking_id?: string;
   aircraft_id: string;
+  private_aircraft_registration?: string;
+  private_aircraft_type?: string;
   student_id: string;
   instructor_id?: string;
   start_time: string;
@@ -204,7 +209,7 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
       const { data, error: fetchError } = await query;
 
       if (fetchError) throw fetchError;
-      setFlightLogs(data || []);
+      setFlightLogs((data || []).map(withPrivateAircraftDetails));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch flight logs');
       console.error('Error fetching flight logs:', err);
@@ -402,7 +407,7 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
     if (linkedRecordsError) throw linkedRecordsError;
     if (!linkedRecords || linkedRecords.length === 0) return;
 
-    const aircraftType = aircraft?.type
+    const aircraftType = logData.private_aircraft_type || aircraft?.type
       || [aircraft?.make, aircraft?.model].filter(Boolean).join(' ')
       || 'single-engine';
 
@@ -414,7 +419,7 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
         instructor_id: logData.instructor_id ?? null,
         aircraft_id: logData.aircraft_id,
         aircraft_type: aircraftType,
-        registration: aircraft?.registration ?? '',
+        registration: logData.private_aircraft_registration || aircraft?.registration || '',
         date: toLocalDateOnly(logData.start_time),
         dual_time_min: Math.round((logData.dual_time ?? 0) * 60),
         solo_time_min: Math.round((logData.solo_time ?? 0) * 60),
@@ -515,6 +520,7 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
         soloHours: normalisedLogData.solo_time,
         passengerCount: normalisedLogData.passengers,
         startTime: normalisedLogData.start_time,
+        timeZone: isPrivateAircraft(normalisedLogData.aircraft_id) ? 'Australia/Sydney' : undefined,
       });
       let canOverrideCost = false;
       if (requestedCostOverride !== undefined) {
@@ -679,7 +685,7 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
         });
       }
 
-      const { error: aircraftUpdateError } = await supabase
+      const { error: aircraftUpdateError } = isPrivateAircraft(normalisedLogData.aircraft_id) ? { error: null } : await supabase
         .from('aircraft')
         .update({ total_hours: normalisedLogData.end_tach })
         .eq('id', normalisedLogData.aircraft_id);
@@ -781,7 +787,7 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
       if (normalisedUpdates.booking_id) {
         const { data: updatedLog, error: updatedLogError } = await supabase
           .from('flight_logs')
-          .select('booking_id, aircraft_id, student_id, instructor_id, start_time, end_time, start_tach, end_tach, flight_duration, dual_time, solo_time')
+          .select('private_aircraft_type, private_aircraft_registration, booking_id, aircraft_id, student_id, instructor_id, start_time, end_time, start_tach, end_tach, flight_duration, dual_time, solo_time')
           .eq('id', id)
           .maybeSingle();
 
@@ -791,6 +797,8 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
           await syncBookingTrainingRecordsToFlightLog(updatedLog.booking_id, id, {
             booking_id: updatedLog.booking_id,
             aircraft_id: updatedLog.aircraft_id,
+            private_aircraft_type: updatedLog.private_aircraft_type,
+            private_aircraft_registration: updatedLog.private_aircraft_registration,
             student_id: updatedLog.student_id,
             instructor_id: updatedLog.instructor_id,
             start_time: updatedLog.start_time,
@@ -890,6 +898,7 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
   };
 
   const checkTachOverlap = async (aircraftId: string, startTach: number, endTach: number, excludeLogId?: string) => {
+    if (isPrivateAircraft(aircraftId)) return { overlaps: [], error: null };
     try {
       let query = supabase
         .from('flight_logs')

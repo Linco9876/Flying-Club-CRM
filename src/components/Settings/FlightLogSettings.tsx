@@ -1,3 +1,4 @@
+import { isPrivateAircraft } from '../../utils/privateAircraft';
 import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ClipboardList, Info, Loader2, RotateCcw } from 'lucide-react';
@@ -236,7 +237,7 @@ const Toggle = ({
 
 const FlightLogSettings: React.FC<FlightLogSettingsProps> = ({ canEdit, onFormChange }) => {
   const { settings, loading, error, updateSettings, deleteAircraftSettings, refetch } = useFlightLogSettings();
-  const { aircraft } = useAircraft();
+  const { aircraft } = useAircraft({ includePrivateOption: true });
   const [selectedAircraftId, setSelectedAircraftId] = useState<string>('');
   const [draft, setDraft] = useState<FlightLogFieldSetting[]>([]);
   const selectedAircraft = aircraft.find(item => item.id === selectedAircraftId) ?? null;
@@ -363,7 +364,7 @@ const FlightLogSettings: React.FC<FlightLogSettingsProps> = ({ canEdit, onFormCh
               <div className="text-center">Show</div>
               <div className="text-center">Required</div>
             </div>
-            {fields.map(meta => {
+            {fields.filter(meta => !isPrivateAircraft(selectedAircraftId) || !['start_tach', 'end_tach'].includes(meta.fieldName)).map(meta => {
               const setting = settingsByName.get(meta.fieldName);
               if (!setting) return null;
               return (

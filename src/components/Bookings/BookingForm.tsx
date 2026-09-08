@@ -1,3 +1,4 @@
+import { isPrivateAircraft, privateAircraftValidationError, normaliseAircraftRegistration } from '../../utils/privateAircraft';
 import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useMemo, useState } from 'react';
 import { AlertTriangle, Loader2, X, Clock, Plane, User, CreditCard, Repeat2, MapPin } from 'lucide-react';
@@ -48,6 +49,8 @@ interface BookingFormProps {
     endDate?: string;
     studentId?: string;
     aircraftId?: string;
+    privateAircraftType?: string;
+    privateAircraftRegistration?: string;
     instructorId?: string;
     paymentType?: string;
     flightTypeId?: string;
@@ -87,7 +90,7 @@ interface PublicInstructorOption {
 
 const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, booking, isEdit, isKioskMode = false, prefilledData }) => {
   const { user } = useAuth();
-  const { aircraft, loading: aircraftLoading, error: aircraftError } = useAircraft({ participateInPageLoad: false });
+  const { aircraft, loading: aircraftLoading, error: aircraftError } = useAircraft({ participateInPageLoad: false, includePrivateOption: true });
   const { users, getInstructors, loading: usersLoading, error: usersError } = useUsers();
   const { students, loading: studentsLoading, error: studentsError } = useStudents({ participateInPageLoad: false });
   const { flightLogs, loading: flightLogsLoading, error: flightLogsError } = useFlightLogs(undefined, { participateInPageLoad: false });
@@ -139,6 +142,8 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
         startTime: normalizeToQuarterHour(format(new Date(booking.startTime), 'HH:mm')) || '09:00',
         endTime: normalizeToQuarterHour(format(new Date(booking.endTime), 'HH:mm')) || '11:00',
         aircraftId: booking.aircraftId || '',
+        privateAircraftType: booking.privateAircraftType || '',
+        privateAircraftRegistration: booking.privateAircraftRegistration || '',
         instructorId: booking.instructorId || '',
         paymentType: booking.paymentType || '',
         flightTypeId: booking.flightTypeId || '',
@@ -168,6 +173,8 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       startTime: normalizeToQuarterHour(prefilledData?.startTime) || defaultTimes.startTime,
       endTime: normalizeToQuarterHour(prefilledData?.endTime) || defaultTimes.endTime,
       aircraftId: prefilledData?.aircraftId || '',
+      privateAircraftType: prefilledData?.privateAircraftType || '',
+      privateAircraftRegistration: prefilledData?.privateAircraftRegistration || '',
       instructorId: prefilledData?.instructorId || '',
       paymentType: prefilledData?.paymentType || '',
       flightTypeId: prefilledData?.flightTypeId || '',
@@ -186,6 +193,8 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   }, [
     activeLocations,
     booking,
+    prefilledData?.privateAircraftType,
+    prefilledData?.privateAircraftRegistration,
     prefilledData?.date,
     prefilledData?.bookingKind,
     prefilledData?.endDate,
@@ -283,6 +292,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const isStaffUser = Boolean(isAdminUser || user?.role === 'cfi' || user?.role === 'instructor' || user?.role === 'senior_instructor' || user?.roles?.some(role => ['cfi', 'instructor', 'senior_instructor'].includes(role)));
   const canCreateGuestBooking = isStaffUser;
   const isGroundSessionBooking = formData.bookingKind === 'ground';
+  const isPrivateBooking = isPrivateAircraft(formData.aircraftId);
   const displayUserRoles = user?.roles && user.roles.length > 0 ? user.roles : [userRole];
   const isStudentOnlyUser = displayUserRoles.includes('student') && !displayUserRoles.some(role => ['pilot', 'cfi', 'instructor', 'senior_instructor', 'admin'].includes(role));
   const isLimitedCalendarUser = displayUserRoles.some(role => role === 'student' || role === 'pilot')
@@ -323,7 +333,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       ? getPilotAccountPaymentType()
       : selectedFlightType.name;
   }, [flightTypes, getPilotAccountPaymentType]);
-  const shouldShowInstructorField = isFieldVisible('instructor', userRole) || isStudentOnlyUser || Boolean(formData.trialFlightVoucherId);
+  const shouldShowInstructorField = isPrivateBooking || isFieldVisible('instructor', userRole) || isStudentOnlyUser || Boolean(formData.trialFlightVoucherId);
   const instructors = useMemo(() => {
     const merged = new Map<string, PublicInstructorOption>();
     roleBasedInstructors.forEach((instructor) => merged.set(instructor.id, instructor));
@@ -339,6 +349,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const isHistoricalAircraftEntry = isStaffUser
     && isCompletedHistoricalWindow(prospectiveBookingEnd);
   const availableAircraft = aircraft.filter((item) => {
+    if (isPrivateAircraft(item.id) && !item.privateBookingEnabled && !(isEdit && booking?.aircraftId === item.id)) return false;
     if (!canUseAircraftForBooking({
       status: item.status,
       isArchived: item.isArchived,
@@ -575,6 +586,8 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
 
   const validateFormData = () => {
     const userRole = user?.role || 'student';
+    const privateError = privateAircraftValidationError(formData);
+    if (privateError) { toast.error(privateError); return; }
     const effectiveGroundSession = formData.bookingKind === 'ground' || (!formData.aircraftId && !formData.trialFlightVoucherId);
 
     if (financialProvidersError) {
@@ -1400,7 +1413,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                 <option value="">No aircraft - ground session</option>
                 {availableAircraft.map(a => (
                   <option key={a.id} value={a.id}>
-                    {a.registration} — {a.make} {a.model}
+                    {isPrivateAircraft(a.id) ? 'Private aircraft' : `${a.registration} — ${a.make} ${a.model}`}
                     {a.status !== 'serviceable' ? ' (currently unserviceable — historical record only)' : ''}
                   </option>
                 ))}
@@ -1414,18 +1427,29 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
               )}
             </div>
 
+            {isPrivateBooking && (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="text-xs font-medium text-gray-600">Aircraft type *
+                  <input required maxLength={100} placeholder="e.g. Cessna 172" value={formData.privateAircraftType} onChange={e => setFormData(prev => ({ ...prev, privateAircraftType: e.target.value }))} className="mt-1 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm" />
+                </label>
+                <label className="text-xs font-medium text-gray-600">Registration *
+                  <input required maxLength={30} placeholder="e.g. VH-ABC or 24-1234" value={formData.privateAircraftRegistration} onChange={e => setFormData(prev => ({ ...prev, privateAircraftRegistration: normaliseAircraftRegistration(e.target.value) }))} className="mt-1 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm" />
+                </label>
+                <p className="text-xs text-gray-500 sm:col-span-2">Reserves the instructor. Aircraft details will appear in the flight log and training records.</p>
+              </div>
+            )}
             {shouldShowInstructorField && (
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">
-                Instructor {(isFieldRequired('instructor', userRole) || isStudentOnlyUser || Boolean(formData.trialFlightVoucherId)) ? <span className="text-red-500">*</span> : <span className="text-gray-400">(optional)</span>}
+                Instructor {(isPrivateBooking || isFieldRequired('instructor', userRole) || isStudentOnlyUser || Boolean(formData.trialFlightVoucherId)) ? <span className="text-red-500">*</span> : <span className="text-gray-400">(optional)</span>}
               </label>
               <SearchableSelect
                 value={formData.instructorId}
                 onChange={(e) => setFormData(prev => ({ ...prev, instructorId: e.target.value }))}
                 className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required={isFieldRequired('instructor', userRole) || isStudentOnlyUser || Boolean(formData.trialFlightVoucherId)}
+                required={isPrivateBooking || isFieldRequired('instructor', userRole) || isStudentOnlyUser || Boolean(formData.trialFlightVoucherId)}
               >
-                <option value="">{(isStudentOnlyUser || formData.trialFlightVoucherId) ? 'Select instructor' : 'Solo flight'}</option>
+                <option value="">{(isPrivateBooking || isStudentOnlyUser || formData.trialFlightVoucherId) ? 'Select instructor' : 'Solo flight'}</option>
                 {instructors.map(instructor => (
                   <option key={instructor.id} value={instructor.id}>
                     {instructor.name}

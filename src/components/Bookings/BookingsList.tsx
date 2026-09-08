@@ -32,7 +32,7 @@ export const BookingsList: React.FC<BookingsListProps> = ({
   onRejectBooking
 }) => {
   const { user } = useAuth();
-  const { aircraft } = useAircraft();
+  const { aircraft } = useAircraft({ includePrivateOption: true });
   const { students } = useStudents();
   const { users, getInstructors } = useUsers();
   const { settings: portalSettings } = usePortalUxSettings();
@@ -237,6 +237,8 @@ export const BookingsList: React.FC<BookingsListProps> = ({
         endTime: new Date(`${bookingData.endDate}T${bookingData.endTime}`),
         studentId: bookingData.studentId,
         aircraftId: bookingData.aircraftId,
+        privateAircraftType: bookingData.privateAircraftType,
+        privateAircraftRegistration: bookingData.privateAircraftRegistration,
         instructorId: bookingData.instructorId || undefined,
         paymentType: bookingData.paymentType,
         notes: bookingData.notes,
@@ -506,7 +508,7 @@ export const BookingsList: React.FC<BookingsListProps> = ({
               >
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900">
-                    {aircraft?.registration} - {aircraft?.make} {aircraft?.model}
+                    {booking.privateAircraftRegistration || aircraft?.registration} - {booking.privateAircraftType || [aircraft?.make, aircraft?.model].filter(Boolean).join(' ')}
                   </h3>
                   <p className="text-sm text-gray-600">{booking.notes}</p>
                 </div>

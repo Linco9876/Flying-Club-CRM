@@ -71,6 +71,7 @@ export interface AircraftRate {
 }
 
 export interface Aircraft {
+  privateBookingEnabled?: boolean;
   id: string;
   registration: string;
   make: string;
@@ -120,6 +121,8 @@ export interface Aircraft {
 }
 
 export interface Booking {
+  privateAircraftType?: string;
+  privateAircraftRegistration?: string;
   id: string;
   pilotId?: string;
   studentId?: string;
