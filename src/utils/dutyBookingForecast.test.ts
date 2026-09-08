@@ -7,6 +7,10 @@ const migration = readFileSync(
   'utf8',
 );
 const bookingHook = readFileSync(new URL('../hooks/useBookings.ts', import.meta.url), 'utf8');
+const spanOnlyMigration = readFileSync(
+  new URL('../../supabase/migrations/20260908120000_use_duty_span_for_booking_warnings.sql', import.meta.url),
+  'utf8',
+);
 
 test('Duty Clock time is authoritative and booking fallback has realistic margins', () => {
   assert.match(migration, /v_candidate_is_today :=/);
@@ -45,6 +49,17 @@ test('recorded flight limits use flight minutes rather than duty duration', () =
   assert.match(migration, /'ROLLING_365_FLIGHT'/);
   assert.match(migration, /d\.duty_date between v_candidate_date - 27 and v_candidate_date/);
   assert.match(migration, /d\.duty_date between v_candidate_date - 364 and v_candidate_date/);
+});
+
+test('booking warnings use first start to last finish without summing the activity inside', () => {
+  assert.match(spanOnlyMigration, /private\.assess_instructor_duty_booking_span_base/i);
+  assert.match(spanOnlyMigration, /warning_item\.item->>'code' <> 'MAX_DAILY_BOOKED_FLIGHT'/i);
+  assert.match(spanOnlyMigration, /rule_code\.code <> 'MAX_DAILY_BOOKED_FLIGHT'/i);
+  assert.match(spanOnlyMigration, /v_assessment - 'forecastBookedHours'/i);
+  assert.match(spanOnlyMigration, /'planningModel', 'first-start-to-last-finish'/i);
+  assert.match(spanOnlyMigration, /'engineVersion', 'duty-v4-span-only'/i);
+  assert.match(spanOnlyMigration, /grant execute[\s\S]*to authenticated, service_role/i);
+  assert.match(spanOnlyMigration, /select private\.assert_function_permission_manifest\(\)/i);
 });
 
 test('Appendix 6 start-time limits replace the unrelated 01:00 finish rule', () => {

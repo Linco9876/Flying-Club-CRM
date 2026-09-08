@@ -71,7 +71,16 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
 
   useEffect(() => {
     (window as any).__bookingrulesSettingsSave = async () => {
-      const validationError = getBookingRulesValidationError(formData);
+      const normalisedFormData = {
+        ...formData,
+        // Keep the legacy database value compatible with the duty-span limit.
+        // It is no longer a separate prospective-booking warning control.
+        fatigueMaxFlightHoursPerDay: Math.min(
+          formData.fatigueMaxFlightHoursPerDay,
+          formData.fatigueMaxDutyHoursPerDay,
+        ),
+      };
+      const validationError = getBookingRulesValidationError(normalisedFormData);
       if (validationError) throw new Error(validationError);
       const saveBookingFields = (window as any).__bookingFieldsEmbeddedSave;
       if (typeof saveBookingFields !== 'function') {
@@ -96,7 +105,7 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
         fatigue_early_start_time: formData.fatigueEarlyStartTime,
         fatigue_min_rest_hours: formData.fatigueMinRestHours,
         fatigue_max_duty_hours_per_day: formData.fatigueMaxDutyHoursPerDay,
-        fatigue_max_flight_hours_per_day: formData.fatigueMaxFlightHoursPerDay,
+        fatigue_max_flight_hours_per_day: normalisedFormData.fatigueMaxFlightHoursPerDay,
         fatigue_max_late_finishes_7_days: formData.fatigueMaxLateFinishes7Days,
         fatigue_break_required_after_hours: formData.fatigueBreakRequiredAfterHours,
         fatigue_min_break_minutes: formData.fatigueMinBreakMinutes,
@@ -417,20 +426,6 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Maximum booked flight/supervision time per day (hours)</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="12"
-                  step="0.5"
-                  value={formData.fatigueMaxFlightHoursPerDay}
-                  onChange={(e) => handleInputChange('fatigueMaxFlightHoursPerDay', parseFloat(e.target.value))}
-                  disabled={!canEdit || !formData.fatigueRulesEnabled}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
-                />
-              </div>
-
-              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Maximum late finishes in 7 days</label>
                 <input
                   type="number"
@@ -475,19 +470,12 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
             </div>
 
             <div className="grid gap-3 md:grid-cols-2">
-              <label className="flex items-start gap-2 text-sm text-gray-700">
-                <input
-                  type="checkbox"
-                  checked={formData.fatigueIncludeSupervision}
-                  onChange={(e) => handleInputChange('fatigueIncludeSupervision', e.target.checked)}
-                  disabled={!canEdit || !formData.fatigueRulesEnabled}
-                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
-                />
-                <span>
-                  Count supervision and instructor bookings in fatigue limits
-                  <span className="block text-xs text-gray-500">Use this for senior instructors supervising other instructors as part of their duty day.</span>
+              <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+                <span className="font-medium">Duty span model</span>
+                <span className="mt-0.5 block text-xs text-blue-700">
+                  The Duty Clock is authoritative. Without it, duty runs from 30 minutes before the first booking or supervision to 30 minutes after the last; activity inside that span is not added together.
                 </span>
-              </label>
+              </div>
 
               <label className="flex items-start gap-2 text-sm text-gray-700">
                 <input
@@ -505,7 +493,7 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
             </div>
 
             <div className="rounded-lg border border-blue-200 bg-white/70 p-3 text-xs leading-5 text-blue-950">
-              The booking validator applies CASA Appendix 6 flight-training planning checks for daily FDP by start time, 12 hours off-duty between CRM duties, 7 hours daily flight/supervision time, 60 hours duty in 7 days, 100 hours duty in 14 days, 100 hours flight time in 28 days, 1000 hours flight time in 365 days, a 36-hour off-duty gap in 7 days, and 6 off-duty days in 28 days. The separate missing-break prompt defaults to the Pilots Award clause 17.1 threshold. Confirm that award coverage and any exception apply to each engagement. The CRM can only assess activity recorded here.
+              The booking validator checks the first-to-last daily duty span, 12 hours off-duty between CRM duties, 60 hours duty in 7 days, 100 hours duty in 14 days, recorded flight time over 28 and 365 days, a 36-hour off-duty gap in 7 days, and 6 off-duty days in 28 days. The separate missing-break prompt defaults to the Pilots Award clause 17.1 threshold. Confirm that award coverage and any exception apply to each engagement. The CRM can only assess activity recorded here.
             </div>
           </div>
         </div>
