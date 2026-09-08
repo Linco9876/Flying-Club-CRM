@@ -14,7 +14,7 @@
   "dependencies": {
     "@expo/metro-runtime": "~57.0.15",
     "@supabase/supabase-js": "^2.112.3",
-    "expo": "~57.0.20",
+    "expo": "~57.0.21",
     "expo-location": "~57.0.16",
     "expo-status-bar": "~57.0.1",
     "image-size": "file:vendor/image-size",
