@@ -55,6 +55,7 @@ import { SupervisionActionModal } from '../Bookings/SupervisionActionModal';
 import { FlightLogModal } from '../Bookings/FlightLogModal';
 import { GroundSessionLogModal } from '../Bookings/GroundSessionLogModal';
 import { BookingCancellationModal } from '../Bookings/BookingCancellationModal';
+import { RecurringBookingInteractionModal } from '../Bookings/RecurringBookingInteractionModal';
 import { GuestPromotionModal } from '../Bookings/GuestPromotionModal';
 import type { BookingCancellationInput } from '../../hooks/useBookings';
 import toast from 'react-hot-toast';
@@ -90,6 +91,7 @@ import {
 } from '../../utils/calendarListView';
 import { getCalendarStickyHeaderTransition } from '../../utils/calendarStickyHeader';
 import { layoutSupervisionMarkers } from '../../utils/calendarSupervision';
+import type { RecurringBookingEditScope } from '../../utils/recurringBookingEdits';
 
 interface CalendarProps {
   bookings: Booking[];
@@ -109,7 +111,12 @@ interface CalendarProps {
   ) => void;
   onEditBooking?: (booking: Booking) => void;
   onCopyBooking?: (booking: Booking) => void;
-  onUpdateBooking?: (bookingId: string, updates: Partial<Booking>, silent?: boolean) => Promise<void> | void;
+  onUpdateBooking?: (
+    bookingId: string,
+    updates: Partial<Booking>,
+    silent?: boolean,
+    recurringScope?: RecurringBookingEditScope,
+  ) => Promise<void> | void;
   onDeleteBooking?: (bookingId: string, cancellation?: BookingCancellationInput) => Promise<void> | void;
   onRestoreBooking?: (bookingId: string) => Promise<void> | void;
   onApproveBooking?: (bookingId: string) => Promise<void> | void;
@@ -576,6 +583,11 @@ export const Calendar: React.FC<CalendarProps> = ({
   const [actionMenuBooking, setActionMenuBooking] = useState<Booking | null>(null);
   const [guestPromotionBooking, setGuestPromotionBooking] = useState<Booking | null>(null);
   const [cancellationBooking, setCancellationBooking] = useState<Booking | null>(null);
+  const [recurringInteraction, setRecurringInteraction] = useState<{
+    booking: Booking;
+    updates: Partial<Booking>;
+    action: 'move' | 'resize';
+  } | null>(null);
   const [actionMenuPosition, setActionMenuPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [bookingMenuLoading, setBookingMenuLoading] = useState<{ bookingId: string; x: number; y: number } | null>(null);
   const bookingMenuOpenTokenRef = useRef(0);
@@ -2932,6 +2944,45 @@ export const Calendar: React.FC<CalendarProps> = ({
     updateBookingPreviewForSlot(slot, resourceId, resourceType, date);
   };
 
+  const applyBookingInteractionUpdate = useCallback((
+    booking: Booking,
+    updates: Partial<Booking>,
+    action: 'move' | 'resize',
+    recurringScope: RecurringBookingEditScope = 'single',
+  ) => {
+    if (!onUpdateBooking) return;
+
+    setOptimisticBookingUpdates((current) => ({
+      ...current,
+      [booking.id]: {
+        ...current[booking.id],
+        ...updates,
+      },
+    }));
+    if (action === 'move') {
+      setWasMovingBooking(true);
+      setTimeout(() => setWasMovingBooking(false), 150);
+    }
+
+    void Promise.resolve(onUpdateBooking(booking.id, updates, true, recurringScope))
+      .catch((error) => {
+        console.error('Error updating booking:', error);
+        setOptimisticBookingUpdates((current) => {
+          const next = { ...current };
+          delete next[booking.id];
+          return next;
+        });
+        toast.error(action === 'resize' ? 'Failed to resize booking' : 'Failed to move booking');
+      })
+      .finally(() => {
+        setOptimisticBookingUpdates((current) => {
+          const next = { ...current };
+          delete next[booking.id];
+          return next;
+        });
+      });
+  }, [onUpdateBooking]);
+
   const handleBookingDrop = useCallback(() => {
     const booking = draggedBooking || resizingBooking?.booking;
     if (!booking || !dragPreview || !onUpdateBooking) {
@@ -2953,42 +3004,22 @@ export const Calendar: React.FC<CalendarProps> = ({
       }
     }
 
-    setOptimisticBookingUpdates((current) => ({
-      ...current,
-      [booking.id]: {
-        ...current[booking.id],
-        ...updates,
-      },
-    }));
-    if (draggedBooking) {
-      setWasMovingBooking(true);
-      setTimeout(() => setWasMovingBooking(false), 150);
-    }
+    const action = wasResizingBooking ? 'resize' : 'move';
     resetBookingInteractionState();
 
-    void Promise.resolve(onUpdateBooking(booking.id, updates, true))
-      .catch((error) => {
-        console.error('Error updating booking:', error);
-        setOptimisticBookingUpdates((current) => {
-          const next = { ...current };
-          delete next[booking.id];
-          return next;
-        });
-        toast.error(wasResizingBooking ? 'Failed to resize booking' : 'Failed to move booking');
-      })
-      .finally(() => {
-        setOptimisticBookingUpdates((current) => {
-          const next = { ...current };
-          delete next[booking.id];
-          return next;
-        });
-      });
+    if (booking.recurrenceSeriesId) {
+      setRecurringInteraction({ booking, updates, action });
+      return;
+    }
+
+    applyBookingInteractionUpdate(booking, updates, action);
   }, [
     draggedBooking,
     resizingBooking,
     dragPreview,
     onUpdateBooking,
     resetBookingInteractionState,
+    applyBookingInteractionUpdate,
   ]);
 
   useLatestEffect(() => {
@@ -6706,6 +6737,19 @@ export const Calendar: React.FC<CalendarProps> = ({
             </div>
           )}
         </div>
+      )}
+
+      {recurringInteraction && (
+        <RecurringBookingInteractionModal
+          booking={recurringInteraction.booking}
+          action={recurringInteraction.action}
+          onClose={() => setRecurringInteraction(null)}
+          onSelect={(scope) => {
+            const pending = recurringInteraction;
+            setRecurringInteraction(null);
+            applyBookingInteractionUpdate(pending.booking, pending.updates, pending.action, scope);
+          }}
+        />
       )}
 
       {downtimeChoice && (

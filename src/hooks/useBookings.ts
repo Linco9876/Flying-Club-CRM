@@ -12,7 +12,10 @@ import {
   requestBookingCalendarRefresh,
 } from '../utils/bookingCalendarRefresh';
 import { normaliseGuestBookingPurpose } from '../utils/casualContacts';
-import { buildRecurringBookingUpdatePlan } from '../utils/recurringBookingEdits';
+import {
+  buildRecurringBookingUpdatePlan,
+  type RecurringBookingEditScope,
+} from '../utils/recurringBookingEdits';
 
 const getErrorMessage = (error: unknown) => {
   if (error instanceof Error) return error.message;
@@ -52,6 +55,7 @@ interface AddBookingOptions {
 export interface BookingCancellationInput {
   reasonId?: string;
   notes?: string;
+  recurringScope?: RecurringBookingEditScope;
 }
 
 export const useBookings = (enabled = true) => {
@@ -823,7 +827,7 @@ export const useBookings = (enabled = true) => {
       if (!currentBooking) {
         throw new Error('The selected booking could not be found. Refresh the calendar and try again.');
       }
-      if (!currentBooking.recurrenceSeriesId || !currentBooking.recurrenceOccurrenceIndex) {
+      if (!currentBooking.recurrenceSeriesId || currentBooking.recurrenceOccurrenceIndex == null) {
         throw new Error('This booking is not linked to a recurring series.');
       }
 
@@ -1229,6 +1233,39 @@ export const useBookings = (enabled = true) => {
     }
   };
 
+  const deleteRecurringBookingSeries = async (
+    id: string,
+    cancellation: BookingCancellationInput = {},
+  ) => {
+    try {
+      const booking = bookings.find(existing => existing.id === id);
+      if (!booking?.recurrenceSeriesId || booking.recurrenceOccurrenceIndex == null) {
+        throw new Error('This booking is not linked to a recurring series.');
+      }
+
+      const { data, error: cancellationError } = await supabase.rpc(
+        'cancel_recurring_booking_series_from_occurrence',
+        {
+          p_booking_id: id,
+          p_cancellation_reason_id: cancellation.reasonId || null,
+          p_cancellation_notes: cancellation.notes?.trim() || null,
+        },
+      );
+      if (cancellationError) throw cancellationError;
+
+      const result = data as { cancelledCount?: number } | null;
+      const cancelledCount = Number(result?.cancelledCount || 0);
+      await fetchBookings({ silent: true });
+      requestBookingCalendarRefresh({ bookingId: id, reason: 'booking-deleted' });
+      toast.success(`${cancelledCount || 'Recurring'} ${cancelledCount === 1 ? 'booking' : 'bookings'} cancelled`);
+      return cancelledCount;
+    } catch (err) {
+      console.error('Error deleting recurring booking series:', err);
+      toast.error(getErrorMessage(err) || 'Failed to cancel recurring booking series');
+      throw err;
+    }
+  };
+
   const restoreBooking = async (id: string) => {
     try {
       const booking = bookings.find(existing => existing.id === id);
@@ -1537,6 +1574,7 @@ export const useBookings = (enabled = true) => {
     updateRecurringBookingSeries,
     updateBooking,
     deleteBooking,
+    deleteRecurringBookingSeries,
     restoreBooking,
     addFlightLog,
     approveBooking,

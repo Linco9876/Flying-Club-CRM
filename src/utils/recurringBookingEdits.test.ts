@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import type { Booking } from '../types/index.ts';
 import {
@@ -69,4 +70,43 @@ test('the expected remaining occurrence count is derived from stable sequence me
     getExpectedFutureOccurrenceCount(occurrence('two', 2, '2026-09-08T09:00:00+10:00')),
     3,
   );
+});
+
+test('edit and cancellation forms both ask whether to change one or all future bookings', () => {
+  const editForm = readFileSync(new URL('../components/Bookings/BookingForm.tsx', import.meta.url), 'utf8');
+  const cancellationForm = readFileSync(new URL('../components/Bookings/BookingCancellationModal.tsx', import.meta.url), 'utf8');
+  const interactionModal = readFileSync(new URL('../components/Bookings/RecurringBookingInteractionModal.tsx', import.meta.url), 'utf8');
+  const calendar = readFileSync(new URL('../components/Calendar/Calendar.tsx', import.meta.url), 'utf8');
+
+  assert.match(editForm, /Apply changes to/);
+  assert.match(editForm, /This booking only/);
+  assert.match(editForm, /This and all future/);
+  assert.match(cancellationForm, /Apply cancellation to/);
+  assert.match(cancellationForm, /This booking only/);
+  assert.match(cancellationForm, /This and all future/);
+  assert.match(cancellationForm, /recurringScope: isRecurringBooking \? recurringScope : 'single'/);
+  assert.match(interactionModal, /This booking only/);
+  assert.match(interactionModal, /This and all future bookings/);
+  assert.match(calendar, /if \(booking\.recurrenceSeriesId\)/);
+  assert.match(calendar, /onUpdateBooking\(booking\.id, updates, true, recurringScope\)/);
+});
+
+test('future-series cancellation uses one atomic database operation and one summary notification', () => {
+  const hook = readFileSync(new URL('../hooks/useBookings.ts', import.meta.url), 'utf8');
+  const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+  const migration = readFileSync(
+    new URL('../../supabase/migrations/20260908123000_cancel_future_recurring_bookings.sql', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(hook, /cancel_recurring_booking_series_from_occurrence/);
+  assert.match(app, /cancellation\?\.recurringScope === 'future'/);
+  assert.match(app, /deleteRecurringBookingSeries\(bookingId, cancellation\)/);
+  assert.match(app, /recurringScope === 'future'/);
+  assert.match(app, /updateRecurringBookingSeries\(bookingId, updates, silent\)/);
+  assert.match(migration, /pg_advisory_xact_lock/);
+  assert.match(migration, /recurrence_occurrence_index >= v_source\.recurrence_occurrence_index/);
+  assert.match(migration, /A selected occurrence already has a flight or ground-session log/);
+  assert.match(migration, /Recurring booking series cancelled/);
+  assert.match(migration, /perform public\.promote_available_resource_waitlist\(\)/);
 });

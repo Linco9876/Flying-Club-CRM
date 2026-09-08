@@ -24,7 +24,7 @@
     "test:calendar": "npx --yes deno test --node-modules-dir=false supabase/functions/_shared/calendar.test.ts",
     "test:calendar-daylight": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/calendarDaylight.test.ts",
     "test:calendar-sticky-header": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/calendarStickyHeader.test.ts",
-    "test:calendar-downtime": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/calendarDowntime.test.ts src/utils/calendarListView.test.ts",
+    "test:calendar-downtime": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/calendarDowntime.test.ts src/utils/calendarListView.test.ts src/utils/recurringBookingEdits.test.ts",
     "test:calendar-quality": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/calendarQuality.test.ts",
     "test:calendar-list": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/calendarListView.test.ts",
     "test:address-autocomplete": "npx --yes deno test --node-modules-dir=false supabase/functions/_shared/addressAutocomplete.test.ts",
