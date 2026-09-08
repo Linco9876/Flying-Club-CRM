@@ -298,13 +298,19 @@ export const buildGuestReviewRequestEmail = (details: GuestReviewRequestEmailDet
     `Thank you from the ${businessName} team.`,
   ].filter((line, index, lines) => line !== "" || lines[index - 1] !== "").join("\n");
 
-  const contextHtml = flightContext.map((item) => `<span class="context-chip" style="display:inline-block;margin:3px 4px;padding:7px 11px;border:1px solid #dbeafe;border-radius:999px;background:#f8fbff;color:#334155;font-size:12px;font-weight:700;">${escapeHtml(item)}</span>`).join("");
+  const contextHtml = flightContext.map((item) => `<tr>
+                <td align="center" style="padding:0 0 6px;">
+                  <table role="presentation" align="center" cellspacing="0" cellpadding="0" style="border-collapse:separate;">
+                    <tr><td align="center" style="padding:7px 11px;border:1px solid #dbeafe;border-radius:14px;background:#f8fbff;color:#334155;font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:700;line-height:1.3;">${escapeHtml(item)}</td></tr>
+                  </table>
+                </td>
+              </tr>`).join("");
   const testBanner = details.isTest
     ? `<tr><td style="padding:10px 20px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:800;text-align:center;letter-spacing:.3px;">EMAIL DESIGN PREVIEW — NO VISITOR WAS CONTACTED</td></tr>`
     : "";
   const privateFeedbackButton = feedbackEmail
     ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;margin-top:12px;border-collapse:separate;">
-        <tr><td align="center" style="border:2px solid #315b88;border-radius:10px;background:#ffffff;"><a href="${escapeHtml(privateFeedbackUrl)}" role="button" aria-label="Send private feedback by email" style="display:block;padding:15px 16px;color:#123c70;text-decoration:none;font-size:16px;font-weight:800;line-height:1.25;">&#9993;&nbsp;&nbsp;Send private feedback</a></td></tr>
+        <tr><td align="center" style="padding:14px 16px;border:2px solid #315b88;border-radius:10px;background:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:800;line-height:1.25;"><a href="${escapeHtml(privateFeedbackUrl)}" role="button" aria-label="Send private feedback by email" style="display:block;color:#123c70;text-decoration:none;">&#9993;&nbsp;&nbsp;Send private feedback</a></td></tr>
       </table>`
     : "";
   const html = `<!doctype html>
@@ -314,7 +320,7 @@ export const buildGuestReviewRequestEmail = (details: GuestReviewRequestEmailDet
     <meta name="color-scheme" content="light only">
     <meta name="supported-color-schemes" content="light only">
     <meta name="x-apple-disable-message-reformatting">
-    <style>@media only screen and (max-width:620px){.email-shell{padding:10px!important}.email-card{border-radius:16px!important}.brand-header{padding:16px!important}.content-pad{padding:28px 20px 24px!important}.feedback-title{font-size:30px!important}.context-chip{margin:3px 2px!important}}</style>
+    <style>@media only screen and (max-width:620px){.email-shell{padding:10px!important}.email-card{border-radius:16px!important}.brand-header{padding:16px!important}.content-pad{padding:28px 20px 24px!important}.feedback-title{font-size:30px!important}}</style>
   </head>
   <body style="margin:0;padding:0;background:#eef3f8;font-family:Arial,Helvetica,sans-serif;color:#0b2347;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
     <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">We would value your honest feedback about your recent flight.</div>
@@ -328,12 +334,12 @@ export const buildGuestReviewRequestEmail = (details: GuestReviewRequestEmailDet
           <tr><td align="center" class="content-pad" style="padding:38px 38px 28px;background:#ffffff;">
             <h1 class="feedback-title" style="margin:0;color:#071f49;font-family:Arial,Helvetica,sans-serif;font-size:38px;font-weight:800;line-height:1.15;letter-spacing:-.6px;">We&rsquo;d love your feedback!</h1>
             <p style="margin:20px auto 0;max-width:520px;color:#1f3658;font-size:17px;line-height:1.6;">Hi ${escapeHtml(guestName)}, thank you for flying with ${escapeHtml(businessName)}. We hope you enjoyed your experience.</p>
-            <div style="margin:18px 0 20px;text-align:center;">${contextHtml}</div>
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;margin:18px 0 14px;border-collapse:collapse;">${contextHtml}</table>
             <p style="margin:0 auto;max-width:520px;color:#1f3658;font-size:17px;line-height:1.6;">Would you consider sharing your honest feedback? It helps future visitors know what to expect.</p>
             <div aria-hidden="true" style="margin:20px 0 18px;color:#ffb317;font-size:34px;line-height:1;letter-spacing:5px;">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;max-width:440px;border-collapse:separate;">
-              <tr><td align="center" style="border-radius:10px;background:#1769e0;background-image:linear-gradient(135deg,#1976f3 0%,#0b5bd3 100%);box-shadow:0 7px 16px rgba(23,105,224,.24);">
-                <a href="${escapeHtml(reviewUrl)}" role="button" aria-label="Leave an honest Google review" style="display:block;padding:16px;color:#ffffff;text-decoration:none;font-size:17px;font-weight:800;line-height:1.25;"><span aria-hidden="true" style="display:inline-block;width:28px;height:28px;margin-right:10px;border-radius:50%;background:#ffffff;color:#4285f4;font-size:19px;font-weight:900;line-height:28px;vertical-align:middle;">G</span><span style="vertical-align:middle;">Leave a Google review</span></a>
+              <tr><td align="center" style="padding:14px 18px;border-radius:10px;background:#1769e0;background-image:linear-gradient(135deg,#1976f3 0%,#0b5bd3 100%);box-shadow:0 7px 16px rgba(23,105,224,.24);font-family:Arial,Helvetica,sans-serif;font-size:17px;font-weight:800;line-height:1.25;">
+                <a href="${escapeHtml(reviewUrl)}" role="button" aria-label="Leave an honest Google review" style="display:block;color:#ffffff;text-decoration:none;">Leave a Google review</a>
               </td></tr>
             </table>
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;max-width:440px;border-collapse:separate;">${privateFeedbackButton ? `<tr><td>${privateFeedbackButton}</td></tr>` : ""}</table>
