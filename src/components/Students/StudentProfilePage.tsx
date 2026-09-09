@@ -403,6 +403,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     return 'training';
   });
   const [showMatrixView, setShowMatrixView] = useState(false);
+  const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
   const [expandedAcknowledgedRecordIds, setExpandedAcknowledgedRecordIds] = useState<Set<string>>(new Set());
   const [selectedTrainingCourseId, setSelectedTrainingCourseId] = useState(() => searchParams.get('courseId') || '');
   const [dateFilter, setDateFilter] = useState({ start: '', end: '' });
@@ -484,6 +485,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     trainingRecords,
     loading: trainingRecordsLoading,
     updateTrainingRecord,
+    deleteDraftTrainingRecord,
     refetch: refetchTrainingRecords,
   } = useTrainingRecords(studentId, { requireStudentId: true });
   const { users } = useUsers(loadPlan.userDirectory);
@@ -1492,6 +1494,19 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   };
 
   const getRecordCourse = (record: TrainingRecord) => trainingCourses.find(course => course.id === record.courseId);
+
+  const handleDeleteDraftRecord = async (record: TrainingRecord) => {
+    if (record.status !== 'draft' || !canEditRecord(record) || deletingDraftId) return;
+    if (!window.confirm(`Delete the draft dated ${new Date(record.date).toLocaleDateString('en-AU')} for ${student?.name || 'this student'}?\n\nThis cannot be undone. The booking and flight log will be kept.`)) return;
+    setDeletingDraftId(record.id);
+    try {
+      await deleteDraftTrainingRecord(record.id);
+    } catch {
+      // The hook displays the deletion error.
+    } finally {
+      setDeletingDraftId(null);
+    }
+  };
 
   const normaliseLessonLookupText = (value?: string) =>
     (value || '')
@@ -4127,6 +4142,8 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                         highlighted={isRequestedTrainingRecord}
                         onEdit={canEditRecord(record) ? () => openTrainingRecordEditor(record) : undefined}
                         onReassign={canReassignRecord(record) ? () => setReassigningTrainingRecord(record) : undefined}
+                        onDeleteDraft={record.status === 'draft' && canEditRecord(record) ? () => void handleDeleteDraftRecord(record) : undefined}
+                        deletingDraft={deletingDraftId !== null}
                         onMinimise={record.studentAck ? () => setAcknowledgedRecordExpanded(record.id, false) : undefined}
                         acknowledgement={
                           requiresAcknowledgement &&

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckCircle, Edit, History, Info, MoreVertical, RotateCcw, X } from 'lucide-react';
+import { CheckCircle, Edit, History, Info, MoreVertical, RotateCcw, Trash2, X } from 'lucide-react';
 import type { TrainingRecord, TrainingSequenceResult } from '../../types';
 import { formatLessonRecordHours, lessonRecordAuditSummary } from '../../utils/lessonRecordPresentation';
 
@@ -45,6 +45,8 @@ interface LessonRecordCardProps {
   highlighted?: boolean;
   onEdit?: () => void;
   onReassign?: () => void;
+  onDeleteDraft?: () => void;
+  deletingDraft?: boolean;
   onMinimise?: () => void;
   acknowledgement?: {
     loading: boolean;
@@ -107,6 +109,8 @@ export const LessonRecordCard: React.FC<LessonRecordCardProps> = ({
   highlighted = false,
   onEdit,
   onReassign,
+  onDeleteDraft,
+  deletingDraft = false,
   onMinimise,
   acknowledgement,
 }) => {
@@ -194,6 +198,11 @@ export const LessonRecordCard: React.FC<LessonRecordCardProps> = ({
                 {onReassign && (
                   <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); onReassign(); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-blue-700 hover:bg-blue-50">
                     <RotateCcw className="h-4 w-4" /> Reassign flight
+                  </button>
+                )}
+                {record.status === 'draft' && onDeleteDraft && (
+                  <button type="button" role="menuitem" disabled={deletingDraft} onClick={() => { setMenuOpen(false); onDeleteDraft(); }} className="flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50 disabled:opacity-50">
+                    <Trash2 className="h-4 w-4" /> {deletingDraft ? 'Deleting draft…' : 'Delete draft'}
                   </button>
                 )}
                 {onMinimise && (
