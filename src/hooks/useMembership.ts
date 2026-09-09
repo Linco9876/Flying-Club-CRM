@@ -465,21 +465,10 @@ export const useMembership = () => {
               console.warn('Membership approved; Xero invoice issue deferred:', invoiceError || invoiceData?.error);
               toast('Membership approved. The Xero invoice will be retried by the daily billing job.', { icon: 'ℹ️' });
             }
-          } else if (financialProviders.stripe.paymentsAvailable) {
-            const { data: collection, error: collectionError } = await supabase.functions.invoke(
-              'membership-payment-setup',
-              { body: { action: 'collect-approved-membership', userId: applicantUserId } },
-            );
-            if (collectionError || collection?.error) {
-              console.warn('Membership approved; direct Stripe collection needs attention:', collectionError || collection?.error);
-              toast('Membership approved. Stripe collection needs administrator review.', { icon: 'ℹ️' });
-            } else if (collection?.status === 'processing') {
-              toast('Membership approved. The bank debit is processing.', { icon: 'ℹ️' });
-            } else if (collection?.reason === 'payment_authority_required') {
-              toast('Membership approved. The member still needs to choose a payment method.', { icon: 'ℹ️' });
-            }
+          } else if (!financialProviders.xero.accountingAvailable) {
+            toast('Membership approved. Booking access is cleared while Xero is disconnected; no payment was collected.');
           } else {
-            toast('Membership approved. Financial services are disconnected, so no invoice or debit was created.', { icon: 'ℹ️' });
+            toast('Membership approved. Xero posting is unavailable; the membership invoice still needs attention.');
           }
         }
       }
