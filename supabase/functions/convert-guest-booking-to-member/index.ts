@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { provisioningAccessFor } from "../_shared/userProvisioningRules.ts";
+import { promotionErrorMessage } from "../_shared/promotionError.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -335,6 +336,6 @@ Deno.serve(async (req: Request) => {
     });
   } catch (error) {
     console.error("convert-guest-booking-to-member error:", error);
-    return json({ error: error instanceof Error ? error.message : "The casual contact could not be promoted" }, 500);
+    return json({ error: promotionErrorMessage(error) }, 500);
   }
 });

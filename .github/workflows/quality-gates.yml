@@ -36,6 +36,8 @@ jobs:
         run: npm run test:automation-alerts
       - name: Test private aircraft bookings and pricing
         run: npm run test:private-aircraft
+      - name: Test casual contact promotion
+        run: npm run test:casual-contacts && npx --yes deno test --node-modules-dir=false supabase/functions/_shared/promotionError.test.ts
       - name: Build portal and PWAs
         run: npm run build
         env:
