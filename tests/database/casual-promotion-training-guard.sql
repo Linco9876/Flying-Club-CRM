@@ -1,6 +1,11 @@
 -- Run only in a new disposable local PostgreSQL database.
 \set ON_ERROR_STOP on
 begin;
+do $$ begin
+  if not exists(select 1 from pg_roles where rolname = 'anon') then create role anon; end if;
+  if not exists(select 1 from pg_roles where rolname = 'authenticated') then create role authenticated; end if;
+  if not exists(select 1 from pg_roles where rolname = 'service_role') then create role service_role; end if;
+end $$;
 create schema auth;
 create schema private;
 create function auth.uid() returns uuid language sql as $$
