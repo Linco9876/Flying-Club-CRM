@@ -730,7 +730,7 @@ const KioskAuthenticatedRoute: React.FC<{
   setBookingFormData,
 }) => {
   const { logout } = useAuth();
-  const { bookings, addBooking, finaliseRecurringBookingSeries, updateRecurringBookingSeries, updateBooking, deleteBooking, deleteRecurringBookingSeries, restoreBooking, approveBooking, refetch: refetchBookings } = useBookings(true);
+  const { bookings, addBooking, finaliseRecurringBookingSeries, updateRecurringBookingSeries, updateBooking, deleteBooking, deleteRecurringBookingSeries, restoreBooking, approveBooking, refetch: refetchBookings } = useBookings(true, { includeCalendarNames: true });
   const { settings: portalSettings } = usePortalUxSettings();
   const userRoles = user?.roles && user.roles.length > 0 ? user.roles : [user?.role];
   const isAdminUser = userRoles.includes('admin');
