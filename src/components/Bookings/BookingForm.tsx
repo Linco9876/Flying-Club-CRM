@@ -376,6 +376,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     ].some(value => value.toLowerCase().includes(query));
   }).slice(0, 8);
   const filteredPilotOptions = users.filter((member) => {
+    if (member.isActive === false) return false;
     const query = pilotSearch.trim().toLowerCase();
     if (!query) return true;
     return [
@@ -923,6 +924,12 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     e.preventDefault();
     const validation = validateFormData();
     if (!validation) return;
+
+    if (!formData.isGuestBooking && user?.id
+      && formData.studentId === user.id && formData.instructorId === user.id
+      && !window.confirm('Are you sure you want to book yourself as the pilot?')) {
+      return;
+    }
 
     const endorsementWarning = getEndorsementWarning(formData);
     if (endorsementWarning) {
