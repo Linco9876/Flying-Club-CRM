@@ -131,6 +131,7 @@ export const useTrainingRecords = (studentId?: string, options: UseTrainingRecor
           criteriaGrades: r.criteria_grades || {},
           lessonCodes: r.lesson_codes || [],
           nextLesson: r.next_lesson,
+          instructorProgressionApproved: r.instructor_progression_approved === true,
           status: r.status,
           instructorSignatureUrl: r.instructor_signature_url,
           studentAck: r.student_ack,
@@ -312,6 +313,7 @@ export const useTrainingRecords = (studentId?: string, options: UseTrainingRecor
           criteria_grades: recordData.criteriaGrades,
           lesson_codes: recordData.lessonCodes,
           next_lesson: recordData.nextLesson,
+          instructor_progression_approved: recordData.instructorProgressionApproved === true,
           status: recordData.status,
           instructor_signature_url: recordData.instructorSignatureUrl,
           student_ack: recordData.studentAck,
@@ -384,6 +386,7 @@ export const useTrainingRecords = (studentId?: string, options: UseTrainingRecor
       if (recordData.criteriaGrades !== undefined) updateData.criteria_grades = recordData.criteriaGrades;
       if (recordData.lessonCodes !== undefined) updateData.lesson_codes = recordData.lessonCodes;
       if (recordData.nextLesson !== undefined) updateData.next_lesson = recordData.nextLesson;
+      if (recordData.instructorProgressionApproved !== undefined) updateData.instructor_progression_approved = recordData.instructorProgressionApproved;
       if (recordData.status !== undefined) updateData.status = recordData.status;
       if (recordData.instructorSignatureUrl !== undefined) updateData.instructor_signature_url = recordData.instructorSignatureUrl;
       if (recordData.studentAck !== undefined) updateData.student_ack = recordData.studentAck;

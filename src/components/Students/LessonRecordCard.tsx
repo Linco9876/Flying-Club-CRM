@@ -231,6 +231,12 @@ export const LessonRecordCard: React.FC<LessonRecordCardProps> = ({
           <DetailField label="Next lesson" value={record.nextLesson || '—'} />
         </dl>
 
+        {record.instructorProgressionApproved && (
+          <p className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+            Instructor approved progression despite the assessment result. Next lesson: {record.nextLesson || 'Not set'}.
+          </p>
+        )}
+
         <section className="border-t border-gray-100 pt-4">
           <div className="mb-2 flex items-center justify-between gap-3">
             <h4 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-500">Assessment</h4>

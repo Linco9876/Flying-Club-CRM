@@ -566,6 +566,7 @@ export interface TrainingRecord {
   criteriaGrades: Record<string, string>;
   lessonCodes: string[];
   nextLesson?: string;
+  instructorProgressionApproved?: boolean;
   status: 'draft' | 'submitted' | 'locked';
   instructorSignatureUrl?: string;
   studentAck: boolean;
