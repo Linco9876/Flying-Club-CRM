@@ -2758,18 +2758,18 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
                   </div>
 
                   {/* Instructor-only structured deficiencies */}
-                  <section className="overflow-hidden rounded-2xl border border-amber-200 bg-amber-50/70 dark:border-amber-400/25 dark:bg-amber-950/15">
-                    <div className="flex items-start gap-3 border-b border-amber-200 px-4 py-4 dark:border-amber-400/20 sm:px-5">
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-600 text-white">
+                  <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-[#171a21]">
+                    <div className="flex items-start gap-3 border-b border-slate-200 bg-slate-50 px-4 py-4 dark:border-slate-700 dark:bg-slate-900/40 sm:px-5">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
                         <ShieldAlert className="h-5 w-5" />
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <h4 className="text-sm font-bold text-amber-950 dark:text-amber-100">Training deficiencies</h4>
+                          <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Training deficiencies</h4>
                           <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white dark:bg-slate-100 dark:text-slate-900">Instructor only</span>
                         </div>
                         <p className="mt-1 text-xs leading-5 text-amber-800 dark:text-amber-200">
-                          Track each issue separately. Students continue to see the lesson comments and grades, but never this section.
+                          Review open items below and mark those fixed during this lesson. These notes are visible to instructors only.
                         </p>
                       </div>
                     </div>
@@ -2865,42 +2865,50 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
                         </div>
                       )}
 
-                      <div className="rounded-xl border border-dashed border-amber-300 bg-white/70 p-3 dark:border-amber-400/30 dark:bg-[#111827] sm:p-4">
-                        <label className="block text-xs font-bold uppercase tracking-wide text-amber-900 dark:text-amber-100">Add a deficiency requiring attention</label>
-                        <div className="mt-3 grid grid-cols-2 gap-2">
-                          {([
-                            { value: 'pre_solo' as const, label: 'Before solo' },
-                            { value: 'pre_test' as const, label: 'Before pilot test' },
-                          ]).map(option => (
-                            <button
-                              key={option.value}
-                              type="button"
-                              onClick={() => setDeficiencyStage(option.value)}
-                              className={`min-h-10 rounded-xl border px-3 py-2 text-xs font-semibold transition ${
-                                deficiencyStage === option.value
-                                  ? 'border-amber-500 bg-amber-100 text-amber-950 dark:bg-amber-950/50 dark:text-amber-100'
-                                  : 'border-slate-200 bg-white text-slate-600 hover:border-amber-300 dark:border-[#363b45] dark:bg-[#171a21] dark:text-slate-300'
-                              }`}
-                            >
-                              {option.label}
+                      <details key={`${activeLog?.id || draftSession?.id || activeDraftRecord?.id}-${selectedLesson?.id}`} className="group rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/30">
+                        <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-300 dark:hover:bg-blue-950/30 [&::-webkit-details-marker]:hidden">
+                          <Plus className="h-4 w-4" />
+                          Add deficiencies
+                          <ChevronDown className="ml-auto h-4 w-4 transition-transform group-open:rotate-180" />
+                        </summary>
+                        <div className="border-t border-slate-200 p-3 dark:border-slate-700 sm:p-4">
+                          <label htmlFor="new-training-deficiency" className="block text-xs font-bold uppercase tracking-wide text-amber-900 dark:text-amber-100">Add a deficiency requiring attention</label>
+                          <div className="mt-3 grid grid-cols-2 gap-2">
+                            {([
+                              { value: 'pre_solo' as const, label: 'Before solo' },
+                              { value: 'pre_test' as const, label: 'Before pilot test' },
+                            ]).map(option => (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => setDeficiencyStage(option.value)}
+                                className={`min-h-10 rounded-xl border px-3 py-2 text-xs font-semibold transition ${
+                                  deficiencyStage === option.value
+                                    ? 'border-amber-500 bg-amber-100 text-amber-950 dark:bg-amber-950/50 dark:text-amber-100'
+                                    : 'border-slate-200 bg-white text-slate-600 hover:border-amber-300 dark:border-[#363b45] dark:bg-[#171a21] dark:text-slate-300'
+                                }`}
+                              >
+                                {option.label}
+                              </button>
+                            ))}
+                          </div>
+                          <textarea
+                            id="new-training-deficiency"
+                            rows={3}
+                            maxLength={2000}
+                            value={deficiencyDraft}
+                            onChange={event => setDeficiencyDraft(event.target.value)}
+                            placeholder="One specific issue, observable standard, or corrective action required..."
+                            className="mt-3 w-full resize-none rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-amber-400/25 dark:bg-[#0f172a] dark:text-slate-100 dark:placeholder:text-slate-500"
+                          />
+                          <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <p className="text-[11px] leading-4 text-amber-700 dark:text-amber-200">Add one issue at a time so each can be marked fixed independently.</p>
+                            <button type="button" onClick={handleAddDeficiency} disabled={deficiencyDraft.trim().length < 3} className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50">
+                              <Plus className="h-4 w-4" /> Add deficiency
                             </button>
-                          ))}
+                          </div>
                         </div>
-                        <textarea
-                          rows={3}
-                          maxLength={2000}
-                          value={deficiencyDraft}
-                          onChange={event => setDeficiencyDraft(event.target.value)}
-                          placeholder="One specific issue, observable standard, or corrective action required..."
-                          className="mt-3 w-full resize-none rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-amber-400/25 dark:bg-[#0f172a] dark:text-slate-100 dark:placeholder:text-slate-500"
-                        />
-                        <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                          <p className="text-[11px] leading-4 text-amber-700 dark:text-amber-200">Add one issue at a time so each can be marked fixed independently.</p>
-                          <button type="button" onClick={handleAddDeficiency} disabled={deficiencyDraft.trim().length < 3} className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50">
-                            <Plus className="h-4 w-4" /> Add deficiency
-                          </button>
-                        </div>
-                      </div>
+                      </details>
                     </div>
                   </section>
 
@@ -3088,26 +3096,6 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
                     </div>
                   )}
 
-                  {canProceedWithCarryForward && (
-                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-950/25 dark:text-amber-100 sm:p-4">
-                      <label className="flex items-start gap-3">
-                        <input
-                          type="checkbox"
-                          checked={proceedWithCarryForward}
-                          onChange={event => setProceedWithCarryForward(event.target.checked)}
-                          className="mt-1 h-4 w-4 rounded border-amber-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        <span>
-                          <span className="block font-semibold">Allow the student to move to the next flight despite not passing this lesson</span>
-                          <span className="mt-1 block text-xs leading-5 text-amber-800 dark:text-amber-200">
-                            Approve {nextLessonAfterSelected?.name || nextLessonAfterSelected?.sequenceTitle} as the next lesson. Assessment grades stay unchanged. Existing course readiness and deficiency requirements still apply.
-                            {hasMatrixAssessment && ' Below-standard matrix items continue to carry forward until they are marked competent.'}
-                          </span>
-                        </span>
-                      </label>
-                    </div>
-                  )}
-
                   {!matrixAssessmentLoading && !hasMatrixAssessment && activeCriteria.length > 0 && (
                     <div>
                       <label className="block text-sm font-semibold text-gray-800 mb-3 dark:text-gray-100">Competency Assessment</label>
@@ -3268,6 +3256,17 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
                         Needs two {twoOccasionReadiness.targetGrade} occasions before this gate. Still short: {twoOccasionReadiness.missing.slice(0, 4).map(item => `${item.name} (${item.count}/2)`).join(', ')}
                         {twoOccasionReadiness.missing.length > 4 ? ` and ${twoOccasionReadiness.missing.length - 4} more` : ''}.
                       </p>
+                    )}
+                    {canProceedWithCarryForward && (
+                      <label className="mt-3 flex cursor-pointer items-center gap-3 border-t border-current/15 pt-3 font-semibold">
+                        <input
+                          type="checkbox"
+                          checked={proceedWithCarryForward}
+                          onChange={event => setProceedWithCarryForward(event.target.checked)}
+                          className="h-4 w-4 rounded border-amber-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span>Proceed to next lesson anyway</span>
+                      </label>
                     )}
                   </div>
 
