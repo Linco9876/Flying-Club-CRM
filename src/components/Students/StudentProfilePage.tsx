@@ -1599,9 +1599,9 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
       const passMark = lesson.passMarks?.[criterion.id] ?? '-';
       return isGradeAtLeastTarget(grade, passMark, criterion.gradingSystem);
     });
-    if (trainingSettings.nextLessonRule === 'manual') return '';
+    if (trainingSettings.nextLessonRule === 'manual' && !record.instructorProgressionApproved) return '';
 
-    if (shouldAdvanceToNextLesson(trainingSettings.nextLessonRule, passed, false)) {
+    if (shouldAdvanceToNextLesson(trainingSettings.nextLessonRule, passed, record.instructorProgressionApproved === true)) {
       const consecutiveReadiness = getConsecutivePassReadiness({
         course,
         records: trainingRecords,

@@ -25,7 +25,8 @@ test('next-lesson rules produce distinct, predictable recommendations', () => {
   assert.equal(shouldAdvanceToNextLesson('advance_on_pass', false, false), false);
   assert.equal(shouldAdvanceToNextLesson('advance_on_pass', false, true), true);
   assert.equal(shouldAdvanceToNextLesson('always_advance', false, false), true);
-  assert.equal(shouldAdvanceToNextLesson('manual', true, true), false);
+  assert.equal(shouldAdvanceToNextLesson('manual', true, false), false);
+  assert.equal(shouldAdvanceToNextLesson('manual', false, true), true);
 });
 
 test('only linked submitted records can be reassigned by their instructor or CFI recovery roles', () => {

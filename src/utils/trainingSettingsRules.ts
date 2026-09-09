@@ -28,6 +28,7 @@ export const shouldAdvanceToNextLesson = (
   lessonPassed: boolean,
   carryForwardApproved: boolean,
 ) => {
+  if (carryForwardApproved) return true;
   if (rule === 'manual') return false;
   if (rule === 'always_advance') return true;
   return lessonPassed || carryForwardApproved;

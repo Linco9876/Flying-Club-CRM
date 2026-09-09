@@ -105,6 +105,7 @@ interface QueuedTrainingRecordSubmit {
     criteriaGrades: Record<string, string>;
     lessonCodes: string[];
     nextLesson: string;
+    instructorProgressionApproved?: boolean;
     status: 'submitted' | 'locked';
     studentAck: boolean;
     studentComments: string;
@@ -530,7 +531,6 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
   }, [activeCriteria, activeMatrixRequirements, form.criteriaGrades, form.matrixGrades, hasMatrixAssessment, selectedLesson]);
 
   const canProceedWithCarryForward = Boolean(
-    hasMatrixAssessment &&
     !lessonPassed &&
     nextLessonAfterSelected
   );
@@ -615,7 +615,7 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
     trainingRecords,
   ]);
 
-  const nextLessonForRecord = trainingSettings.nextLessonRule === 'manual'
+  const nextLessonForRecord = trainingSettings.nextLessonRule === 'manual' && !(canProceedWithCarryForward && proceedWithCarryForward)
     ? ''
     : lessonWillProceed
       ? consecutivePassReadiness.blocked || twoOccasionReadiness.blocked
@@ -1007,7 +1007,7 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
         flightReviewNotes: draftRecord.flightReviewNotes || '',
       });
       setStep(draftRecord.lessonId ? 'form' : draftRecord.courseId ? 'lesson' : 'course');
-      setProceedWithCarryForward(false);
+      setProceedWithCarryForward(draftRecord.instructorProgressionApproved === true);
       setDraftSavedAt(null);
       toast.success('Draft loaded. Review it, then submit to attach it to this flight.');
     } else if (savedDraft) {
@@ -1095,7 +1095,7 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
       flightReviewNotes: record.flightReviewNotes || '',
     } : { ...emptyForm(), formalBriefing: trainingSettings.defaultFormalBriefing });
     setStep(record ? (record.lessonId ? 'form' : record.courseId ? 'lesson' : 'course') : (isCfi ? 'action' : 'course'));
-    setProceedWithCarryForward(false);
+    setProceedWithCarryForward(record?.instructorProgressionApproved === true);
     setCommentCleanupOriginal(null);
     setDraftSavedAt(record ? record.date : null);
   }
@@ -1560,6 +1560,7 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
         criteriaGrades,
         lessonCodes: selectedLesson.sequenceCode ? [selectedLesson.sequenceCode] : [],
         nextLesson: nextLessonForRecord,
+        instructorProgressionApproved: canProceedWithCarryForward && proceedWithCarryForward,
         status: selectedCourseRequiresAck ? 'submitted' : 'locked',
         studentAck: false,
         studentComments: '',
@@ -1673,6 +1674,7 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
       criteriaGrades,
       lessonCodes: selectedLesson.sequenceCode ? [selectedLesson.sequenceCode] : [],
       nextLesson: nextLessonForRecord,
+      instructorProgressionApproved: canProceedWithCarryForward && proceedWithCarryForward,
       status: 'draft' as const,
       studentAck: false,
       studentComments: '',
@@ -3096,9 +3098,10 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
                           className="mt-1 h-4 w-4 rounded border-amber-300 text-blue-600 focus:ring-blue-500"
                         />
                         <span>
-                          <span className="block font-semibold">Proceed to the next lesson and carry forward below-standard matrix items</span>
+                          <span className="block font-semibold">Allow the student to move to the next flight despite not passing this lesson</span>
                           <span className="mt-1 block text-xs leading-5 text-amber-800 dark:text-amber-200">
-                            The lesson record will show the next lesson as {nextLessonAfterSelected?.name || nextLessonAfterSelected?.sequenceTitle}. Any matrix item not meeting its required standard will appear again in later RPL records until it is marked competent.
+                            Approve {nextLessonAfterSelected?.name || nextLessonAfterSelected?.sequenceTitle} as the next lesson. Assessment grades stay unchanged. Existing course readiness and deficiency requirements still apply.
+                            {hasMatrixAssessment && ' Below-standard matrix items continue to carry forward until they are marked competent.'}
                           </span>
                         </span>
                       </label>
@@ -3233,7 +3236,7 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
                         : lessonPassed
                           ? 'Lesson pass achieved'
                           : lessonWillProceed
-                            ? 'Lesson proceeding with carry-forward items'
+                            ? 'Instructor approved progression to the next lesson'
                             : 'Lesson not passed yet'}
                     </p>
                     <p className={`mt-1 text-xs ${
