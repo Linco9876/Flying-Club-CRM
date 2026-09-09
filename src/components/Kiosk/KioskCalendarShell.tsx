@@ -28,17 +28,6 @@ export const KioskCalendarShell: React.FC<KioskCalendarShellProps> = ({
   const [kioskTheme, setKioskTheme] = React.useState<'light' | 'dark'>(() => getKioskTheme(themePreference));
 
   React.useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        void onExit();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onExit]);
-
-  React.useEffect(() => {
     const refreshTheme = () => setKioskTheme(getKioskTheme(themePreference));
     refreshTheme();
     const intervalId = window.setInterval(refreshTheme, 60_000);

@@ -40,6 +40,7 @@ interface BookingActionMenuProps {
   position?: { x: number; y: number };
   onClose?: () => void;
   calendarAircraftLabel?: string;
+  allowAddToCalendar?: boolean;
 }
 
 export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
@@ -73,6 +74,7 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
   position,
   onClose,
   calendarAircraftLabel,
+  allowAddToCalendar = true,
 }) => {
   const { user } = useAuth();
   const userRoles = user?.roles?.length ? user.roles : user?.role ? [user.role] : [];
@@ -305,13 +307,15 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
         </button>
       )}
 
-      <button
-        onClick={openCalendarModal}
-        className="flex w-full items-center space-x-2 px-4 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-slate-800"
-      >
-        <CalendarPlus className="h-4 w-4" />
-        <span>Add to calendar</span>
-      </button>
+      {allowAddToCalendar && (
+        <button
+          onClick={openCalendarModal}
+          className="flex w-full items-center space-x-2 px-4 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-slate-800"
+        >
+          <CalendarPlus className="h-4 w-4" />
+          <span>Add to calendar</span>
+        </button>
+      )}
 
       {onCopy && (
         <button

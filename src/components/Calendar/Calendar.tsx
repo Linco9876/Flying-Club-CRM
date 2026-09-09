@@ -6022,6 +6022,7 @@ export const Calendar: React.FC<CalendarProps> = ({
       {actionMenuBooking && (
         <BookingActionMenu
           booking={actionMenuBooking}
+          allowAddToCalendar={!isKioskMode}
           calendarAircraftLabel={(() => {
             const calendarAircraft = aircraft.find(item => item.id === actionMenuBooking.aircraftId);
             return isPrivateAircraft(actionMenuBooking.aircraftId) ? getAircraftName(actionMenuBooking) : calendarAircraft ? [calendarAircraft.registration, calendarAircraft.make, calendarAircraft.model].filter(Boolean).join(' ') : undefined;

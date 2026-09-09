@@ -59,7 +59,7 @@ export interface BookingCancellationInput {
   recurringScope?: RecurringBookingEditScope;
 }
 
-export const useBookings = (enabled = true) => {
+export const useBookings = (enabled = true, { includeCalendarNames = false }: { includeCalendarNames?: boolean } = {}) => {
   const { capabilities: financialProviders } = useFinancialProviders();
   const financialCaptureEnabled = shouldCaptureFinancialDetails(financialProviders);
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -418,6 +418,24 @@ export const useBookings = (enabled = true) => {
           setLoading(false);
         }
         return;
+      }
+
+      // Shared kiosk sessions cannot read the full member directory. The existing
+      // calendar view supplies authorised display names without exposing profiles.
+      if (includeCalendarNames && !shouldUsePublicCalendarView && bookingsData?.length) {
+        const namesByBooking = new Map<string, { hirer_name: string | null; instructor_name: string | null }>();
+        for (let offset = 0; offset < bookingsData.length; offset += 150) {
+          const { data: names, error: namesError } = await supabase
+            .from('calendar_booking_public')
+            .select('id,hirer_name,instructor_name')
+            .in('id', bookingsData.slice(offset, offset + 150).map(row => row.id));
+          if (namesError) {
+            console.error('Failed to load kiosk booking names:', namesError);
+            break;
+          }
+          (names || []).forEach(row => namesByBooking.set(row.id, row));
+        }
+        bookingsData = bookingsData.map(row => ({ ...row, ...namesByBooking.get(row.id) }));
       }
 
       const bookingIds = (bookingsData || [])
@@ -1581,7 +1599,7 @@ export const useBookings = (enabled = true) => {
       flightLogsSubscription.unsubscribe();
       groundSessionLogsSubscription.unsubscribe();
     };
-  }, [enabled]);
+  }, [enabled, includeCalendarNames]);
 
   return {
     bookings,
