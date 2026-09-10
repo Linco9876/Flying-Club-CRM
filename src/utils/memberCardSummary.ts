@@ -1,3 +1,4 @@
+import { assessMemberMedicals, type MedicalRecord } from './medicalRecords.ts';
 export interface MemberDirectoryMembershipSummary {
   userId: string;
   legalStatus: string | null;
@@ -66,6 +67,7 @@ export interface MemberCardAttentionInput {
   phone?: string | null;
   hasFlyingRecords: boolean;
   raausId?: string | null;
+  medicalRecords?: MedicalRecord[];
   medicalRequired?: boolean;
   medicalType?: string | null;
   medicalExpiry?: Date;
@@ -81,6 +83,7 @@ export const memberCardAttentionItems = ({
   phone,
   hasFlyingRecords,
   raausId,
+  medicalRecords,
   medicalRequired = false,
   medicalType,
   medicalExpiry,
@@ -114,7 +117,8 @@ export const memberCardAttentionItems = ({
       validUntilAge: medicalValidUntilAge,
       isActive: true,
     }] : [];
-    const medical = evaluateMedicalCurrency({
+    const medical = assessMemberMedicals({
+      records: medicalRecords,
       required: true,
       medicalType,
       medicalExpiry,
@@ -140,4 +144,4 @@ export const memberCardAttentionItems = ({
 
   return items;
 };
-import { evaluateMedicalCurrency, type MedicalTypeDefinition } from './medicalRequirements.ts';
+import { type MedicalTypeDefinition } from './medicalRequirements.ts';

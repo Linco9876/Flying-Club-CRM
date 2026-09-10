@@ -1,4 +1,5 @@
-﻿export type UserRole = 'admin' | 'cfi' | 'senior_instructor' | 'instructor' | 'pilot' | 'student';
+import type { MedicalRecord } from '../utils/medicalRecords';
+export type UserRole = 'admin' | 'cfi' | 'senior_instructor' | 'instructor' | 'pilot' | 'student';
 
 export type PortalAccessScope = 'full' | 'trial_voucher' | 'guest_placeholder';
 
@@ -37,6 +38,7 @@ export interface User {
 export interface Student extends User {
   raausId?: string;
   casaId?: string;
+  medicalRecords?: MedicalRecord[];
   medicalType?: string;
   medicalExpiry?: Date;
   medicalRequired?: boolean;
@@ -121,6 +123,7 @@ export interface Aircraft {
 }
 
 export interface Booking {
+  medicalOperation?: 'raaus_pilot' | 'casa_private' | 'casa_class1';
   privateAircraftType?: string;
   privateAircraftRegistration?: string;
   id: string;

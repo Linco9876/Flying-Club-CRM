@@ -1,3 +1,5 @@
+import { assessMemberMedicals, medicalRecordCurrency } from '../../utils/medicalRecords';
+import { useMedicalRecords } from '../../hooks/useMedicalRecords';
 import React, { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { Link, useNavigate } from 'react-router-dom';
@@ -43,7 +45,7 @@ import {
   type ProfileReadinessLevel,
   usesRaausCredentials,
 } from '../../utils/profileReadiness';
-import { evaluateMedicalCurrency, resolveMedicalRequirement } from '../../utils/medicalRequirements';
+import { resolveMedicalRequirement } from '../../utils/medicalRequirements';
 import type { BrowserCalendarEvent } from '../../utils/calendar';
 import { profilePictureSettingsDestination } from '../../utils/profilePicture';
 import { safeImageSource } from '../../utils/imageSource';
@@ -378,7 +380,8 @@ export const ProfileDashboard: React.FC = () => {
     raausId: studentDetails?.raausId,
     licences: studentDetails?.licences || [],
   }), [studentDetails?.licences, studentDetails?.raausId]);
-  const hasRecordedMedical = Boolean(studentDetails?.medicalType || studentDetails?.medicalExpiry);
+  const { records: medicalRecords } = useMedicalRecords(user?.id);
+  const hasRecordedMedical = medicalRecords.length > 0;
   const medicalRequirement = useMemo(() => resolveMedicalRequirement({
     roles,
     dateOfBirth: user?.dateOfBirth,
@@ -387,13 +390,15 @@ export const ProfileDashboard: React.FC = () => {
       return course ? [course] : [];
     }),
   }), [activeCourseEnrolments, roles, trainingCourses, user?.dateOfBirth]);
-  const medicalCurrency = useMemo(() => evaluateMedicalCurrency({
+  const medicalCurrency = useMemo(() => assessMemberMedicals({
+    records: medicalRecords,
     required: medicalRequirement.required,
     medicalType: studentDetails?.medicalType,
     medicalExpiry: studentDetails?.medicalExpiry,
     dateOfBirth: user?.dateOfBirth,
     definitions: trainingSettings.medicalTypes,
   }), [
+    medicalRecords,
     medicalRequirement.required,
     studentDetails?.medicalExpiry,
     studentDetails?.medicalType,
@@ -604,7 +609,7 @@ export const ProfileDashboard: React.FC = () => {
           ? 'Select your operating medical'
           : medicalCurrency.state === 'missing_expiry'
             ? 'Add your medical expiry'
-            : medicalLevel === 'action' ? 'Medical has expired' : 'Check your medical',
+            : medicalCurrency.needsReview ? 'Medical review required' : medicalLevel === 'action' ? 'Medical has expired' : 'Check your medical',
         detail: medicalCurrency.effectiveExpiry
           ? `${medicalCurrency.definition?.validityMode === 'until_age' ? 'Age-based validity ends' : 'Recorded expiry'}: ${format(medicalCurrency.effectiveExpiry, datePattern)}.`
           : medicalRequirement.reason === 'course' && medicalRequirement.courseTitle
@@ -612,6 +617,19 @@ export const ProfileDashboard: React.FC = () => {
             : 'Required for your pilot or instructor operating privileges.',
         to: getProfileReadinessDestination('medical'),
         level: medicalLevel === 'action' ? 'action' : 'warning',
+      });
+    }
+    if (isFlyingMember) {
+      medicalRecords.filter(record => ['verified','legacy'].includes(record.status)).forEach(record => {
+        const currency = medicalRecordCurrency(record, user?.dateOfBirth);
+        if (currency.state !== 'expiring') return;
+        actions.push({
+          id: `medical-renewal-${record.id}`,
+          title: `${record.medical_type} review / renewal due`,
+          detail: `Due in ${currency.daysRemaining} days. ${medicalCurrency.record?.id !== record.id && ['current','expiring'].includes(medicalCurrency.state) ? `Another medical (${medicalCurrency.record?.medical_type}) remains current for its covered activities.` : 'Check the medical coverage for your planned flying.'}`,
+          to: getProfileReadinessDestination('medical'),
+          level: 'warning',
+        });
       });
     }
     if (isFlyingMember && needsFlightReview && flightReviewStatus.level !== 'ready') {
@@ -636,6 +654,9 @@ export const ProfileDashboard: React.FC = () => {
     }
     return actions;
   }, [
+    medicalRecords,
+    medicalCurrency.record,
+    user?.dateOfBirth,
     datePattern,
     flightReviewDue,
     flightReviewStatus.level,
@@ -1178,7 +1199,7 @@ export const ProfileDashboard: React.FC = () => {
                   <div className="flex justify-between gap-3"><span className="text-slate-500 dark:text-slate-400">Last RAAus BFR</span><span className="text-right font-semibold text-slate-900 dark:text-white">{studentDetails?.lastRaausBfrDate ? format(studentDetails.lastRaausBfrDate, datePattern) : 'Not recorded'}</span></div>
                   <div className="flex justify-between gap-3"><span className="text-slate-500 dark:text-slate-400">Last CASA AFR</span><span className="text-right font-semibold text-slate-900 dark:text-white">{studentDetails?.lastCasaAfrDate ? format(studentDetails.lastCasaAfrDate, datePattern) : 'Not recorded'}</span></div>
                   {hasRecordedMedical && (
-                    <div className="flex justify-between gap-3"><span className="text-slate-500 dark:text-slate-400">Medical</span><span className="text-right font-semibold text-slate-900 dark:text-white">{studentDetails?.medicalType || 'Expiry recorded'}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-slate-500 dark:text-slate-400">Medical</span><span className="text-right font-semibold text-slate-900 dark:text-white">{medicalCurrency.record?.medical_type || medicalCurrency.label}</span></div>
                   )}
                   {isInstructor && (
                     <>

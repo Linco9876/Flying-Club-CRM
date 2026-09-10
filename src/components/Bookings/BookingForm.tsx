@@ -1,3 +1,4 @@
+import { medicalOperationForAircraft } from '../../utils/medicalRecords';
 import { isPrivateAircraft, privateAircraftValidationError, normaliseAircraftRegistration } from '../../utils/privateAircraft';
 import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useMemo, useState } from 'react';
@@ -49,6 +50,7 @@ interface BookingFormProps {
     endDate?: string;
     studentId?: string;
     aircraftId?: string;
+    medicalOperation?: 'raaus_pilot' | 'casa_private' | 'casa_class1' | '';
     privateAircraftType?: string;
     privateAircraftRegistration?: string;
     instructorId?: string;
@@ -142,6 +144,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
         startTime: normalizeToQuarterHour(format(new Date(booking.startTime), 'HH:mm')) || '09:00',
         endTime: normalizeToQuarterHour(format(new Date(booking.endTime), 'HH:mm')) || '11:00',
         aircraftId: booking.aircraftId || '',
+        medicalOperation: booking.medicalOperation || '' as const,
         privateAircraftType: booking.privateAircraftType || '',
         privateAircraftRegistration: booking.privateAircraftRegistration || '',
         instructorId: booking.instructorId || '',
@@ -173,6 +176,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       startTime: normalizeToQuarterHour(prefilledData?.startTime) || defaultTimes.startTime,
       endTime: normalizeToQuarterHour(prefilledData?.endTime) || defaultTimes.endTime,
       aircraftId: prefilledData?.aircraftId || '',
+      medicalOperation: prefilledData?.medicalOperation || '' as const,
       privateAircraftType: prefilledData?.privateAircraftType || '',
       privateAircraftRegistration: prefilledData?.privateAircraftRegistration || '',
       instructorId: prefilledData?.instructorId || '',
@@ -899,16 +903,20 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     if (selectedPerson) {
       const compliance = buildSafetyComplianceSummary(selectedPerson, safetySettings, flightLogs, {
         hasInstructor: Boolean(data.instructorId),
+        at: new Date(`${data.date}T${data.startTime}:00`),
+        medicalOperation: data.medicalOperation || medicalOperationForAircraft(isPrivateAircraft(data.aircraftId) ? data.privateAircraftRegistration : aircraft.find(item => item.id === data.aircraftId)?.registration),
         baselines: logbookBaselines,
         externalEntries: externalLogbookEntries,
         timeZone: organisationSettings?.timezone,
       });
-      const concerns = compliance.concerns;
+      // Kiosk sessions see only minimal server eligibility, not medical evidence.
+      // The database checks medicals when saving this booking.
+      const concerns = compliance.concerns.filter(concern => !isKioskMode || concern.type !== 'medical');
 
       if (concerns.length > 0) {
         setSafetyWarningState({
           concerns,
-          blocking: compliance.blockingConcerns.length > 0,
+          blocking: concerns.some(concern => concern.severity === 'blocked'),
           pilotName: selectedPerson.name,
           picHours: compliance.picHours
         });
@@ -1414,7 +1422,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
               </label>
               <SearchableSelect
                 value={formData.aircraftId}
-                onChange={(e) => setFormData(prev => ({ ...prev, aircraftId: e.target.value }))}
+                onChange={(e) => setFormData(prev => ({ ...prev, medicalOperation: '', aircraftId: e.target.value }))}
                 className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">No aircraft - ground session</option>
@@ -1440,10 +1448,21 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                   <input required maxLength={100} placeholder="e.g. Cessna 172" value={formData.privateAircraftType} onChange={e => setFormData(prev => ({ ...prev, privateAircraftType: e.target.value }))} className="mt-1 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm" />
                 </label>
                 <label className="text-xs font-medium text-gray-600">Registration *
-                  <input required maxLength={30} placeholder="e.g. VH-ABC or 24-1234" value={formData.privateAircraftRegistration} onChange={e => setFormData(prev => ({ ...prev, privateAircraftRegistration: normaliseAircraftRegistration(e.target.value) }))} className="mt-1 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm" />
+                  <input required maxLength={30} placeholder="e.g. VH-ABC or 24-1234" value={formData.privateAircraftRegistration} onChange={e => setFormData(prev => ({ ...prev, medicalOperation: '', privateAircraftRegistration: normaliseAircraftRegistration(e.target.value) }))} className="mt-1 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm" />
                 </label>
                 <p className="text-xs text-gray-500 sm:col-span-2">Reserves the instructor. Aircraft details will appear in the flight log and training records.</p>
               </div>
+            )}
+            {!isGroundSessionBooking && (
+              <label className="block text-xs font-medium text-gray-600">Medical operating framework
+                <select value={formData.medicalOperation} onChange={event => setFormData(previous => ({...previous,medicalOperation:event.target.value as typeof previous.medicalOperation}))} className="mt-1 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm">
+                  <option value="">Use aircraft registration (RAAus or VH)</option>
+                  <option value="raaus_pilot">RAAus flying</option>
+                  <option value="casa_private">CASA private flying</option>
+                  <option value="casa_class1">Operations requiring Class 1</option>
+                </select>
+                <span className="mt-1 block font-normal text-gray-500">Choose explicitly for other registrations or operations requiring Class 1. Instructor medical requirements are assessed separately.</span>
+              </label>
             )}
             {shouldShowInstructorField && (
             <div>

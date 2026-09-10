@@ -1,3 +1,4 @@
+import { MEDICAL_OPERATIONS, defaultMedicalOperations, type MedicalOperation } from '../../utils/medicalRecords';
 import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useState } from 'react';
 import { Award, BookOpen, Check, CheckCircle, GraduationCap, Loader2, Lock, MessageSquare, Pencil, Plus, Stethoscope, X } from 'lucide-react';
@@ -621,7 +622,7 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
                   />
                 </label>
                 <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Counted as current until
+                  Validity rule / age threshold
                   <SearchableSelect
                     value={medical.validityMode}
                     disabled={!canEdit}
@@ -632,7 +633,7 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
                     className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal focus:outline-none focus:ring-2 focus:ring-cyan-500 disabled:bg-gray-50"
                   >
                     <option value="expiry_date">Member-entered expiry date</option>
-                    <option value="until_age">Member reaches an age</option>
+                    <option value="until_age">Age threshold + declaration review</option>
                   </SearchableSelect>
                 </label>
                 {medical.validityMode === 'until_age' ? (
@@ -672,6 +673,10 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
                     <X className="h-4 w-4" />
                   </button>
                 )}
+                <fieldset className="col-span-full flex flex-wrap gap-3 border-t border-slate-200 pt-3">
+                  <legend className="text-xs font-semibold text-slate-600">Default coverage for new records (staff confirm restrictions when verifying)</legend>
+                  {(Object.entries(MEDICAL_OPERATIONS) as [MedicalOperation,string][]).map(([operation,label]) => <label key={operation} className="inline-flex items-center gap-2 text-xs"><input type="checkbox" disabled={!canEdit} checked={(medical.acceptedOperations || defaultMedicalOperations(medical.name)).includes(operation)} onChange={event => updateMedicalType(medical.id,{acceptedOperations:event.target.checked ? [...(medical.acceptedOperations || defaultMedicalOperations(medical.name)),operation] : (medical.acceptedOperations || defaultMedicalOperations(medical.name)).filter(item=>item!==operation)})}/>{label}</label>)}
+                </fieldset>
               </div>
             ))}
           </div>
@@ -694,7 +699,7 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal focus:outline-none focus:ring-2 focus:ring-cyan-500"
                 >
                   <option value="expiry_date">Member-entered expiry date</option>
-                  <option value="until_age">Member reaches an age</option>
+                  <option value="until_age">Age threshold + declaration review</option>
                 </SearchableSelect>
               </label>
               {medicalValidityMode === 'until_age' ? (
@@ -723,7 +728,7 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
             </div>
           )}
           <p className="mt-3 text-xs text-gray-500">
-            Example: set RAAus Medical Declaration to “Member reaches an age” and 75. It needs no expiry date before the member's 75th birthday.
+            Example: set RAAus Medical Declaration to “Age threshold + declaration review” and 75. It needs no expiry date before the member's 75th birthday.
           </p>
         </div>
       </section>

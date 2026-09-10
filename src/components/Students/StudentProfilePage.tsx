@@ -1,3 +1,5 @@
+import { MedicalRecordsPanel } from './MedicalRecordsPanel';
+import { assessMemberMedicals } from '../../utils/medicalRecords';
 import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
@@ -75,7 +77,6 @@ import {
   examResultDraftValidationError,
   examResultSaveFailureMessage,
 } from '../../utils/examResultLogging';
-import { birthdayAtAge, findMedicalTypeDefinition } from '../../utils/medicalRequirements';
 import { TrainingRecordReassignmentModal } from './TrainingRecordReassignmentModal';
 import { LessonRecordCard } from './LessonRecordCard';
 
@@ -507,14 +508,6 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   const availableInfoEndorsementTypes = useMemo(
     () => availableCredentialOptions(trainingSettings.endorsementTypes, infoForm.endorsements),
     [infoForm.endorsements, trainingSettings.endorsementTypes],
-  );
-  const selectedInfoMedicalType = useMemo(
-    () => findMedicalTypeDefinition(infoForm.medicalType, trainingSettings.medicalTypes),
-    [infoForm.medicalType, trainingSettings.medicalTypes],
-  );
-  const availableInfoMedicalTypes = useMemo(
-    () => trainingSettings.medicalTypes.filter(type => type.isActive || type.name === infoForm.medicalType),
-    [infoForm.medicalType, trainingSettings.medicalTypes],
   );
   const billing = useBillingAccounts({
     enabled: loadPlan.invoices,
@@ -1312,10 +1305,6 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
       const studentPayload = {
           raaus_id: infoForm.raausId.trim() || null,
           licence_expiry: infoForm.membershipExpiry || null,
-          medical_type: infoForm.medicalType.trim() || null,
-          medical_expiry: selectedInfoMedicalType?.validityMode === 'until_age'
-            ? null
-            : infoForm.medicalExpiry || null,
           casa_id: infoForm.casaArn.trim() || null,
           date_of_birth: infoForm.dateOfBirth || null,
           ...emergencyContactPayload,
@@ -2165,25 +2154,16 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
       hasFlightLog: Boolean(record.flightLogId),
     });
   };
-  const medicalValidUntil = student.medicalValidityMode === 'until_age'
-    && student.dateOfBirth
-    && student.medicalValidUntilAge
-      ? birthdayAtAge(student.dateOfBirth, student.medicalValidUntilAge)
-      : student.medicalExpiry;
+  const medicalAssessment = assessMemberMedicals({records:student.medicalRecords,dateOfBirth:student.dateOfBirth,required:student.medicalRequired !== false});
+  const medicalValidUntil = medicalAssessment.effectiveExpiry;
 
   const complianceItems = [
     { label: 'Pilot status', value: isPilot ? 'Pilot - solo hire permitted' : 'Student - instructor/approval required', warn: !isPilot },
     { label: 'RAAus membership', value: student.licenceExpiry?.toLocaleDateString() || 'Not recorded', warn: isExpiryNear(student.licenceExpiry) },
     {
       label: 'Medical',
-      value: student.medicalRequired === false
-        ? 'Not required for active course'
-        : student.medicalType
-          ? student.medicalValidityMode === 'until_age'
-            ? `${student.medicalType} · until age ${student.medicalValidUntilAge}`
-            : medicalValidUntil?.toLocaleDateString() || 'Expiry not recorded'
-          : 'Not selected',
-      warn: student.medicalRequired !== false && (!student.medicalType || !medicalValidUntil || isExpiryNear(medicalValidUntil)),
+      value: medicalAssessment.label,
+      warn: !['current','not_required'].includes(medicalAssessment.state),
     },
     { label: 'Flight review', value: student.lastFlightReview ? new Date(student.lastFlightReview).toLocaleDateString() : 'Not recorded', warn: false },
     { label: 'Endorsements', value: `${student.endorsements.filter(e => e.isActive).length} active`, warn: false },
@@ -2617,17 +2597,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                   <p className="text-sm text-gray-900">{student.casaId || 'Not recorded'}</p>
                 </div>
                 
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">Operating Medical</label>
-                  <p className="text-sm text-gray-900">{student.medicalType || 'Not recorded'}</p>
-                  {student.medicalType && (
-                    <p className={`text-xs ${medicalValidUntil && isExpiryNear(medicalValidUntil) ? 'text-yellow-600' : 'text-gray-500'}`}>
-                      {student.medicalValidityMode === 'until_age'
-                        ? `Current until age ${student.medicalValidUntilAge}${medicalValidUntil ? ` (${medicalValidUntil.toLocaleDateString()})` : ''}`
-                        : `Expires: ${student.medicalExpiry?.toLocaleDateString() || 'not recorded'}`}
-                    </p>
-                  )}
-                </div>
+                <div className="col-span-full"><MedicalRecordsPanel userId={student.id} dateOfBirth={student.dateOfBirth}/></div>
                 
                 <div>
                   <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">RAAus Membership Expiry</label>
@@ -4775,35 +4745,6 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                   <label className="block">
                     <span className="block text-sm font-medium text-gray-700 mb-1">RAAus Membership Expiry</span>
                     <input type="date" value={infoForm.membershipExpiry} onChange={event => updateInfoField('membershipExpiry', event.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  </label>
-                  <label className="block">
-                    <span className="block text-sm font-medium text-gray-700 mb-1">Operating Medical</span>
-                    <SearchableSelect
-                      value={infoForm.medicalType}
-                      onChange={event => {
-                        const definition = findMedicalTypeDefinition(event.target.value, trainingSettings.medicalTypes);
-                        setInfoForm(current => ({
-                          ...current,
-                          medicalType: event.target.value,
-                          medicalExpiry: definition?.validityMode === 'until_age' ? '' : current.medicalExpiry,
-                        }));
-                      }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">Not recorded</option>
-                      {availableInfoMedicalTypes.map(type => <option key={type.id} value={type.name}>{type.name}</option>)}
-                    </SearchableSelect>
-                    <span className="mt-1 block text-xs font-normal text-gray-500">Pilots and instructors select the medical they operate under.</span>
-                  </label>
-                  <label className="block">
-                    <span className="block text-sm font-medium text-gray-700 mb-1">Medical Expiry</span>
-                    {selectedInfoMedicalType?.validityMode === 'until_age' ? (
-                      <span className="block rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-                        Current until age {selectedInfoMedicalType.validUntilAge}. No expiry date is needed.
-                      </span>
-                    ) : (
-                      <input type="date" value={infoForm.medicalExpiry} onChange={event => updateInfoField('medicalExpiry', event.target.value)} disabled={!infoForm.medicalType} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50" />
-                    )}
                   </label>
                   <label className="block">
                     <span className="block text-sm font-medium text-gray-700 mb-1">CASA ARN</span>

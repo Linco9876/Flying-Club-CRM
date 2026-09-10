@@ -43,7 +43,7 @@
     "test:duty-week-summary": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/dutyWeekSummary.test.ts",
     "test:duty-time-report": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/dutyTimeReport.test.ts",
     "test:duty-start": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/dutyStart.test.ts src/utils/dutyBookingForecast.test.ts",
-    "test:safety-warning": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/safetyWarningGate.test.ts src/utils/safetyCompliance.test.ts src/utils/medicalRequirements.test.ts src/utils/safetySettingsRules.test.ts src/utils/safetyReportDateTime.test.ts",
+    "test:safety-warning": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/safetyWarningGate.test.ts src/utils/safetyCompliance.test.ts src/utils/medicalRequirements.test.ts src/utils/medicalRecords.test.ts src/utils/safetySettingsRules.test.ts src/utils/safetyReportDateTime.test.ts",
     "test:safety-member-visibility": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/safetyMemberVisibility.test.ts",
     "test:organisation-locations": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/organisationLocationRules.test.ts src/utils/organisationSettingsRules.test.ts",
     "test:supervisor-roster-locations": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/supervisorRosterLocations.test.ts",

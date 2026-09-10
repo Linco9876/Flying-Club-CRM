@@ -273,6 +273,7 @@ export const StudentList: React.FC = () => {
       || student.licences.length > 0
     ),
     raausId: student.raausId,
+    medicalRecords: student.medicalRecords,
     medicalRequired: student.medicalRequired,
     medicalType: student.medicalType,
     medicalExpiry: student.medicalExpiry,
