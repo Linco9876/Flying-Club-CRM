@@ -1,3 +1,4 @@
+import { assessLicence } from '../../utils/licenceMedicals';
 import { MedicalRecordsPanel } from './MedicalRecordsPanel';
 import { assessMemberMedicals } from '../../utils/medicalRecords';
 import { SearchableSelect } from '../common/SearchableSelect';
@@ -2719,7 +2720,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
             {student.licences.filter(licence => licence.isActive).length > 0 && (
               <div className="rounded-lg border border-emerald-200 bg-white p-6 shadow-md">
                 <h2 className="mb-4 flex items-center text-lg font-semibold text-gray-900"><GraduationCap className="mr-2 h-5 w-5 text-emerald-600" />Pilot Licences</h2>
-                <div className="space-y-2">{student.licences.filter(licence => licence.isActive).map(licence => <div key={licence.id} className="rounded border border-emerald-200 bg-emerald-50 p-2"><p className="text-sm font-semibold text-emerald-950">{licence.type}</p><p className="text-xs text-emerald-800">{licence.licenceNumber ? `No. ${licence.licenceNumber}` : 'Number not recorded'}{licence.expiryDate ? ` | Expires ${licence.expiryDate.toLocaleDateString()}` : ''}</p></div>)}</div>
+                <div className="space-y-2">{student.licences.filter(licence => licence.isActive).map(licence => <div key={licence.id} className="rounded border border-emerald-200 bg-emerald-50 p-2"><p className="text-sm font-semibold text-emerald-950">{licence.type}</p><p className="text-xs text-emerald-800">{licence.licenceNumber ? `No. ${licence.licenceNumber}` : 'Number not recorded'}{licence.expiryDate ? ` | Expires ${licence.expiryDate.toLocaleDateString()}` : ''}</p><p className="mt-1 text-xs text-gray-700">{assessLicence(licence, student.medicalRecords, student.dateOfBirth, trainingSettings.licenceMedicalRequirements).reason}</p></div>)}</div>
               </div>
             )}
 
@@ -4829,6 +4830,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                   <div className={`${canManageLicences ? 'mt-4' : ''} space-y-2`}>
                     {infoForm.licences.length > 0 ? infoForm.licences.map(licence => {
                       const status = licence.verificationStatus || 'verified';
+                      const eligibility = assessLicence(licence, student.medicalRecords, student.dateOfBirth, trainingSettings.licenceMedicalRequirements);
                       return (
                         <div
                           key={licence.id}
@@ -4847,6 +4849,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                               </span>
                             </div>
                             <p className="text-xs text-gray-500">{licence.licenceNumber ? `No. ${licence.licenceNumber} | ` : ''}{licence.dateObtained ? `Issued ${licence.dateObtained.toLocaleDateString()}` : 'Issue date not recorded'}{licence.expiryDate ? ` | Expires ${licence.expiryDate.toLocaleDateString()}` : ''}</p>
+                            <p className={`mt-1 text-xs font-medium ${eligibility.valid ? 'text-emerald-700' : 'text-amber-700'}`}>{eligibility.reason}</p>
                             {status === 'pending' && <p className="mt-1 text-xs font-medium text-amber-700">Submitted by the member with supporting proof.</p>}
                             {status === 'rejected' && licence.rejectionReason && <p className="mt-1 text-xs font-medium text-red-700">Review note: {licence.rejectionReason}</p>}
                           </div>

@@ -1,3 +1,4 @@
+import { assessLicence } from "../../utils/licenceMedicals";
 import React, { useEffect, useState } from "react";
 import { Plus, FileText, Loader2, X } from "lucide-react";
 import toast from "react-hot-toast";
@@ -9,11 +10,8 @@ import {
   useMedicalRecords,
 } from "../../hooks/useMedicalRecords";
 import {
-  assessMemberMedicals,
   medicalRecordCurrency,
   defaultMedicalOperations,
-  MEDICAL_OPERATIONS,
-  type MedicalOperation,
   type MedicalRecord,
 } from "../../utils/medicalRecords";
 import { studentDocumentValidationError } from "../../utils/studentDocumentUpload";
@@ -31,7 +29,11 @@ export function MedicalRecordsPanel({
   canEdit?: boolean;
 }) {
   const { user } = useAuth();
-  const { settings } = useTrainingSettings();
+  const {
+    settings,
+    loading: settingsLoading,
+    error: settingsError,
+  } = useTrainingSettings();
   const { records, loading, error } = useMedicalRecords(userId);
   const staff = (user?.roles || [user?.role]).some((role) =>
     ["admin", "cfi", "senior_instructor", "instructor"].includes(role || ""),
@@ -197,50 +199,50 @@ export function MedicalRecordsPanel({
           </button>
         )}
       </div>
-      {loading ? (
+      {loading || settingsLoading ? (
         <p className="flex items-center gap-2">
           <Loader2 className="animate-spin" size={16} />
           Loading medicals…
         </p>
-      ) : error ? (
+      ) : error || settingsError ? (
         <p role="alert" className="text-red-600">
           Medicals could not be loaded. Refresh before checking eligibility.
         </p>
       ) : (
         <>
           <div className="grid gap-2 sm:grid-cols-2">
-            {(
-              Object.entries(MEDICAL_OPERATIONS) as [MedicalOperation, string][]
-            ).map(([operation, label]) => {
-              const result = assessMemberMedicals({
+            {settings.licenceTypes.map((label) => {
+              const result = assessLicence(
+                {
+                  id: "coverage",
+                  type: label,
+                  isActive: true,
+                  verificationStatus: "verified",
+                },
                 records,
-                operation,
                 dateOfBirth,
-              });
-              const valid = ["current", "expiring"].includes(result.state);
+                settings.licenceMedicalRequirements,
+              );
+              const valid = result.valid;
               return (
                 <div
-                  key={operation}
+                  key={label}
                   className={`rounded-lg border p-3 ${valid ? "border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100" : "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900"}`}
                 >
                   <p className="text-sm font-semibold">{label}</p>
                   <p className="mt-1 text-xs">
                     {valid
-                      ? `Medical current · ${result.record?.medical_type}`
-                      : result.label}
+                      ? "Accepted medical requirement satisfied"
+                      : result.reason}
                   </p>
-                  {result.record?.restrictions && (
-                    <p className="mt-1 text-xs">
-                      Conditions: {result.record.restrictions}
-                    </p>
-                  )}
                 </div>
               );
             })}
           </div>
           <p className="text-xs text-slate-500">
-            Medical coverage only. Licences, membership, flight reviews and
-            operating conditions are checked separately.
+            Medical support for each licence is shown above. Holding that
+            licence, its expiry, instructor requirements and aircraft
+            restrictions are checked when booking.
           </p>
           {shown.length === 0 && (
             <p className="text-sm">No medical records recorded.</p>
@@ -461,43 +463,6 @@ export function MedicalRecordsPanel({
               onChange={(e) => set("restrictions", e.target.value)}
             />
           </label>
-          {staff && (
-            <fieldset className="space-y-2">
-              <legend className="text-sm font-semibold">
-                Verified coverage — check against the intended operations and
-                evidence
-              </legend>
-              {(
-                Object.entries(MEDICAL_OPERATIONS) as [
-                  MedicalOperation,
-                  string,
-                ][]
-              ).map(([operation, label]) => (
-                <label
-                  key={operation}
-                  className="mr-4 inline-flex items-center gap-2 text-sm"
-                >
-                  <input
-                    type="checkbox"
-                    checked={
-                      draft.accepted_operations?.includes(operation) || false
-                    }
-                    onChange={(e) =>
-                      set(
-                        "accepted_operations",
-                        e.target.checked
-                          ? [...(draft.accepted_operations || []), operation]
-                          : (draft.accepted_operations || []).filter(
-                              (item) => item !== operation,
-                            ),
-                      )
-                    }
-                  />
-                  {label}
-                </label>
-              ))}
-            </fieldset>
-          )}
           <label className="block text-sm">
             Record status
             <select
