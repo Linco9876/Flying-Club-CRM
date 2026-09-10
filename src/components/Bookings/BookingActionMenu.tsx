@@ -1,3 +1,4 @@
+import { BookingMedicalCheck } from './BookingMedicalCheck';
 import React from 'react';
 import { CreditCard as Edit, FileText, Trash2, MoreVertical, Check, X as XIcon, User, Copy, RotateCcw, CalendarPlus, Loader2, ShieldCheck } from 'lucide-react';
 import { Booking } from '../../types';
@@ -94,6 +95,7 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
       : portalSettings.allow_booking_cancellation && booking.studentId === user.id
   );
   const [isOpen, setIsOpen] = React.useState(position ? true : false);
+  const [showMedicalCheck,setShowMedicalCheck] = React.useState(false);
   const [showCalendarModal, setShowCalendarModal] = React.useState(false);
   const [showSupervisorModal, setShowSupervisorModal] = React.useState(false);
   const [fixedMenuStyle, setFixedMenuStyle] = React.useState<React.CSSProperties>(() => ({
@@ -307,6 +309,7 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
         </button>
       )}
 
+      {!isGroundSession && <button type="button" onClick={()=>{setIsOpen(false);setShowMedicalCheck(true);}} className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"><ShieldCheck className="h-4 w-4"/>Check medical eligibility</button>}
       {allowAddToCalendar && (
         <button
           onClick={openCalendarModal}
@@ -480,6 +483,8 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
       )}
     </div>
   );
+
+  if (showMedicalCheck) return <BookingMedicalCheck bookingId={booking.id} onClose={()=>{setShowMedicalCheck(false);onClose?.();}}/>;
 
   if (position) {
     return (

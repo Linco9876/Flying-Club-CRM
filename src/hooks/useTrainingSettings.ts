@@ -198,18 +198,9 @@ export function useTrainingSettings() {
     }
   };
 
-  const renameMedicalReferences = async (renames: Array<{ from: string; to: string }>) => {
-    const cleanRenames = renames
-      .map(rename => ({ from: rename.from.trim(), to: rename.to.trim() }))
-      .filter(rename => rename.from && rename.to && rename.from.toLocaleLowerCase() !== rename.to.toLocaleLowerCase());
-
-    for (const rename of cleanRenames) {
-      const { error: studentsError } = await supabase
-        .from('students')
-        .update({ medical_type: rename.to })
-        .eq('medical_type', rename.from);
-      if (studentsError) throw studentsError;
-    }
+  const renameMedicalReferences = async (_renames: Array<{ from: string; to: string }>) => {
+    // Medical records snapshot their evidence type and stable type ID. Renaming
+    // settings must never rewrite imported evidence or recreate legacy records.
   };
 
   return {

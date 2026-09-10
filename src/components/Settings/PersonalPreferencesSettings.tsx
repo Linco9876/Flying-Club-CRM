@@ -1,3 +1,4 @@
+import { MedicalRecordsPanel } from '../Students/MedicalRecordsPanel';
 import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -39,7 +40,6 @@ import { CalendarSubscriptionSettings } from './CalendarSubscriptionSettings';
 import { MfaSettings } from '../Auth/MfaSecurity';
 import { SettingsLoadError } from './SettingsLoadError';
 import { usePwaPushNotifications } from '../../hooks/usePwaPushNotifications';
-import { findMedicalTypeDefinition } from '../../utils/medicalRequirements';
 
 interface PersonalPreferencesSettingsProps {
   canEdit: boolean;
@@ -214,7 +214,6 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
   const [pendingEndorsements, setPendingEndorsements] = useState<PendingEndorsementDraft[]>([]);
   const [existingLicences, setExistingLicences] = useState<AccountLicence[]>([]);
   const [pendingLicences, setPendingLicences] = useState<PendingLicenceDraft[]>([]);
-  const [medicalProofFile, setMedicalProofFile] = useState<File | null>(null);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const coverInputRef = useRef<HTMLInputElement | null>(null);
   const personalDetailsSectionRef = useRef<HTMLElement | null>(null);
@@ -237,8 +236,6 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
   const hasFlyingRole = user?.roles?.some(role =>
     ['student', 'pilot', 'instructor', 'senior_instructor'].includes(role)
   ) || ['student', 'pilot', 'instructor', 'senior_instructor'].includes(user?.role || '');
-  const selectedMedicalType = findMedicalTypeDefinition(profileForm.medicalType, trainingSettings.medicalTypes);
-  const availableMedicalTypes = trainingSettings.medicalTypes.filter(type => type.isActive || type.name === profileForm.medicalType);
 
   const tabs = useMemo(() => {
     const base: Array<{ id: AccountTab; label: string; icon: React.ReactNode }> = [
@@ -320,7 +317,6 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       setSavedProfile(nextProfile);
       setAvatarFile(null);
       setCoverFile(null);
-      setMedicalProofFile(null);
       setPendingLicences([]);
       setPendingEndorsements([]);
       setEmailVerified(Boolean(authData.user?.email_confirmed_at));
@@ -397,7 +393,6 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       setProfileForm(savedProfile);
       setAvatarFile(null);
       setCoverFile(null);
-      setMedicalProofFile(null);
       if (preferences) {
         const { id, user_id, preferences: _preferences, ...values } = preferences;
         setPreferenceForm(values);
@@ -554,43 +549,6 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
     }
 
     return { storagePath, documentId: documentRow?.id as string | undefined };
-  };
-
-  const uploadMedicalProof = async (file: File) => {
-    if (!user?.id) throw new Error('User not available');
-
-    const medicalType = profileForm.medicalType.trim() || 'Medical certificate';
-    const expiryLabel = profileForm.medicalExpiry
-      ? ` - expires ${profileForm.medicalExpiry}`
-      : '';
-    const storagePath = `${user.id}/${createLocalId()}-medical-${safeFilename(file.name)}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from(STUDENT_DOCUMENTS_BUCKET)
-      .upload(storagePath, file, {
-        cacheControl: '3600',
-        contentType: file.type || 'application/octet-stream',
-        upsert: false,
-      });
-
-    if (uploadError) throw uploadError;
-
-    const { error: documentError } = await supabase
-      .from('student_documents')
-      .insert({
-        student_id: user.id,
-        display_name: `${medicalType}${expiryLabel}`,
-        original_filename: file.name,
-        storage_path: storagePath,
-        mime_type: file.type || null,
-        size_bytes: file.size,
-        uploaded_by: user.id,
-      });
-
-    if (documentError) {
-      await supabase.storage.from(STUDENT_DOCUMENTS_BUCKET).remove([storagePath]);
-      throw documentError;
-    }
   };
 
   const addPendingEndorsement = () => {
@@ -928,10 +886,6 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
           casa_id: profileForm.casaId.trim() || null,
           last_raaus_bfr_date: profileForm.lastRaausBfrDate || null,
           last_casa_afr_date: profileForm.lastCasaAfrDate || null,
-          medical_type: profileForm.medicalType.trim() || null,
-          medical_expiry: selectedMedicalType?.validityMode === 'until_age'
-            ? null
-            : profileForm.medicalExpiry || null,
           date_of_birth: profileForm.birthdate || null,
           emergency_contact_name: profileForm.emergencyName.trim() || null,
           emergency_contact_phone: profileForm.emergencyPhone.trim() || null,
@@ -1007,10 +961,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       }
     }
 
-    if (medicalProofFile) {
-      await uploadMedicalProof(medicalProofFile);
-      setMedicalProofFile(null);
-    }
+
 
     await updatePreferences({
       ...preferenceForm,
@@ -1321,76 +1272,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
                   {renderProfileField({ label: 'Last CASA AFR date', field: 'lastCasaAfrDate', type: 'date' })}
                   <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">A CASA aeroplane flight review renews both CASA AFR and RAAus BFR currency.</p>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Operating Medical</label>
-                  <SearchableSelect
-                    value={profileForm.medicalType}
-                    onChange={event => {
-                      const definition = findMedicalTypeDefinition(event.target.value, trainingSettings.medicalTypes);
-                      setProfileForm(current => ({
-                        ...current,
-                        medicalType: event.target.value,
-                        medicalExpiry: definition?.validityMode === 'until_age' ? '' : current.medicalExpiry,
-                      }));
-                      onFormChange();
-                    }}
-                    disabled={!canEdit}
-                    className={inputClass}
-                  >
-                    <option value="">Not selected</option>
-                    {availableMedicalTypes.map(type => <option key={type.id} value={type.name}>{type.name}</option>)}
-                  </SearchableSelect>
-                  <p className="mt-1 text-xs text-gray-500">Pilots and instructors should select the medical they operate under.</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Medical Expiry</label>
-                  {selectedMedicalType?.validityMode === 'until_age' ? (
-                    <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-                      Current until age {selectedMedicalType.validUntilAge}. Your date of birth determines currency.
-                    </div>
-                  ) : (
-                    <input
-                      type="date"
-                      value={profileForm.medicalExpiry}
-                      onChange={event => updateProfile('medicalExpiry', event.target.value)}
-                      disabled={!canEdit || !profileForm.medicalType}
-                      className={inputClass}
-                    />
-                  )}
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Medical Document</label>
-                  <label className="flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-5 text-center text-sm text-gray-600 transition hover:border-blue-300 hover:bg-blue-50">
-                    <FileUp className="mb-2 h-5 w-5 text-blue-600" />
-                    <span className="font-medium text-gray-900">
-                      {medicalProofFile ? medicalProofFile.name : 'Upload medical certificate or declaration'}
-                    </span>
-                    <span className="mt-1 text-xs text-gray-500">
-                      Images, PDFs, Word documents and scanned files are accepted. The file will appear in your Documents tab.
-                    </span>
-                    <input
-                      type="file"
-                      disabled={!canEdit}
-                      className="sr-only"
-                      onChange={event => {
-                        setMedicalProofFile(event.target.files?.[0] || null);
-                        onFormChange();
-                      }}
-                    />
-                  </label>
-                  {medicalProofFile && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMedicalProofFile(null);
-                        onFormChange();
-                      }}
-                      className="mt-2 text-xs font-medium text-red-600 hover:text-red-700"
-                    >
-                      Remove selected medical document
-                    </button>
-                  )}
-                </div>
+                {user?.id && <div className="md:col-span-2"><MedicalRecordsPanel userId={user.id} dateOfBirth={profileForm.birthdate ? new Date(`${profileForm.birthdate}T00:00:00`) : undefined} canEdit={canEdit}/></div>}
               </div>
             </section>
           )}

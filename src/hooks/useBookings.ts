@@ -84,6 +84,7 @@ export const useBookings = (enabled = true, { includeCalendarNames = false }: { 
         'student_id',
         'instructor_id',
         'aircraft_id',
+        'medical_operation',
         'private_aircraft_type',
         'private_aircraft_registration',
         'start_time',
@@ -155,6 +156,7 @@ export const useBookings = (enabled = true, { includeCalendarNames = false }: { 
     pilotId: row.student_id,
     instructorId: row.instructor_id,
     aircraftId: row.aircraft_id || undefined,
+    medicalOperation: row.medical_operation || undefined,
     privateAircraftType: row.private_aircraft_type || undefined,
     privateAircraftRegistration: row.private_aircraft_registration || undefined,
     startTime: new Date(row.start_time),
@@ -725,6 +727,7 @@ export const useBookings = (enabled = true, { includeCalendarNames = false }: { 
         student_id: resolvedStudentId,
         instructor_id: bookingData.instructorId && bookingData.instructorId.trim() !== '' ? bookingData.instructorId : null,
         aircraft_id: effectiveKind === 'ground' ? null : bookingData.aircraftId,
+        medical_operation: bookingData.medicalOperation || null,
         private_aircraft_type: bookingData.privateAircraftType?.trim() || null,
         private_aircraft_registration: normaliseAircraftRegistration(bookingData.privateAircraftRegistration) || null,
         start_time: bookingData.startTime.toISOString(),
@@ -933,7 +936,7 @@ export const useBookings = (enabled = true, { includeCalendarNames = false }: { 
         : bookingData.bookingPurpose ?? currentBooking.bookingPurpose ?? 'standard';
 
       const runSeriesUpdate = async (dutyOverrideReason?: string) => supabase.rpc(
-        'update_recurring_booking_series_with_aircraft_details',
+        'update_recurring_booking_series_with_medicals',
         {
           p_booking_id: id,
           p_new_start: newStartTime.toISOString(),
@@ -941,6 +944,7 @@ export const useBookings = (enabled = true, { includeCalendarNames = false }: { 
           p_student_id: resolvedStudentId,
           p_instructor_id: instructorId || null,
           p_aircraft_id: aircraftId || null,
+          p_medical_operation: bookingData.medicalOperation ?? currentBooking.medicalOperation ?? null,
           p_private_aircraft_type: bookingData.privateAircraftType ?? currentBooking.privateAircraftType ?? null,
           p_private_aircraft_registration: bookingData.privateAircraftRegistration ?? currentBooking.privateAircraftRegistration ?? null,
           p_payment_type: bookingData.paymentType ?? currentBooking.paymentType ?? '',
@@ -1011,6 +1015,7 @@ export const useBookings = (enabled = true, { includeCalendarNames = false }: { 
   const updateBooking = async (id: string, bookingData: Partial<Omit<Booking, 'id' | 'flightLog'>>, silent = false) => {
     try {
       const updateData: any = {};
+      if (bookingData.medicalOperation !== undefined) updateData.medical_operation = bookingData.medicalOperation || null;
       if (bookingData.privateAircraftType !== undefined) updateData.private_aircraft_type = bookingData.privateAircraftType.trim() || null;
       if (bookingData.privateAircraftRegistration !== undefined) updateData.private_aircraft_registration = normaliseAircraftRegistration(bookingData.privateAircraftRegistration) || null;
       const currentBooking = bookings.find(b => b.id === id);

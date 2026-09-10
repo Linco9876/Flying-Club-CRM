@@ -41,8 +41,6 @@ export const buildMemberProfileWritePayloads = (student: Omit<Student, 'id'>) =>
   const studentProfile: Record<string, unknown> = {
     raaus_id: nullableText(student.raausId),
     casa_id: nullableText(student.casaId),
-    medical_type: nullableText(student.medicalType),
-    medical_expiry: nullableDate(student.medicalExpiry),
     licence_expiry: nullableDate(student.licenceExpiry),
     last_raaus_bfr_date: nullableDate(student.lastRaausBfrDate || student.lastFlightReview),
     last_casa_afr_date: nullableDate(student.lastCasaAfrDate),

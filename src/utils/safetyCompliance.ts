@@ -1,3 +1,4 @@
+import { assessMemberMedicals, type MedicalOperation } from './medicalRecords.ts';
 import type { Student, UserRole } from '../types';
 import type { SafetyComplianceSettings } from '../hooks/useSafetySettings';
 import type { FlightLog } from '../hooks/useFlightLogs';
@@ -10,7 +11,6 @@ import {
   type LogbookBaseline,
 } from './externalLogbook.ts';
 import {
-  evaluateMedicalCurrency,
   type MedicalCurrencyStatus,
   type MedicalTypeDefinition,
 } from './medicalRequirements.ts';
@@ -53,6 +53,8 @@ export interface SafetyLogbookSupplement {
 
 export interface SafetyComplianceOptions extends SafetyLogbookSupplement {
   hasInstructor?: boolean;
+  medicalOperation?: MedicalOperation;
+  at?: Date;
   perspective?: SafetyMessagePerspective;
 }
 
@@ -222,7 +224,10 @@ export const buildSafetyComplianceSummary = (
     validUntilAge: person.medicalValidUntilAge,
     isActive: true,
   }] : [];
-  const medicalStatus = evaluateMedicalCurrency({
+  const medicalStatus = assessMemberMedicals({
+    records: person.medicalRecords,
+    operation: options.medicalOperation,
+    at: options.at,
     required: medicalRequired,
     medicalType: person.medicalType || (person.medicalExpiry ? 'Recorded medical' : null),
     medicalExpiry: person.medicalExpiry,
@@ -239,8 +244,8 @@ export const buildSafetyComplianceSummary = (
     concerns.push({
       type: 'medical',
       severity: credentialLapseSeverity(settings.autoBlockExpiredMedical),
-      label: 'Operating medical required',
-      message: `${medicalSubject} applicable operating medical has not been selected${medicalReason}.`,
+      label: medicalStatus.label,
+      message: `${medicalSubject} medical needs attention${medicalReason}: ${medicalStatus.label}.`,
     });
   } else if (medicalStatus.state === 'missing_expiry') {
     concerns.push({
@@ -260,9 +265,9 @@ export const buildSafetyComplianceSummary = (
     concerns.push({
       type: 'medical',
       severity: credentialLapseSeverity(settings.autoBlockExpiredMedical),
-      label: 'Medical expired',
+      label: medicalStatus.needsReview ? medicalStatus.label : 'Medical expired',
       days: medicalStatus.daysRemaining ?? undefined,
-      message: medicalStatus.definition?.validityMode === 'until_age'
+      message: medicalStatus.needsReview ? `${medicalSubject} medical restriction requires staff review.` : medicalStatus.definition?.validityMode === 'until_age'
         ? `${medicalSubject} ${medicalStatus.definition.name} ceased to satisfy the requirement at age ${medicalStatus.definition.validUntilAge} on ${formatDate(medicalStatus.effectiveExpiry)}.`
         : `${medicalSubject} medical expired on ${formatDate(medicalStatus.effectiveExpiry)}.`
     });
@@ -272,7 +277,7 @@ export const buildSafetyComplianceSummary = (
       severity: 'warning',
       label: 'Medical approaching expiry',
       days: medicalStatus.daysRemaining ?? undefined,
-      message: medicalStatus.definition?.validityMode === 'until_age'
+      message: medicalStatus.needsReview ? `${medicalSubject} medical restriction requires staff review.` : medicalStatus.definition?.validityMode === 'until_age'
         ? `${medicalSubject} ${medicalStatus.definition.name} remains current until age ${medicalStatus.definition.validUntilAge} on ${formatDate(medicalStatus.effectiveExpiry)}.`
         : `${medicalSubject} medical expires on ${formatDate(medicalStatus.effectiveExpiry)}.`
     });

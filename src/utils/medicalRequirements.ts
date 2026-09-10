@@ -1,3 +1,4 @@
+import type { MedicalOperation } from './medicalRecords';
 import type { TrainingModule, UserRole } from '../types';
 
 export type MedicalValidityMode = 'expiry_date' | 'until_age';
@@ -9,6 +10,7 @@ export interface MedicalTypeDefinition {
   validityMode: MedicalValidityMode;
   validUntilAge?: number | null;
   isActive: boolean;
+  acceptedOperations?: MedicalOperation[];
 }
 
 export interface MedicalRequirement {
@@ -87,6 +89,7 @@ export const normaliseMedicalTypes = (value: unknown): MedicalTypeDefinition[] =
       validityMode,
       validUntilAge,
       isActive: record.isActive !== false,
+      acceptedOperations: Array.isArray(record.acceptedOperations) ? record.acceptedOperations.filter((item): item is MedicalOperation => ['raaus_pilot','raaus_instructor','casa_private','casa_class1'].includes(String(item))) : undefined,
     });
   });
 

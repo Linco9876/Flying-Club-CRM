@@ -1,3 +1,5 @@
+import { assessMemberMedicals, type MedicalRecord } from '../utils/medicalRecords';
+import { MEDICALS_UPDATED } from './useMedicalRecords';
 import { useCallback, useState, useEffect } from 'react';
 import { publicSupabaseKey, publicSupabaseUrl, supabase } from '../lib/supabase';
 import { Student, Endorsement, Licence, UserRole } from '../types';
@@ -96,6 +98,7 @@ export const useStudents = (options?: UseStudentsOptions) => {
       let usersQuery = supabase.from('users').select('*');
       let studentsQuery = supabase.from('students').select('*');
       let endorsementsQuery = supabase.from('endorsements').select('*');
+      let medicalsQuery = supabase.from('member_medicals').select('*');
       let licencesQuery = supabase.from('licences').select('*');
       let rolesQuery = supabase.from('user_roles').select('user_id, role');
       let courseEnrolmentsQuery = supabase
@@ -103,6 +106,7 @@ export const useStudents = (options?: UseStudentsOptions) => {
         .select('student_id,status,training_courses!inner(title,medical_requirement_mode,medical_requirement_age)')
         .eq('status', 'active');
       if (scopeStudentId) {
+        medicalsQuery = medicalsQuery.eq('user_id', scopeStudentId);
         usersQuery = usersQuery.eq('id', scopeStudentId);
         studentsQuery = studentsQuery.eq('id', scopeStudentId);
         endorsementsQuery = endorsementsQuery.eq('student_id', scopeStudentId);
@@ -119,6 +123,7 @@ export const useStudents = (options?: UseStudentsOptions) => {
         rolesResult,
         courseEnrolmentsResult,
         trainingSettingsResult,
+        medicalsResult,
       ] = await Promise.all([
         usersQuery,
         studentsQuery,
@@ -127,6 +132,7 @@ export const useStudents = (options?: UseStudentsOptions) => {
         rolesQuery,
         courseEnrolmentsQuery,
         supabase.from('training_syllabus_settings').select('medical_types').maybeSingle(),
+        medicalsQuery,
       ]);
 
       const { data: usersData, error: usersError } = usersResult;
@@ -139,6 +145,7 @@ export const useStudents = (options?: UseStudentsOptions) => {
 
       if (usersError) throw usersError;
       if (studentsError) throw studentsError;
+      if (medicalsResult.error) throw medicalsResult.error;
       if (endorsementsError) throw endorsementsError;
       if (licencesError) throw licencesError;
       if (rolesError) {
@@ -238,7 +245,9 @@ export const useStudents = (options?: UseStudentsOptions) => {
           dateOfBirth,
           activeCourses: activeMedicalCoursesByStudent.get(user.id) || [],
         });
-        const medicalDefinition = findMedicalTypeDefinition(studentData?.medical_type, medicalTypes);
+        const medicalRecords = (medicalsResult.data || []).filter(record => record.user_id === user.id) as MedicalRecord[];
+        const medicalAssessment = assessMemberMedicals({records: medicalRecords, dateOfBirth: dateOfBirth, definitions: medicalTypes});
+        const medicalDefinition = medicalAssessment.definition || findMedicalTypeDefinition(studentData?.medical_type, medicalTypes);
         return {
           id: user.id,
           email: user.email,
@@ -254,12 +263,13 @@ export const useStudents = (options?: UseStudentsOptions) => {
           coverPhoto: user.cover_url,
           raausId: studentData?.raaus_id,
           casaId: studentData?.casa_id,
-          medicalType: studentData?.medical_type,
-          medicalExpiry: studentData?.medical_expiry ? new Date(studentData.medical_expiry) : undefined,
+          medicalRecords,
+          medicalType: medicalAssessment.record?.medical_type || studentData?.medical_type,
+          medicalExpiry: medicalAssessment.effectiveExpiry || undefined,
           medicalRequired: medicalRequirement.required,
           medicalRequirementReason: medicalRequirement.reason,
           medicalRequirementCourseTitle: medicalRequirement.courseTitle,
-          medicalValidityMode: medicalDefinition?.validityMode,
+          medicalValidityMode: medicalAssessment.effectiveExpiry ? 'expiry_date' : medicalDefinition?.validityMode,
           medicalValidUntilAge: medicalDefinition?.validUntilAge,
           licenceExpiry: studentData?.licence_expiry ? new Date(studentData.licence_expiry) : undefined,
           lastRaausBfrDate: studentData?.last_raaus_bfr_date ? new Date(studentData.last_raaus_bfr_date) : studentData?.last_flight_review ? new Date(studentData.last_flight_review) : undefined,
@@ -388,8 +398,6 @@ export const useStudents = (options?: UseStudentsOptions) => {
         id: userData.id,
         raaus_id: studentData.raausId,
         casa_id: studentData.casaId,
-        medical_type: studentData.medicalType,
-        medical_expiry: studentData.medicalExpiry,
         licence_expiry: studentData.licenceExpiry,
         last_raaus_bfr_date: studentData.lastRaausBfrDate || studentData.lastFlightReview,
         last_casa_afr_date: studentData.lastCasaAfrDate,
@@ -722,6 +730,8 @@ export const useStudents = (options?: UseStudentsOptions) => {
   useEffect(() => {
     void fetchStudents();
   }, [fetchStudents]);
+
+  useEffect(() => { window.addEventListener(MEDICALS_UPDATED, fetchStudents); return () => window.removeEventListener(MEDICALS_UPDATED, fetchStudents); }, [fetchStudents]);
 
   return {
     students,

@@ -31,8 +31,8 @@ test('other cleared editable profile fields are sent as null instead of being om
   assert.equal(user.address, null);
   assert.equal(user.date_of_birth, null);
   assert.equal(user.preferred_aircraft_id, null);
-  assert.equal(studentProfile.medical_type, null);
-  assert.equal(studentProfile.medical_expiry, null);
+  assert.equal(Object.hasOwn(studentProfile, "medical_type"), false);
+  assert.equal(Object.hasOwn(studentProfile, "medical_expiry"), false);
   assert.equal(studentProfile.last_raaus_bfr_date, null);
   assert.equal(studentProfile.occupation, null);
   assert(!Object.hasOwn(user, 'avatar_url'));
