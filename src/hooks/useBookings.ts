@@ -1173,7 +1173,7 @@ export const useBookings = (enabled = true, { includeCalendarNames = false }: { 
     } catch (err) {
       console.error('Error updating booking:', err);
       if (!silent) {
-        toast.error(err instanceof Error ? err.message : 'Failed to update booking');
+        toast.error(getErrorMessage(err) || 'Failed to update booking');
       }
       throw err;
     }
