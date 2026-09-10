@@ -1,4 +1,5 @@
-import { medicalOperationForAircraft } from '../../utils/medicalRecords';
+import { assessLicence } from '../../utils/licenceMedicals';
+import { useTrainingSettings } from '../../hooks/useTrainingSettings';
 import { isPrivateAircraft, privateAircraftValidationError, normaliseAircraftRegistration } from '../../utils/privateAircraft';
 import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useMemo, useState } from 'react';
@@ -102,6 +103,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     loading: externalLogbookLoading,
     error: externalLogbookError,
   } = useExternalLogbook();
+  const { settings: trainingSettings, loading: trainingSettingsLoading, error: trainingSettingsError } = useTrainingSettings();
   const { settings: safetySettings, loading: safetySettingsLoading, error: safetySettingsError } = useSafetySettings({ participateInPageLoad: false });
   const { settings: bookingFieldSettings, isFieldRequired, isFieldVisible, loading: bookingFieldsLoading, error: bookingFieldsError } = useBookingFieldSettings();
   const { flightTypes, paymentMethods, loading: billingSettingsLoading, error: billingSettingsError } = useBillingSettings();
@@ -144,7 +146,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
         startTime: normalizeToQuarterHour(format(new Date(booking.startTime), 'HH:mm')) || '09:00',
         endTime: normalizeToQuarterHour(format(new Date(booking.endTime), 'HH:mm')) || '11:00',
         aircraftId: booking.aircraftId || '',
-        medicalOperation: booking.medicalOperation || '' as const,
+        medicalOperation: '' as const,
         privateAircraftType: booking.privateAircraftType || '',
         privateAircraftRegistration: booking.privateAircraftRegistration || '',
         instructorId: booking.instructorId || '',
@@ -176,7 +178,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       startTime: normalizeToQuarterHour(prefilledData?.startTime) || defaultTimes.startTime,
       endTime: normalizeToQuarterHour(prefilledData?.endTime) || defaultTimes.endTime,
       aircraftId: prefilledData?.aircraftId || '',
-      medicalOperation: prefilledData?.medicalOperation || '' as const,
+      medicalOperation: '' as const,
       privateAircraftType: prefilledData?.privateAircraftType || '',
       privateAircraftRegistration: prefilledData?.privateAircraftRegistration || '',
       instructorId: prefilledData?.instructorId || '',
@@ -302,10 +304,10 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const isLimitedCalendarUser = displayUserRoles.some(role => role === 'student' || role === 'pilot')
     && !displayUserRoles.some(role => ['admin', 'cfi', 'instructor', 'senior_instructor'].includes(role));
   const isLoading = aircraftLoading || usersLoading || studentsLoading || flightLogsLoading || externalLogbookLoading || locationsLoading
-    || financialProvidersLoading || safetySettingsLoading || bookingFieldsLoading || billingSettingsLoading
+    || trainingSettingsLoading || financialProvidersLoading || safetySettingsLoading || bookingFieldsLoading || billingSettingsLoading
     || portalSettingsLoading || bookingRulesLoading || organisationSettingsLoading;
   const bookingDataError = aircraftError || usersError || studentsError || flightLogsError || externalLogbookError
-    || safetySettingsError || bookingFieldsError || billingSettingsError || locationsError
+    || trainingSettingsError || safetySettingsError || bookingFieldsError || billingSettingsError || locationsError
     || portalSettingsError || bookingRulesError || organisationSettingsError;
   const showModalLoader = isLoading || isSubmitting;
   const isRecurringSeriesEdit = Boolean(isEdit && booking?.recurrenceSeriesId);
@@ -821,7 +823,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   };
 
   const getEndorsementWarning = (data: typeof formData) => {
-    if (data.instructorId || data.bookingKind === 'ground') return null;
+    if (isKioskMode || data.instructorId || data.bookingKind === 'ground') return null;
 
     const selectedAircraft = aircraft.find(a => a.id === data.aircraftId);
     const requiredAnyEndorsements = (selectedAircraft?.requiredEndorsementTypes?.length
@@ -842,16 +844,15 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     if (data.isGuestBooking) return null;
 
     const selectedPerson = students.find((student) => student.id === data.studentId);
-    const now = new Date();
+    const now = new Date(`${data.date}T${data.startTime}:00`);
+    const through = new Date(`${data.endDate || data.date}T${data.endTime}:00`);
     const activeEndorsements = new Set(
       (selectedPerson?.endorsements || [])
         .filter((endorsement) => endorsement.isActive && (!endorsement.expiryDate || new Date(endorsement.expiryDate) >= now))
         .map((endorsement) => endorsement.type.trim().toLowerCase())
     );
     const activeLicences = new Set((selectedPerson?.licences || [])
-      .filter(licence => (licence.verificationStatus || 'verified') === 'verified'
-        && licence.isActive
-        && (!licence.expiryDate || new Date(licence.expiryDate) >= now))
+      .filter(licence => assessLicence(licence, selectedPerson?.medicalRecords, selectedPerson?.dateOfBirth, trainingSettings.licenceMedicalRequirements, now, through).valid)
       .map(licence => licence.type.trim().toLowerCase()));
 
     const meetsAllRequired = requiredAllEndorsements.every(type => activeEndorsements.has(type.toLowerCase()));
@@ -904,14 +905,13 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       const compliance = buildSafetyComplianceSummary(selectedPerson, safetySettings, flightLogs, {
         hasInstructor: Boolean(data.instructorId),
         at: new Date(`${data.date}T${data.startTime}:00`),
-        medicalOperation: data.medicalOperation || medicalOperationForAircraft(isPrivateAircraft(data.aircraftId) ? data.privateAircraftRegistration : aircraft.find(item => item.id === data.aircraftId)?.registration),
         baselines: logbookBaselines,
         externalEntries: externalLogbookEntries,
         timeZone: organisationSettings?.timezone,
       });
-      // Kiosk sessions see only minimal server eligibility, not medical evidence.
-      // The database checks medicals when saving this booking.
-      const concerns = compliance.concerns.filter(concern => !isKioskMode || concern.type !== 'medical');
+      // Licence-specific medical checks run authoritatively on save for both participants.
+      // A general medical warning could incorrectly block supervised training.
+      const concerns = compliance.concerns.filter(concern => concern.type !== 'medical');
 
       if (concerns.length > 0) {
         setSafetyWarningState({
@@ -1453,17 +1453,6 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                 <p className="text-xs text-gray-500 sm:col-span-2">Reserves the instructor. Aircraft details will appear in the flight log and training records.</p>
               </div>
             )}
-            {!isGroundSessionBooking && (
-              <label className="block text-xs font-medium text-gray-600">Medical operating framework
-                <select value={formData.medicalOperation} onChange={event => setFormData(previous => ({...previous,medicalOperation:event.target.value as typeof previous.medicalOperation}))} className="mt-1 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm">
-                  <option value="">Use aircraft registration (RAAus or VH)</option>
-                  <option value="raaus_pilot">RAAus flying</option>
-                  <option value="casa_private">CASA private flying</option>
-                  <option value="casa_class1">Operations requiring Class 1</option>
-                </select>
-                <span className="mt-1 block font-normal text-gray-500">Choose explicitly for other registrations or operations requiring Class 1. Instructor medical requirements are assessed separately.</span>
-              </label>
-            )}
             {shouldShowInstructorField && (
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -1910,7 +1899,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
               To continue, go back and choose a different aircraft or add an instructor. An instructor or administrator must verify and add your existing licences. You can submit endorsements with supporting proof.
             </div>
             <p className="text-xs text-gray-500">
-              {endorsementWarningState.needsStaffLicence ? 'Ask an instructor or administrator to verify and add your licence.' : 'You can add endorsements from Settings > Update My Info.'}
+              {endorsementWarningState.needsStaffLicence ? 'Ask an instructor or administrator to check your licence and its accepted medical requirements.' : 'You can add endorsements from Settings > Update My Info.'}
             </p>
           </div>
           <div className="flex justify-end gap-2 border-t border-gray-200 px-5 py-4">

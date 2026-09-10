@@ -1,4 +1,4 @@
-import { MEDICAL_OPERATIONS, defaultMedicalOperations, type MedicalOperation } from '../../utils/medicalRecords';
+import { licenceKey, licenceMedicalRule } from '../../utils/licenceMedicals';
 import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useState } from 'react';
 import { Award, BookOpen, Check, CheckCircle, GraduationCap, Loader2, Lock, MessageSquare, Pencil, Plus, Stethoscope, X } from 'lucide-react';
@@ -189,7 +189,7 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
     const oldKey = oldType.trim().toLowerCase();
     const nextKey = nextName.toLowerCase();
     if (formData.licenceTypes.some(type => type.trim().toLowerCase() === nextKey && type.trim().toLowerCase() !== oldKey)) return;
-    setField('licenceTypes', formData.licenceTypes.map(type => type.trim().toLowerCase() === oldKey ? nextName : type));
+    setFormData(previous => ({ ...previous, licenceTypes: previous.licenceTypes.map(type => licenceKey(type) === oldKey ? nextName : type), licenceMedicalRequirements: { ...previous.licenceMedicalRequirements, [nextKey]: licenceMedicalRule(oldType, previous.licenceMedicalRequirements) } }));
     setLicenceRenames(current => ({ ...current, [oldType]: nextName }));
     setEditingLicence(null);
     setEditingLicenceName('');
@@ -547,7 +547,7 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
         </h3>
         <div className="rounded-lg border border-emerald-200 bg-white p-4">
           <p className="text-sm text-gray-600">
-            Holding any active, unexpired licence makes a member a Pilot. Staff must verify and add licences to a member file; endorsements do not grant Pilot status.
+            Staff verify licences separately from medical evidence. Flying eligibility requires an active licence and one current accepted medical. Aircraft use their configured licence requirements.
           </p>
           <div className="mt-4 divide-y divide-gray-100 overflow-hidden rounded-lg border border-gray-200">
             {formData.licenceTypes.map(type => {
@@ -568,6 +568,21 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
                   ) : (
                     <div>
                       <p className="text-sm font-medium text-gray-900">{type}</p>
+                      <details className="mt-2"><summary className="cursor-pointer text-xs font-medium text-blue-700">Medical requirements</summary>
+                      <fieldset disabled={!canEdit} className="mt-3 space-y-2 text-xs text-gray-700">
+                        <label className="flex items-center gap-2"><input type="checkbox" checked={licenceMedicalRule(type, formData.licenceMedicalRequirements).required} onChange={event => setField('licenceMedicalRequirements', { ...formData.licenceMedicalRequirements, [licenceKey(type)]: { ...licenceMedicalRule(type, formData.licenceMedicalRequirements), required: event.target.checked } })} />Requires a current medical</label>
+                        {licenceMedicalRule(type, formData.licenceMedicalRequirements).required && <>
+                          <p>Accept any one selected medical. Instructor requirements apply when supervising the flight.</p>
+                          <div className="grid gap-3 sm:grid-cols-2">{(['acceptedMedicalTypeIds', 'instructorMedicalTypeIds'] as const).map(field => <div key={field}>
+                            <p className="mb-1 font-semibold">{field === 'acceptedMedicalTypeIds' ? 'Pilot medicals' : 'Instructor medicals'}</p>
+                            {formData.medicalTypes.map(medical => <label key={medical.id} className="flex items-center gap-2 py-1"><input type="checkbox" checked={licenceMedicalRule(type, formData.licenceMedicalRequirements)[field].includes(medical.id)} onChange={event => {
+                              const rule = licenceMedicalRule(type, formData.licenceMedicalRequirements);
+                              setField('licenceMedicalRequirements', { ...formData.licenceMedicalRequirements, [licenceKey(type)]: { ...rule, [field]: event.target.checked ? [...rule[field], medical.id] : rule[field].filter(id => id !== medical.id) } });
+                            }} />{medical.name}{!medical.isActive ? ' (retired)' : ''}</label>)}
+                            {!licenceMedicalRule(type, formData.licenceMedicalRequirements)[field].length && <p className="text-amber-700">No medical selected: this licence cannot clear flying eligibility.</p>}
+                          </div>)}</div>
+                        </>}
+                      </fieldset></details>
                       {licenceRenames[type] && <p className="text-xs text-blue-700">Rename will update member, course, and aircraft records on save.</p>}
                     </div>
                   )}
@@ -673,10 +688,7 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
                     <X className="h-4 w-4" />
                   </button>
                 )}
-                <fieldset className="col-span-full flex flex-wrap gap-3 border-t border-slate-200 pt-3">
-                  <legend className="text-xs font-semibold text-slate-600">Default coverage for new records (staff confirm restrictions when verifying)</legend>
-                  {(Object.entries(MEDICAL_OPERATIONS) as [MedicalOperation,string][]).map(([operation,label]) => <label key={operation} className="inline-flex items-center gap-2 text-xs"><input type="checkbox" disabled={!canEdit} checked={(medical.acceptedOperations || defaultMedicalOperations(medical.name)).includes(operation)} onChange={event => updateMedicalType(medical.id,{acceptedOperations:event.target.checked ? [...(medical.acceptedOperations || defaultMedicalOperations(medical.name)),operation] : (medical.acceptedOperations || defaultMedicalOperations(medical.name)).filter(item=>item!==operation)})}/>{label}</label>)}
-                </fieldset>
+
               </div>
             ))}
           </div>

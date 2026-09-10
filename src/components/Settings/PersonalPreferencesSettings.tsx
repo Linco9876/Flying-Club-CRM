@@ -1,3 +1,5 @@
+import { assessLicence } from '../../utils/licenceMedicals';
+import { useMedicalRecords } from '../../hooks/useMedicalRecords';
 import { MedicalRecordsPanel } from '../Students/MedicalRecordsPanel';
 import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -178,6 +180,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
   showInternalTabs = true,
 }) => {
   const { user, refreshUser } = useAuth();
+  const { records: medicalRecords, loading: medicalLoading, error: medicalError } = useMedicalRecords(user?.id);
   const phoneNotifications = usePwaPushNotifications('portal');
   const location = useLocation();
   const requestedSettings = useMemo(
@@ -1340,6 +1343,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
                   <div className="mt-3 space-y-3">
                     {existingLicences.map(licence => {
                       const status = licence.verificationStatus || 'verified';
+                      const eligibility = assessLicence(licence, medicalRecords, profileForm.birthdate ? new Date(`${profileForm.birthdate}T00:00:00`) : undefined, trainingSettings.licenceMedicalRequirements);
                       const statusStyle = status === 'verified'
                         ? 'bg-green-100 text-green-700'
                         : status === 'pending'
@@ -1358,6 +1362,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
                             {licence.dateObtained ? `Issued ${licence.dateObtained.toLocaleDateString()}` : 'Issue date not recorded'}
                             {licence.expiryDate ? ` | Expires ${licence.expiryDate.toLocaleDateString()}` : ' | No expiry recorded'}
                           </p>
+                          <p className={`mt-1 text-xs ${eligibility.valid ? 'text-emerald-700' : 'text-amber-700'}`}>{medicalLoading ? 'Checking medical requirements…' : medicalError ? 'Medical records could not be loaded' : eligibility.reason}</p>
                           {licence.issuingAuthority && <p className="mt-1 text-xs text-gray-500">Issued by {licence.issuingAuthority}</p>}
                           {status === 'pending' && (
                             <p className="mt-2 text-xs font-medium text-amber-700">This licence does not grant Pilot access until staff verify it.</p>

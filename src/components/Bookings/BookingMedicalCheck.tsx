@@ -48,7 +48,7 @@ export function BookingMedicalCheck({
       <div className="w-full max-w-lg space-y-4 rounded-xl bg-white p-5 text-slate-900 shadow-xl dark:bg-slate-950 dark:text-slate-100">
         <div className="flex items-center justify-between">
           <h2 id="booking-medical-title" className="text-lg font-semibold">
-            Medical eligibility
+            Licence and medical eligibility
           </h2>
           <button
             type="button"
@@ -59,13 +59,14 @@ export function BookingMedicalCheck({
           </button>
         </div>
         <p className="text-sm text-slate-500">
-          Rechecks the currently accepted medical records for the flight.
-          Membership, licences and other operating requirements remain separate.
+          Checks the aircraft’s required licences and their accepted medicals
+          for the flight. Instructor requirements are checked for supervised
+          bookings.
         </p>
         {busy ? (
           <p className="flex items-center gap-2">
             <Loader2 className="animate-spin" size={16} />
-            Checking…
+            Checkingâ€¦
           </p>
         ) : error ? (
           <p role="alert" className="text-red-600">
@@ -93,7 +94,7 @@ export function BookingMedicalCheck({
                     <p className="mt-1 text-sm">{item.reason}</p>
                     {item.medicalType && (
                       <p className="mt-1 text-xs">
-                        {item.medicalType} · valid to {item.effectiveExpiry}
+                        {item.medicalType} Â· valid to {item.effectiveExpiry}
                       </p>
                     )}
                   </div>

@@ -1,3 +1,4 @@
+import { licenceKey, licenceMedicalRule, type LicenceMedicalRequirements } from '../utils/licenceMedicals';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { LessonGradingSystem } from '../types';
@@ -31,6 +32,7 @@ export interface TrainingSyllabusSettingsData {
   showBestGradeGuidance: boolean;
   endorsementTypes: string[];
   licenceTypes: string[];
+  licenceMedicalRequirements: LicenceMedicalRequirements;
   medicalTypes: MedicalTypeDefinition[];
 }
 
@@ -52,6 +54,7 @@ export const DEFAULT_TRAINING_SETTINGS: TrainingSyllabusSettingsData = {
   showBestGradeGuidance: true,
   endorsementTypes: DEFAULT_ENDORSEMENT_TYPES,
   licenceTypes: DEFAULT_LICENCE_TYPES,
+  licenceMedicalRequirements: {},
   medicalTypes: DEFAULT_MEDICAL_TYPES,
 };
 
@@ -80,12 +83,17 @@ const mapRow = (row: any): TrainingSyllabusSettingsData => ({
   endorsementTypes: uniqueEndorsementTypes(row.endorsement_types || DEFAULT_TRAINING_SETTINGS.endorsementTypes),
   licenceTypes: uniqueLicenceTypes(row.licence_types || DEFAULT_TRAINING_SETTINGS.licenceTypes),
   medicalTypes: normaliseMedicalTypes(row.medical_types),
+  licenceMedicalRequirements: row.licence_medical_requirements || {},
 });
 
 const toRow = (settings: TrainingSyllabusSettingsData) => ({
   endorsement_types: uniqueEndorsementTypes(settings.endorsementTypes),
   licence_types: uniqueLicenceTypes(settings.licenceTypes),
   medical_types: normaliseMedicalTypes(settings.medicalTypes),
+  licence_medical_requirements: {
+    ...settings.licenceMedicalRequirements,
+    ...Object.fromEntries(settings.licenceTypes.map(type => [licenceKey(type), licenceMedicalRule(type, settings.licenceMedicalRequirements)])),
+  },
   default_grading_system: settings.defaultGradingSystem,
   force_student_acknowledgement_for_all_courses: settings.forceStudentAcknowledgementForAllCourses,
   require_student_acknowledgement: settings.requireStudentAcknowledgement,
