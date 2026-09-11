@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolveCalendarNotificationFocus } from './calendarNotificationFocus.ts';
+import { buildCalendarTodaySearchParams, resolveCalendarNotificationFocus } from './calendarNotificationFocus.ts';
 
 const bookingId = '018f47c2-8ac6-7bf9-9ad7-b3f708675a88';
 const aircraftId = '018f47c2-3fb7-77e0-a3bb-2669f77c51de';
@@ -44,4 +44,24 @@ test('invalid, missing and malformed booking targets are ignored safely', () => 
     id: bookingId,
     startTime: 'not-a-date',
   }]), null);
+});
+
+test('Today releases a cancelled booking tomorrow without losing calendar preferences', () => {
+  const current = new URLSearchParams(`bookingId=${bookingId}&date=2026-09-12&view=week&resource=aircraft`);
+  const bookings = [{ id: bookingId, startTime: '2026-09-12T09:00:00+10:00', status: 'cancelled' }];
+  assert.equal(resolveCalendarNotificationFocus(current.get('bookingId'), bookings)?.showCancelled, true);
+  const next = buildCalendarTodaySearchParams(current, '2026-09-11');
+  assert.equal(next.get('date'), '2026-09-11');
+  assert.equal(resolveCalendarNotificationFocus(next.get('bookingId'), bookings), null);
+  assert.equal(next.get('view'), 'week');
+  assert.equal(next.get('resource'), 'aircraft');
+  assert.equal(current.get('bookingId'), bookingId, 'Browser history retains the original explicit booking link');
+});
+
+test('Today works without a booking target and removes duplicate stale targets', () => {
+  assert.equal(buildCalendarTodaySearchParams(new URLSearchParams(), '2026-09-11').toString(), 'date=2026-09-11');
+  const params = new URLSearchParams(`bookingId=${bookingId}&bookingId=${bookingId}&view=list`);
+  const next = buildCalendarTodaySearchParams(params, '2026-09-11');
+  assert.equal(next.has('bookingId'), false);
+  assert.equal(next.get('view'), 'list');
 });

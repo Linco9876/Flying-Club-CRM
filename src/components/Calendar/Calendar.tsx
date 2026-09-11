@@ -63,7 +63,7 @@ import toast from 'react-hot-toast';
 import { NextAvailableSlotModal, type NextAvailableSlot } from './NextAvailableSlotModal';
 import { useLatestEffect } from '../../hooks/useLatestEffect';
 import { FLIGHT_LOG_ALREADY_EXISTS_MESSAGE } from '../../utils/flightLogBookingRules';
-import { resolveCalendarNotificationFocus } from '../../utils/calendarNotificationFocus';
+import { buildCalendarTodaySearchParams, resolveCalendarNotificationFocus } from '../../utils/calendarNotificationFocus';
 import { useManualBookingSupervision } from '../../hooks/useManualBookingSupervision';
 import {
   formatCalendarMinute,
@@ -962,6 +962,21 @@ export const Calendar: React.FC<CalendarProps> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayAircraft.length, displayInstructors.length, calendarSettings?.resource_display_order]);
 
+  const clearNotificationFocusTimers = useCallback(() => {
+    if (notificationFocusAnimationFrameRef.current !== null) {
+      window.cancelAnimationFrame(notificationFocusAnimationFrameRef.current);
+      notificationFocusAnimationFrameRef.current = null;
+    }
+    if (notificationFocusScrollTimerRef.current !== null) {
+      window.clearTimeout(notificationFocusScrollTimerRef.current);
+      notificationFocusScrollTimerRef.current = null;
+    }
+    if (notificationFocusClearTimerRef.current !== null) {
+      window.clearTimeout(notificationFocusClearTimerRef.current);
+      notificationFocusClearTimerRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
     if (initialCalendarLoading) return;
 
@@ -985,15 +1000,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     if (focus.showPending) setShowPendingBookings(true);
     if (focus.showWaitlisted) setShowWaitlistedBookings(true);
 
-    if (notificationFocusAnimationFrameRef.current !== null) {
-      window.cancelAnimationFrame(notificationFocusAnimationFrameRef.current);
-    }
-    if (notificationFocusScrollTimerRef.current !== null) {
-      window.clearTimeout(notificationFocusScrollTimerRef.current);
-    }
-    if (notificationFocusClearTimerRef.current !== null) {
-      window.clearTimeout(notificationFocusClearTimerRef.current);
-    }
+    clearNotificationFocusTimers();
 
     setNotificationFocusBookingId(null);
     notificationFocusAnimationFrameRef.current = window.requestAnimationFrame(() => {
@@ -1012,19 +1019,9 @@ export const Calendar: React.FC<CalendarProps> = ({
       setNotificationFocusBookingId((current) => current === focus.bookingId ? null : current);
       notificationFocusClearTimerRef.current = null;
     }, 6500);
-  }, [bookings, initialCalendarLoading, location.key, searchParams]);
+  }, [bookings, clearNotificationFocusTimers, initialCalendarLoading, location.key, searchParams]);
 
-  useEffect(() => () => {
-    if (notificationFocusAnimationFrameRef.current !== null) {
-      window.cancelAnimationFrame(notificationFocusAnimationFrameRef.current);
-    }
-    if (notificationFocusScrollTimerRef.current !== null) {
-      window.clearTimeout(notificationFocusScrollTimerRef.current);
-    }
-    if (notificationFocusClearTimerRef.current !== null) {
-      window.clearTimeout(notificationFocusClearTimerRef.current);
-    }
-  }, []);
+  useEffect(() => clearNotificationFocusTimers, [clearNotificationFocusTimers]);
 
 
   // Compute slot height on mount and resize
@@ -1107,6 +1104,8 @@ export const Calendar: React.FC<CalendarProps> = ({
   };
 
   const goToToday = () => {
+    clearNotificationFocusTimers();
+    setNotificationFocusBookingId(null);
     const today = new Date();
     if (viewMode === 'list') {
       const range = getDefaultCalendarListRange(today);
@@ -1116,11 +1115,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     setCurrentDate(today);
     setDatePickerMonth(today);
     setShowDatePicker(false);
-    setSearchParams(prev => {
-      const next = new URLSearchParams(prev);
-      next.set('date', format(today, 'yyyy-MM-dd'));
-      return next;
-    });
+    setSearchParams(prev => buildCalendarTodaySearchParams(prev, format(today, 'yyyy-MM-dd')));
   };
 
   const getWeekDays = () => {
