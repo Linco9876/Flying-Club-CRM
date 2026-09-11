@@ -1,6 +1,5 @@
-import { assessLicence } from "../../utils/licenceMedicals";
 import React, { useEffect, useState } from "react";
-import { Plus, FileText, Loader2, X } from "lucide-react";
+import { Plus, FileText, Loader2, X, ChevronDown } from "lucide-react";
 import toast from "react-hot-toast";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
@@ -64,11 +63,7 @@ export function MedicalRecordsPanel({
     created_at: string;
   }> | null>(null);
   const current = records.filter(
-    (record) =>
-      !["superseded", "withdrawn"].includes(record.status) &&
-      (record.status === "suspended" ||
-        record.status === "pending" ||
-        medicalRecordCurrency(record, dateOfBirth).label !== "Expired"),
+    (record) => !["superseded", "withdrawn"].includes(record.status),
   );
   const shown = history ? records : current;
   const type = settings.medicalTypes.find((item) => item.id === draft?.type_id);
@@ -179,23 +174,25 @@ export function MedicalRecordsPanel({
     window.open(link.signedUrl, "_blank", "noopener,noreferrer");
   };
   return (
-    <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <section className="space-y-2 text-slate-900 dark:text-slate-100">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-lg font-semibold">Medicals &amp; declarations</h3>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Keep all certificates and declarations here. Each activity uses an
-            applicable current record.
-          </p>
+          <h3 className="text-sm font-semibold">Medicals &amp; declarations</h3>
         </div>
         {canEdit && (
           <button
             type="button"
             onClick={() => start()}
-            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white"
+            disabled={
+              loading ||
+              settingsLoading ||
+              Boolean(error || settingsError) ||
+              busy
+            }
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 disabled:opacity-50 dark:text-blue-300 dark:hover:bg-blue-950/40"
           >
-            <Plus size={16} />
-            Add medical / declaration
+            <Plus size={13} />
+            Add medical
           </button>
         )}
       </div>
@@ -210,146 +207,150 @@ export function MedicalRecordsPanel({
         </p>
       ) : (
         <>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {settings.licenceTypes.map((label) => {
-              const result = assessLicence(
-                {
-                  id: "coverage",
-                  type: label,
-                  isActive: true,
-                  verificationStatus: "verified",
-                },
-                records,
-                dateOfBirth,
-                settings.licenceMedicalRequirements,
-              );
-              const valid = result.valid;
+          {shown.length === 0 && (
+            <p className="py-2 text-xs text-slate-500 dark:text-slate-400">
+              No medicals recorded.
+            </p>
+          )}
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {shown.map((record) => {
+              const currency = medicalRecordCurrency(record, dateOfBirth);
               return (
-                <div
-                  key={label}
-                  className={`rounded-lg border p-3 ${valid ? "border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100" : "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900"}`}
-                >
-                  <p className="text-sm font-semibold">{label}</p>
-                  <p className="mt-1 text-xs">
-                    {valid
-                      ? "Accepted medical requirement satisfied"
-                      : result.reason}
-                  </p>
-                </div>
+                <details key={record.id} className="group">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-md py-2.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 [&::-webkit-details-marker]:hidden">
+                    <span className="min-w-0 font-medium">
+                      {record.medical_type}
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <span
+                        className={`text-xs ${currency.state === "expired" || record.status === "suspended" ? "text-amber-700 dark:text-amber-300" : "text-slate-500 dark:text-slate-400"}`}
+                      >
+                        {record.status === "pending"
+                          ? "Pending · "
+                          : record.status === "suspended"
+                            ? "Suspended · "
+                            : currency.state === "expired"
+                              ? "Expired · "
+                              : ""}
+                        {currency.effectiveExpiry
+                          ? currency.effectiveExpiry.toLocaleDateString(
+                              "en-AU",
+                              {
+                                day: "numeric",
+                                month: "short",
+                                year: "numeric",
+                              },
+                            )
+                          : "Expiry not recorded"}
+                      </span>
+                      <ChevronDown
+                        size={13}
+                        className="text-slate-400 transition-transform group-open:rotate-180"
+                        aria-hidden="true"
+                      />
+                    </span>
+                  </summary>
+                  <div className="pb-3">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {record.status === "legacy"
+                        ? "Imported · not reverified"
+                        : record.status}{" "}
+                      · {currency.label}
+                    </p>
+                    <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                      Issued/declaration: {record.issued_on || "Not recorded"} ·
+                      Certificate expiry: {record.expires_on || "Not recorded"}
+                      {record.review_due_on &&
+                        ` · Review due: ${record.review_due_on}`}
+                      {record.validity_mode === "until_age" &&
+                        ` · Additional requirements at age ${record.valid_until_age || "?"}`}
+                    </p>
+                    {record.status === "legacy" &&
+                      record.validity_mode === "until_age" &&
+                      !record.review_due_on && (
+                        <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+                          Imported age-based validity retained. Staff should
+                          confirm the declaration and next review date.
+                        </p>
+                      )}
+                    {record.restrictions && (
+                      <p className="mt-2 text-sm">
+                        Conditions / review note: {record.restrictions}
+                      </p>
+                    )}
+                    <div className="mt-3 flex flex-wrap gap-4 text-sm font-semibold text-blue-700 dark:text-blue-300">
+                      {record.document_id && (
+                        <button
+                          type="button"
+                          onClick={() => void openEvidence(record.document_id!)}
+                          className="inline-flex items-center gap-1"
+                        >
+                          <FileText size={14} />
+                          View evidence
+                        </button>
+                      )}
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={() => start(record, true)}
+                        >
+                          Renew / add replacement
+                        </button>
+                      )}
+                      {canEdit &&
+                        (staff ||
+                          ["pending", "withdrawn"].includes(record.status)) && (
+                          <button type="button" onClick={() => start(record)}>
+                            Edit / review
+                          </button>
+                        )}
+                    </div>
+                  </div>
+                </details>
               );
             })}
           </div>
-          <p className="text-xs text-slate-500">
-            Medical support for each licence is shown above. Holding that
-            licence, its expiry, instructor requirements and aircraft
-            restrictions are checked when booking.
-          </p>
-          {shown.length === 0 && (
-            <p className="text-sm">No medical records recorded.</p>
-          )}
-          {shown.map((record) => {
-            const currency = medicalRecordCurrency(record, dateOfBirth);
-            return (
-              <article
-                key={record.id}
-                className="rounded-lg border border-slate-200 p-3 dark:border-slate-700"
+          <details className="text-xs text-slate-500 dark:text-slate-400">
+            <summary className="w-fit cursor-pointer py-1">History</summary>
+            <div className="flex flex-wrap gap-4 py-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setHistory(!history)}
+                className="text-blue-700 dark:text-blue-300"
               >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h4 className="font-semibold">{record.medical_type}</h4>
-                  <span className="rounded-full bg-slate-100 px-2 py-1 text-xs dark:bg-slate-800">
-                    {record.status === "legacy"
-                      ? "Imported · not reverified"
-                      : record.status}{" "}
-                    · {currency.label}
-                  </span>
-                </div>
-                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                  Issued/declaration: {record.issued_on || "Not recorded"} ·
-                  Certificate expiry: {record.expires_on || "Not recorded"}
-                  {record.review_due_on &&
-                    ` · Review due: ${record.review_due_on}`}
-                  {record.validity_mode === "until_age" &&
-                    ` · Additional requirements at age ${record.valid_until_age || "?"}`}
-                </p>
-                {record.status === "legacy" &&
-                  record.validity_mode === "until_age" &&
-                  !record.review_due_on && (
-                    <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
-                      Imported age-based validity retained. Staff should confirm
-                      the declaration and next review date.
-                    </p>
-                  )}
-                {record.restrictions && (
-                  <p className="mt-2 text-sm">
-                    Conditions / review note: {record.restrictions}
-                  </p>
-                )}
-                <div className="mt-3 flex flex-wrap gap-4 text-sm font-semibold text-blue-700 dark:text-blue-300">
-                  {record.document_id && (
-                    <button
-                      type="button"
-                      onClick={() => void openEvidence(record.document_id!)}
-                      className="inline-flex items-center gap-1"
-                    >
-                      <FileText size={14} />
-                      View evidence
-                    </button>
-                  )}
-                  {canEdit && (
-                    <button type="button" onClick={() => start(record, true)}>
-                      Renew / add replacement
-                    </button>
-                  )}
-                  {canEdit &&
-                    (staff ||
-                      ["pending", "withdrawn"].includes(record.status)) && (
-                      <button type="button" onClick={() => start(record)}>
-                        Edit / review
-                      </button>
-                    )}
-                </div>
-              </article>
-            );
-          })}
-          <div className="flex gap-4 text-sm">
-            <button
-              type="button"
-              onClick={() => setHistory(!history)}
-              className="text-blue-700 dark:text-blue-300"
-            >
-              {history ? "Hide" : "Show"} expired / superseded / withdrawn
-              records
-            </button>
-            <button
-              type="button"
-              onClick={async () => {
-                if (audit) {
-                  setAudit(null);
-                  return;
-                }
-                const { data, error: auditError } = await supabase
-                  .from("member_medical_audit")
-                  .select("id,action,created_at")
-                  .eq("user_id", userId)
-                  .order("created_at", { ascending: false });
-                if (auditError) toast.error("Audit could not be loaded");
-                else setAudit(data || []);
-              }}
-              className="text-blue-700 dark:text-blue-300"
-            >
-              {audit ? "Hide" : "View"} history
-            </button>
-          </div>
-          {audit && (
-            <ul className="space-y-1 text-xs">
-              {audit.map((item) => (
-                <li key={item.id}>
-                  {new Date(item.created_at).toLocaleString()} ·{" "}
-                  {item.action.replaceAll("_", " ")}
-                </li>
-              ))}
-            </ul>
-          )}
+                {history ? "Hide archived records" : "Show archived records"}
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (audit) {
+                    setAudit(null);
+                    return;
+                  }
+                  const { data, error: auditError } = await supabase
+                    .from("member_medical_audit")
+                    .select("id,action,created_at")
+                    .eq("user_id", userId)
+                    .order("created_at", { ascending: false });
+                  if (auditError) toast.error("Audit could not be loaded");
+                  else setAudit(data || []);
+                }}
+                className="text-blue-700 dark:text-blue-300"
+              >
+                {audit ? "Hide audit history" : "View audit history"}
+              </button>
+            </div>
+            {audit && (
+              <ul className="space-y-1 text-xs">
+                {audit.map((item) => (
+                  <li key={item.id}>
+                    {new Date(item.created_at).toLocaleString()} ·{" "}
+                    {item.action.replaceAll("_", " ")}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </details>
         </>
       )}
       {draft && (
