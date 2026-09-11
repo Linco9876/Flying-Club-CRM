@@ -44,3 +44,14 @@ export const resolveCalendarNotificationFocus = (
     showWaitlisted: Boolean(booking.hasConflict),
   };
 };
+
+/** Explicit date navigation must release any notification's booking target. */
+export const buildCalendarTodaySearchParams = (
+  current: URLSearchParams,
+  today: string,
+): URLSearchParams => {
+  const next = new URLSearchParams(current);
+  next.delete('bookingId');
+  next.set('date', today);
+  return next;
+};
