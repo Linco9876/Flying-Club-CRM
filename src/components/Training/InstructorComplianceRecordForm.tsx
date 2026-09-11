@@ -276,8 +276,8 @@ export const InstructorComplianceRecordForm: React.FC<
       toast.error("Confirm the completed renewal was supplied to RAAus");
       return;
     }
-    if (unsatisfactoryCount === 0 && flightMinutes < 60) {
-      toast.error("A satisfactory RAAus instructor check needs at least 60 minutes in flight");
+    if (checkType !== "sp_check" && unsatisfactoryCount === 0 && flightMinutes < 60) {
+      toast.error("A satisfactory RAAus instructor renewal needs at least 60 minutes in flight");
       return;
     }
     if (unsatisfactoryCount > 0 && !developmentPlan.trim()) {
