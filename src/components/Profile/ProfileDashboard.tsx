@@ -791,7 +791,7 @@ export const ProfileDashboard: React.FC = () => {
           <div className="relative mt-5 grid gap-2 sm:grid-cols-2 lg:max-w-xl">
             <button
               type="button"
-              onClick={() => navigate('/my-logbook')}
+              onClick={() => navigate('/pilot-file?tab=logbook')}
               className="rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-left backdrop-blur-sm hover:bg-black/30"
             >
               <span className="text-xs font-medium uppercase tracking-wide text-slate-300">Logged flying</span>
@@ -1052,7 +1052,7 @@ export const ProfileDashboard: React.FC = () => {
                     <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Your recorded experience at a glance.</p>
                   </div>
                 </div>
-                <button type="button" onClick={() => navigate('/my-logbook')} className="text-sm font-semibold text-blue-700 dark:text-blue-300">
+                <button type="button" onClick={() => navigate('/pilot-file?tab=logbook')} className="text-sm font-semibold text-blue-700 dark:text-blue-300">
                   Logbook
                 </button>
               </div>

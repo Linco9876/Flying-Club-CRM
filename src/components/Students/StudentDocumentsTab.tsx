@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Calendar, CheckCircle2, Download, Edit3, FileText, Loader2, Plus, Save, Trash2, Upload, User, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
@@ -60,17 +60,6 @@ export const StudentDocumentsTab: React.FC<StudentDocumentsTabProps> = ({ studen
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const canManage = Boolean(user && (student.id === user.id || hasAnyRole(user, ['admin', 'instructor', 'senior_instructor'])));
-
-  const credentialSummary = useMemo(() => [
-    ['RAAus Membership', student.licenceExpiry?.toLocaleDateString() || 'Expiry not recorded'],
-    ['Operating Medical', student.medicalType
-      ? student.medicalValidityMode === 'until_age'
-        ? `${student.medicalType} · current until age ${student.medicalValidUntilAge || 'not configured'}`
-        : `${student.medicalType} · ${student.medicalExpiry?.toLocaleDateString() || 'expiry not recorded'}`
-      : 'Not selected'],
-    ['CASA / RAAus ID', student.casaId || student.raausId || 'ID not recorded'],
-    ['Emergency Contact', student.emergencyContact ? `${student.emergencyContact.name} recorded` : 'Missing'],
-  ], [student]);
 
   const closeUploadForm = () => {
     setShowUploadForm(false);
@@ -223,13 +212,13 @@ export const StudentDocumentsTab: React.FC<StudentDocumentsTabProps> = ({ studen
   };
 
   return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-6">
+    <div className="space-y-5">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-gray-900 flex items-center">
               <FileText className="h-5 w-5 mr-2" />
-              Documents & Credentials
+              Documents
             </h2>
             <p className="text-sm text-gray-500 mt-1">Upload licence, medical, RAAus membership, ID, consent and club paperwork for this member file.</p>
           </div>
@@ -246,19 +235,10 @@ export const StudentDocumentsTab: React.FC<StudentDocumentsTabProps> = ({ studen
             </button>
           )}
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-          {credentialSummary.map(([title, detail]) => (
-            <div key={title} className="border border-gray-200 rounded-lg p-4">
-              <p className="text-sm font-semibold text-gray-900">{title}</p>
-              <p className="text-sm text-gray-500 mt-1">{detail}</p>
-            </div>
-          ))}
-        </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow-md border border-gray-200">
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+        <div className="px-4 py-4 sm:px-5 border-b border-gray-200 flex items-center justify-between">
           <div>
             <h3 className="text-sm font-semibold text-gray-900">Uploaded Documents</h3>
             <p className="text-xs text-gray-500">{documents.length} document{documents.length === 1 ? '' : 's'} on file</p>

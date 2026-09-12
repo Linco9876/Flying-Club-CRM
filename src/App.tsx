@@ -38,7 +38,6 @@ const ProfileDashboard = lazy(() => import('./components/Profile/ProfileDashboar
 const Calendar = lazy(() => import('./components/Calendar/Calendar').then(module => ({ default: module.Calendar })));
 const StudentList = lazy(() => import('./components/Students/StudentList').then(module => ({ default: module.StudentList })));
 const StudentProfilePage = lazy(() => loadStudentProfileModule().then(module => ({ default: module.StudentProfilePage })));
-const MyLogbookPage = lazy(() => import('./components/Students/MyLogbookPage').then(module => ({ default: module.MyLogbookPage })));
 const AircraftList = lazy(() => import('./components/Aircraft/AircraftList').then(module => ({ default: module.AircraftList })));
 const AircraftFlightLogs = lazy(() => import('./components/Aircraft/AircraftFlightLogs').then(module => ({ default: module.AircraftFlightLogs })));
 const AircraftProfilePage = lazy(() => import('./components/Aircraft/AircraftProfilePage').then(module => ({ default: module.AircraftProfilePage })));
@@ -1303,13 +1302,13 @@ const AuthenticatedApp: React.FC<{
       case 'pilot-file':
         return <StudentProfileScreen portalSection="training" />;
       case 'documents':
-        return <StudentProfileScreen portalSection="documents" />;
+        return <Navigate to="/pilot-file?tab=documents" replace />;
       case 'outstanding-records':
         return <OutstandingRecordsTab />;
       case 'profile':
         return <ProfileDashboard />;
       case 'mylogbook':
-        return <MyLogbookPage />;
+        return <Navigate to="/pilot-file?tab=logbook" replace />;
       case 'settings':
         return <SettingsDashboard />;
       default:

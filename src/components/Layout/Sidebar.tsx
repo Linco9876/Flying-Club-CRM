@@ -12,7 +12,6 @@ import {
   AlertCircle,
   DollarSign,
   Gift,
-  FolderOpen,
   GraduationCap,
   X,
   ChevronsLeft,
@@ -55,9 +54,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
     ...(isStaffUser ? [{ id: 'training', label: 'Training Courses', icon: BookOpen, roles: ['admin', 'senior_instructor', 'instructor'] }] : []),
     { id: 'learning-centre', label: 'Learning Centre', icon: GraduationCap, roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'] },
     { id: 'pilot-file', label: 'Pilot File', icon: FileText, roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'] },
-    { id: 'documents', label: 'Documents', icon: FolderOpen, roles: ['pilot', 'student'] },
     { id: 'outstanding-records', label: 'Outstanding Records', icon: AlertCircle, roles: ['admin', 'cfi', 'senior_instructor', 'instructor'] },
-    { id: 'mylogbook', label: 'My Logbook', icon: BookOpen, roles: ['instructor', 'admin', 'pilot', 'student'] },
     { id: 'financial-dashboard', label: 'Financial Dashboard', icon: DollarSign, roles: ['admin'] },
     { id: 'gift-vouchers', label: 'Gift Vouchers', icon: Gift, roles: ['admin'] },
     { id: 'reports', label: 'Reports', icon: FileText, roles: ['admin', 'instructor'] },
@@ -100,13 +97,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
   const mobilePrimaryItems = useMemo(() => {
     const firstAvailable = (...ids: string[]) => ids.find(id => filteredMenuItems.some(item => item.id === id));
     const contextualPrimary = firstAvailable('students', 'aircraft', 'membership');
-    const contextualSecondary = firstAvailable('duty', 'mylogbook', 'training', 'learning-centre');
+    const contextualSecondary = firstAvailable('duty', 'pilot-file', 'training', 'learning-centre');
     const mobileItem = (id?: string) => {
       const item = id ? filteredMenuItems.find(candidate => candidate.id === id) : undefined;
       if (!item) return undefined;
       const compactLabels: Record<string, string> = {
         membership: 'Membership',
-        mylogbook: 'Logbook',
+        'pilot-file': 'Pilot File',
         training: 'Training',
         'learning-centre': 'Learn',
       };
