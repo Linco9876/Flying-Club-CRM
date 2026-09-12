@@ -30,7 +30,7 @@ import { getConsecutivePassReadiness, getDefaultTrainingDeficiencyStage, getTrai
 import { hasRole } from '../../utils/rbac';
 import { InstructorComplianceRecordForm } from './InstructorComplianceRecordForm';
 import { useStudentCourseEnrolments } from '../../hooks/useStudentCourseEnrolments';
-import { useFlightReviews } from '../../hooks/useFlightReviews';
+import { useFlightReviews, type FlightReviewRecord } from '../../hooks/useFlightReviews';
 import { FlightReviewRecordEditor } from './FlightReviewWorkspace';
 import { StudentFileLink } from '../Students/StudentFileLink';
 import { userCanConductReview } from '../../utils/reviewerRoleRules';
@@ -299,6 +299,11 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
     candidateId: activeStudentId,
     includeRecords: true,
   });
+
+  const reviewDrafts = useFlightReviews({ outstandingSummariesOnly: true });
+  const refreshReviewDrafts = reviewDrafts.refetch;
+  useEffect(() => { void refreshReviewDrafts(); }, [flightReviews.records, refreshReviewDrafts]);
+  const [attachingReviewId, setAttachingReviewId] = useState<string | null>(null);
 
   const selectedCourse = useMemo(
     () => courses.find(c => c.id === form.courseId) ?? null,
@@ -784,7 +789,7 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
   }, [prefillDraftStudentFromBooking, showDraftComposer]);
   const draftRecords = useMemo(
     () => trainingRecords
-      .filter(record => record.status === 'draft' && (canViewAllInstructorRecords || record.instructorId === user?.id))
+      .filter(record => record.status === 'draft' && !record.flightLogId && (canViewAllInstructorRecords || record.instructorId === user?.id))
       .sort((a, b) => b.date.getTime() - a.date.getTime()),
     [canViewAllInstructorRecords, trainingRecords, user?.id]
   );
@@ -982,6 +987,28 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
       setSyncingOfflineQueue(false);
     }
   }, [clearDraft, refetch, submitQueuedJob]);
+
+  async function attachReviewDraft(log: OutstandingFlightLog, review: FlightReviewRecord) {
+    if (attachingReviewId) return;
+    setAttachingReviewId(review.id);
+    try {
+      await reviewDrafts.attachDraft(review.id, log.student_id, {
+        flightLogId: log.id,
+        reviewDate: format(new Date(log.start_time), 'yyyy-MM-dd'),
+        aircraftId: log.aircraft_id || undefined,
+        aircraftType: log.aircraft_type || '',
+        registration: log.aircraft_registration || '',
+        flightMinutes: Math.max(0, Math.round(((log.dual_time ?? 0) + (log.solo_time ?? 0)) * 60)),
+      });
+      openLog(log);
+      setRecordEntryType('review_test');
+      setActiveReviewRecordId(review.id);
+      await flightReviews.refetch();
+      toast.success('Review draft attached. Check the flight details and complete the assessment.');
+    } catch (error) {
+      toast.error((error as { message?: string })?.message || 'Could not attach review draft');
+    } finally { setAttachingReviewId(null); }
+  }
 
   function openLog(log: OutstandingFlightLog, draftRecord?: typeof trainingRecords[number]) {
     toast.remove();
@@ -2008,6 +2035,7 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
         </div>
         )}
 
+        {reviewDrafts.error && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Review drafts could not be loaded. <button type="button" className="underline" onClick={() => void reviewDrafts.refetch()}>Retry</button></p>}
         {queueView !== 'dismissed' && visibleOutstandingLogs.length === 0 ? (
           <div className="bg-white rounded-xl border border-gray-200 p-8 text-center dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-12">
             <CheckCircle className="h-14 w-14 text-emerald-400 mx-auto mb-3" />
@@ -2026,7 +2054,8 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
             const expanded = expandedLogs.has(log.id);
             const flightDate = new Date(log.start_time);
             const durationH = ((log.dual_time ?? 0) + (log.solo_time ?? 0)).toFixed(1);
-            const matchingDrafts = draftRecordsByStudent.get(log.student_id) ?? [];
+            const matchingReviews = reviewDrafts.records.filter(review => review.candidateId === log.student_id && !review.flightLogId && userCanConductReview(user, review.templateSnapshot.review_configuration?.allowed_reviewer_roles));
+            const matchingDrafts = (draftRecordsByStudent.get(log.student_id) ?? []).filter(record => !reviewDrafts.records.some(review => review.sourceTrainingRecordId === record.id));
             const isMine = log.instructor_id === user?.id;
             const candidate = users.find(member => member.id === log.student_id);
             const isInstructorCandidate = Boolean(
@@ -2123,6 +2152,17 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
                       <ChevronRight className="h-4 w-4" />
                     </button>
                   </div>
+                  {matchingReviews.length > 0 && (
+                    <div className="mt-3 space-y-2 rounded-lg border border-blue-100 bg-blue-50 p-3 dark:border-blue-400/20 dark:bg-blue-950/20">
+                      <p className="text-xs font-semibold text-blue-900 dark:text-blue-100">Review / test drafts available for this member</p>
+                      {matchingReviews.map(review => (
+                        <button key={review.id} type="button" disabled={Boolean(attachingReviewId)} onClick={() => void attachReviewDraft(log, review)} className="flex w-full min-w-0 flex-wrap items-center justify-between gap-2 rounded-md bg-white px-3 py-3 text-left text-xs text-blue-950 ring-1 ring-blue-100 hover:bg-blue-100 disabled:opacity-50 dark:bg-[#111827] dark:text-blue-100 dark:ring-blue-400/20">
+                          <span className="min-w-0"><span className="block font-semibold">{review.templateSnapshot.title || review.reviewType}</span><span className="mt-1 block opacity-75">Draft · {format(new Date(review.createdAt), 'd MMM yyyy')} · {users.find(member => member.id === review.reviewerUserId)?.name || review.externalExaminerName || 'Reviewer'}</span></span>
+                          <span className="inline-flex shrink-0 items-center gap-1 font-semibold">{attachingReviewId === review.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LinkIcon className="h-3.5 w-3.5" />}Attach draft</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   {matchingDrafts.length > 0 && (
                     <div className="mt-3 space-y-2 rounded-lg border border-blue-100 bg-blue-50 p-3 dark:border-blue-400/20 dark:bg-blue-950/20">
                       <p className="text-xs font-semibold text-blue-900 dark:text-blue-100">

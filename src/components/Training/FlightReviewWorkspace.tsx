@@ -186,7 +186,6 @@ export const FlightReviewRecordEditor: React.FC<
   const autoPrefills = useRef<Record<string, string>>({});
   const [contextError, setContextError] = useState('');
   const [detailsConfirmed, setDetailsConfirmed] = useState(false);
-  const [attachingFlight, setAttachingFlight] = useState(false);
   const linkedFlight = providedLinkedFlight || context?.flights.find(flight => flight.id === record.flightLogId);
   const submittedRpc = record.reviewType === 'raaus_rpc_flight_test' && isFinalFlightReviewOutcome(record.status);
 
@@ -593,22 +592,13 @@ export const FlightReviewRecordEditor: React.FC<
                 <div className="mt-4 space-y-3">
                   {contextError && <p role="alert" className="text-sm text-red-700 dark:text-red-300">{contextError}</p>}
                   {submittedRpc && <p className="rounded-lg bg-slate-100 p-3 text-sm dark:bg-slate-800">Submitted assessment — preserved in history. Start a new attempt from Reviews &amp; Tests for any further assessment.</p>}
-                  {!isLinkedToLoggedFlight ? <p className="text-sm text-gray-600 dark:text-gray-300">Prepare and save the assessment now. Date, flight time and aircraft will come from the test flight log when attached.</p> : (
+                  {!isLinkedToLoggedFlight ? <p className="text-sm text-gray-600 dark:text-gray-300">Prepare and save the assessment now. Date, flight time and aircraft will come from the test flight log when attached from Outstanding Records.</p> : (
                     <dl className="grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-900">
                       <div><dt className="text-xs text-slate-500">Test date</dt><dd className="mt-1 font-semibold">{linkedFlight?.reviewDate || record.reviewDate}</dd></div>
                       <div><dt className="text-xs text-slate-500">Flight time</dt><dd className="mt-1 font-semibold">{linkedFlight?.flightMinutes ?? record.flightMinutes} min</dd></div>
                       <div className="col-span-2"><dt className="text-xs text-slate-500">Aircraft</dt><dd className="mt-1 font-semibold">{linkedFlight?.registration || record.registration} · {linkedFlight?.aircraftType || record.aircraftType}</dd></div>
                     </dl>
                   )}
-                  {!providedLinkedFlight && !submittedRpc && <label className="block text-sm font-medium">Attach test flight log
-                    <select aria-label="Attach test flight log" className={inputClass} value={record.flightLogId || ''} disabled={attachingFlight || !context} onChange={async event => {
-                      if (!event.target.value) return;
-                      setAttachingFlight(true);
-                      try { await onUpdateRecord(record.id, { flightLogId: event.target.value }); }
-                      catch (error) { toast.error(flightReviewErrorMessage(error, 'Could not attach this flight')); }
-                      finally { setAttachingFlight(false); }
-                    }}><option value="">Choose the flight after it has been logged</option>{context?.flights.map(flight => <option key={flight.id} value={flight.id}>{flight.reviewDate} · {flight.registration} · {flight.flightMinutes} min</option>)}</select>
-                  </label>}
                   {record.retestOfId && <p className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-100">Partial retest{context?.retestDeadline ? ` — test must be flown by ${context.retestDeadline}` : ''}. Previously satisfactory components are retained in the checklist above. Assess the outstanding items and complete the new test's completion steps. After this date, start a full test.</p>}
                 </div>
               ) : (<>
@@ -960,7 +950,7 @@ export const FlightReviewRecordEditor: React.FC<
                               key={item.id}
                               className="rounded-lg border border-gray-200 bg-white p-4 dark:border-[#343b46] dark:bg-[#171a21]"
                             >
-                              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_200px] lg:items-start">
                                 <div className="min-w-0">
                                   <p className="text-xs font-bold uppercase text-gray-500 dark:text-gray-400">
                                     {item.code}
@@ -977,7 +967,10 @@ export const FlightReviewRecordEditor: React.FC<
                                     </p>
                                   )}
                                 </div>
+                                <label className="block min-w-0 text-sm font-medium">
+                                  <span className="mb-2 block">Assessment result</span>
                                 <SearchableSelect
+                                  aria-label={`Assessment result — ${item.code}`}
                                   value={item.result}
                                   disabled={Boolean(item.carriedFromItemId)}
                                   onChange={async (event) => {
@@ -994,7 +987,7 @@ export const FlightReviewRecordEditor: React.FC<
                                       );
                                     }
                                   }}
-                                  className="min-h-10 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900 dark:border-[#39414d] dark:bg-[#11141a] dark:text-gray-100"
+                                  className="w-full min-h-11 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900 dark:border-[#39414d] dark:bg-[#11141a] dark:text-gray-100"
                                 >
                                   <option value="not_assessed">
                                     Not assessed
@@ -1011,6 +1004,7 @@ export const FlightReviewRecordEditor: React.FC<
                                     </option>
                                   )}
                                 </SearchableSelect>
+                                </label>
                               </div>
                               {item.carriedFromItemId && <p className="mt-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300">Satisfactory in the previous attempt — retained with its original evidence.</p>}
                               <textarea
