@@ -1,3 +1,4 @@
+import { DeficiencySuggestions } from './DeficiencySuggestions';
 import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { ClipboardList, CheckCircle, XCircle, ChevronRight, Plane, Clock, BookOpen, AlertCircle, ChevronDown, ChevronUp, Sparkles, RotateCcw, Loader2, Save, Link as LinkIcon, Trash2, Undo2, Award, ShieldCheck, Target, ArrowRight, Plus, ShieldAlert } from 'lucide-react';
@@ -2775,6 +2776,17 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
                     </div>
 
                     <div className="space-y-4 p-4 sm:p-5">
+                      <DeficiencySuggestions
+                        key={`${activeLog?.id || draftSession?.id || activeDraftRecord?.id}-${selectedCourse.id}-${selectedLesson?.id}`}
+                        comments={[form.flightComments, form.formalBriefing ? form.briefingComments : ''].filter(Boolean).join('\n')}
+                        openDeficiencies={selectedCourseOpenDeficiencies.map(({ id, description }) => ({ id, description }))}
+                        pendingDescriptions={(form.newDeficiencies ?? []).map(item => item.description)}
+                        resolvedIds={form.resolvedDeficiencyIds ?? []}
+                        defaultStage={deficiencyStage}
+                        disabled={!isOnline || deficienciesLoading || Boolean(deficienciesError) || submitting}
+                        onAdd={(description, stage) => setForm(current => ({ ...current, newDeficiencies: [...(current.newDeficiencies ?? []), { clientReference: crypto.randomUUID(), description, stage }] }))}
+                        onResolve={(id, evidence) => setForm(current => ({ ...current, resolvedDeficiencyIds: Array.from(new Set([...(current.resolvedDeficiencyIds ?? []), id])), deficiencyResolutionNote: [current.deficiencyResolutionNote, evidence].filter(Boolean).join('\n') }))}
+                      />
                       {selectedLessonBlockingDeficiencies.length > 0 && (
                         <div className="rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-400/30 dark:bg-red-950/30 dark:text-red-100">
                           <p className="font-bold">This {selectedLessonDeficiencyGate === 'pre_solo' ? 'solo lesson' : 'pilot test'} cannot be submitted yet.</p>
