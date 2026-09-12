@@ -90,7 +90,7 @@ const normaliseRoles = (...values) =>
     .filter(Boolean)
     .map((role) => String(role).trim().toLowerCase());
 
-const getAuthenticatedStaff = async (request, env) => {
+export const getAuthenticatedStaff = async (request, env) => {
   const token = getBearerToken(request);
   if (!token) {
     return {
