@@ -1,5 +1,8 @@
 export type StudentProfilePortalSection = 'training' | 'documents' | undefined;
 
+export const pilotFilePrimaryTab = (tab: string | null) =>
+  tab === 'documents' || tab === 'logbook' ? tab : 'training';
+
 export const shouldUseTrainingSubtab = ({
   tabId,
   activeTab,

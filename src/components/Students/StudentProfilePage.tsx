@@ -44,7 +44,7 @@ import { StudentRecordImportModal } from './StudentRecordImportModal';
 import { StudentProfileSkeleton } from './StudentProfileSkeleton';
 import { StudentForm } from './StudentForm';
 import { getStudentProfileLoadPlan } from '../../utils/studentProfileLoading';
-import { shouldUseTrainingSubtab } from '../../utils/studentProfileTabNavigation';
+import { pilotFilePrimaryTab, shouldUseTrainingSubtab } from '../../utils/studentProfileTabNavigation';
 import { useFinancialProviders } from '../../context/financialProviderState';
 import { useAdminPasswordReset } from '../../hooks/useAdminPasswordReset';
 import { useAdminMfaReset } from '../../hooks/useAdminMfaReset';
@@ -394,7 +394,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   const requestedTrainingLessonId = searchParams.get('lessonId');
   const [activeTab, setActiveTab] = useState(() => {
     if (portalSection === 'documents') return 'documents';
-    if (portalSection === 'training') return 'training';
+    if (portalSection === 'training') return pilotFilePrimaryTab(searchParams.get('tab'));
     return searchParams.get('tab') || (location.pathname.startsWith('/training') ? 'training' : 'profile');
   });
   const [trainingSubtab, setTrainingSubtab] = useState<'training' | 'reviews' | 'exams' | 'courses'>(() => {
@@ -640,7 +640,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
       return;
     }
     if (portalSection === 'training') {
-      setActiveTab('training');
+      setActiveTab(pilotFilePrimaryTab(searchParams.get('tab')));
       const subtab = searchParams.get('subtab');
       if (subtab === 'training' || subtab === 'reviews' || subtab === 'exams' || subtab === 'courses') {
         setTrainingSubtab(subtab);
@@ -656,6 +656,21 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   }, [portalSection, searchParams]);
 
   const handleTabChange = (tabId: string) => {
+    if (portalSection === 'training') {
+      const primaryTab = pilotFilePrimaryTab(tabId);
+      const nextParams = new URLSearchParams(searchParams);
+      setActiveTab(primaryTab);
+      if (primaryTab === 'training') {
+        setTrainingSubtab(tabId as 'training' | 'reviews' | 'exams' | 'courses');
+        nextParams.delete('tab');
+        nextParams.set('subtab', tabId);
+      } else {
+        nextParams.set('tab', primaryTab);
+        nextParams.delete('subtab');
+      }
+      setSearchParams(nextParams);
+      return;
+    }
     if (shouldUseTrainingSubtab({
       tabId,
       activeTab,
@@ -2077,7 +2092,8 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
           { id: 'courses', label: 'Courses' },
         ]
       : []),
-  ], [isOwnStudentPortal]);
+    ...(portalSection === 'training' ? [{ id: 'documents', label: 'Documents' }, { id: 'logbook', label: 'Logbook' }] : []),
+  ], [isOwnStudentPortal, portalSection]);
 
   useLatestEffect(() => {
     if (isOwnStudentPortal && portalSection) return;
@@ -2504,15 +2520,16 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
         </div>
       ) : null}
 
-      {activeTab === 'training' ? (
-        <div className="mb-5 flex flex-wrap gap-2 rounded-xl border border-gray-200 bg-white p-2 shadow-sm">
+      {activeTab === 'training' || portalSection === 'training' ? (
+        <div aria-label="Pilot file sections" className="mb-5 flex flex-wrap gap-2 rounded-xl border border-gray-200 bg-white p-2 shadow-sm">
           {trainingSubtabs.map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => handleTabChange(tab.id)}
+              aria-current={(activeTab === 'training' ? trainingSubtab : activeTab) === tab.id ? 'page' : undefined}
               className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
-                trainingSubtab === tab.id
+                (activeTab === 'training' ? trainingSubtab : activeTab) === tab.id
                   ? 'bg-blue-600 text-white shadow-sm'
                   : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
               }`}

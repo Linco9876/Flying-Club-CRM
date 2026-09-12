@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { shouldUseTrainingSubtab } from './studentProfileTabNavigation.ts';
+import { pilotFilePrimaryTab, shouldUseTrainingSubtab } from './studentProfileTabNavigation.ts';
+
+test('Pilot File deep links retain documents and logbook while training remains the default', () => {
+  assert.equal(pilotFilePrimaryTab('documents'), 'documents');
+  assert.equal(pilotFilePrimaryTab('logbook'), 'logbook');
+  for (const tab of [null, 'training', 'reviews', 'exams', 'courses', 'unknown']) {
+    assert.equal(pilotFilePrimaryTab(tab), 'training');
+  }
+});
 
 test('staff Exams and Courses are independent profile tabs after Pilot File', () => {
   for (const tabId of ['exams', 'courses']) {
