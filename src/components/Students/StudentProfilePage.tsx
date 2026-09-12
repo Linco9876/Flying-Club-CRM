@@ -4046,6 +4046,12 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                     const acknowledgedDetailsExpanded = expandedAcknowledgedRecordIds.has(record.id);
                     const requiresAcknowledgement = recordRequiresAcknowledgement(record);
                     const recordCourse = trainingCourses.find(c => c.id === record.courseId);
+                    const openLinkedReview = record.flightReviewRecordId ? () => {
+                          setActiveTab('training'); setTrainingSubtab('reviews');
+                          const next = new URLSearchParams(searchParams); next.set('subtab', 'reviews'); next.set('reviewId', record.flightReviewRecordId!);
+                          if (portalSection === 'training') next.delete('tab'); else next.set('tab', 'training');
+                          setSearchParams(next);
+                        } : undefined;
                     const isRequestedTrainingRecord = record.id === requestedTrainingRecordId
                       || (
                         !requestedTrainingRecordId
@@ -4070,6 +4076,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                             lessonName={lessonTitle}
                             onExpand={studentIsViewingOwnFile ? undefined : () => setAcknowledgedRecordExpanded(record.id, true)}
                           />
+                          {openLinkedReview && <button type="button" onClick={openLinkedReview} className="mt-2 rounded-lg border border-blue-200 px-3 py-2 text-sm font-semibold text-blue-700 dark:text-blue-300">View RPC test</button>}
                         </div>
                       );
                     }
@@ -4132,12 +4139,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                         assessments={assessedCriteria}
                         matrixAssessment={matrixAssessment}
                         highlighted={isRequestedTrainingRecord}
-                        onOpenReview={record.flightReviewRecordId ? () => {
-                          setActiveTab('training'); setTrainingSubtab('reviews');
-                          const next = new URLSearchParams(searchParams); next.set('subtab', 'reviews'); next.set('reviewId', record.flightReviewRecordId!);
-                          if (portalSection === 'training') next.delete('tab'); else next.set('tab', 'training');
-                          setSearchParams(next);
-                        } : undefined}
+                        onOpenReview={openLinkedReview}
                         onEdit={canEditRecord(record) ? () => openTrainingRecordEditor(record) : undefined}
                         onReassign={!record.flightReviewRecordId && canReassignRecord(record) ? () => setReassigningTrainingRecord(record) : undefined}
                         onDeleteDraft={record.status === 'draft' && canEditRecord(record) ? () => void handleDeleteDraftRecord(record) : undefined}
