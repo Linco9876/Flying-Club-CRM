@@ -70,6 +70,7 @@
     "test:reviewer-roles": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/reviewerRoleRules.test.ts",
     "test:review-findings": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/flightReviewFindings.test.ts",
     "test:pilot-review-currency": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/pilotReviewCurrency.test.ts src/utils/courseFlightTestCompletion.test.ts",
+    "test:rpc-review": "node --experimental-strip-types --test src/utils/rpcReviewWorkflow.test.ts",
     "test:draft-review-linking": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/draftReviewLinking.test.ts",
     "test:training-record-edit": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/trainingRecordEdit.test.ts src/utils/trainingRecordReassignment.test.ts src/utils/trainingSettingsRules.test.ts",
     "test:training-record-background": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/trainingRecordBackgroundQueue.test.ts",

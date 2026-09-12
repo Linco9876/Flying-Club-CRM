@@ -550,7 +550,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     [trainingCourses],
   );
   const recordRequiresAcknowledgement = useCallback((record: TrainingRecord) => (
-    record.courseId ? (courseAcknowledgementRequirements.get(record.courseId) ?? true) : true
+    !record.flightReviewRecordId && (record.courseId ? (courseAcknowledgementRequirements.get(record.courseId) ?? true) : true)
   ), [courseAcknowledgementRequirements]);
   const studentIsViewingOwnFile = user?.id === studentId
     && !hasAnyRole(user, ['admin', 'cfi', 'instructor', 'senior_instructor']);
@@ -1489,7 +1489,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
 
   const canAddRecord = hasAnyRole(user, ['admin', 'instructor', 'senior_instructor']);
   const canEditRecord = (record: TrainingRecord) => {
-    if (!user) return false;
+    if (!user || record.flightReviewRecordId) return false;
     return canStaffEditTrainingRecord({
       isAdmin: hasAnyRole(user, ['admin']),
       isRecordInstructor: hasAnyRole(user, ['instructor', 'senior_instructor']) && record.instructorId === user.id,
@@ -1645,6 +1645,10 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
 
   const openTrainingRecordEditor = (record: TrainingRecord) => {
     if (!canEditRecord(record)) return;
+    if (record.status === 'draft' && getRecordLesson(record)?.flightReviewTemplateId) {
+      navigate('/outstanding-records');
+      return;
+    }
     setEditingTrainingRecord(record);
     setCommentCleanupOriginal(null);
     setTrainingEditForm({
@@ -4128,8 +4132,14 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                         assessments={assessedCriteria}
                         matrixAssessment={matrixAssessment}
                         highlighted={isRequestedTrainingRecord}
+                        onOpenReview={record.flightReviewRecordId ? () => {
+                          setActiveTab('training'); setTrainingSubtab('reviews');
+                          const next = new URLSearchParams(searchParams); next.set('subtab', 'reviews'); next.set('reviewId', record.flightReviewRecordId!);
+                          if (portalSection === 'training') next.delete('tab'); else next.set('tab', 'training');
+                          setSearchParams(next);
+                        } : undefined}
                         onEdit={canEditRecord(record) ? () => openTrainingRecordEditor(record) : undefined}
-                        onReassign={canReassignRecord(record) ? () => setReassigningTrainingRecord(record) : undefined}
+                        onReassign={!record.flightReviewRecordId && canReassignRecord(record) ? () => setReassigningTrainingRecord(record) : undefined}
                         onDeleteDraft={record.status === 'draft' && canEditRecord(record) ? () => void handleDeleteDraftRecord(record) : undefined}
                         deletingDraft={deletingDraftId !== null}
                         onMinimise={record.studentAck ? () => setAcknowledgedRecordExpanded(record.id, false) : undefined}

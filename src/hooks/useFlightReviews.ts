@@ -25,6 +25,7 @@ export type FlightReviewAttachmentCategory =
   | "other";
 
 export interface FlightReviewAssessmentDetails {
+  detailsConfirmed?: boolean;
   applicantMembershipNumber?: string;
   applicantMembershipExpiry?: string;
   examinerMembershipNumber?: string;
@@ -59,6 +60,8 @@ export interface FlightReviewRecord {
     course_purpose?: CoursePurpose;
     review_configuration?: FlightReviewConfiguration;
   };
+  retestOfId?: string;
+  retestRootId?: string;
   sourceTrainingRecordId?: string;
   candidateId: string;
   reviewerUserId?: string;
@@ -113,6 +116,7 @@ export interface FlightReviewRecordItem {
   result: FlightReviewItemResult;
   notes: string;
   sortOrder: number;
+  carriedFromItemId?: string;
 }
 
 export interface FlightReviewAttachment {
@@ -200,6 +204,8 @@ const mapRecord = (row: Record<string, unknown>): FlightReviewRecord => ({
     (row.template_snapshot as FlightReviewRecord["templateSnapshot"]) || {},
   sourceTrainingRecordId:
     (row.source_training_record_id as string) || undefined,
+  retestOfId: row.retest_of_id as string || undefined,
+  retestRootId: row.retest_root_id as string || undefined,
   candidateId: row.candidate_id as string,
   reviewerUserId: (row.reviewer_user_id as string) || undefined,
   externalExaminerName: (row.external_examiner_name as string) || undefined,
@@ -257,6 +263,7 @@ const mapItem = (row: Record<string, unknown>): FlightReviewRecordItem => ({
   result: (row.result as FlightReviewItemResult) || "not_assessed",
   notes: (row.notes as string) || "",
   sortOrder: Number(row.sort_order || 0),
+  carriedFromItemId: row.carried_from_item_id as string || undefined,
 });
 
 const mapAttachment = (
@@ -606,6 +613,13 @@ export const useFlightReviews = (
     [refetch, templates],
   );
 
+  const startRetest = useCallback(async (previousId: string) => {
+    const { data, error } = await supabase.rpc('start_rpc_retest', { p_previous_id: previousId });
+    if (error) throw error;
+    await refetch();
+    return data as string;
+  }, [refetch]);
+
   const updateReview = useCallback(
     async (id: string, input: RecordUpdate) => {
       const result = await supabase
@@ -728,6 +742,7 @@ export const useFlightReviews = (
     refetch,
     saveTemplate,
     startReview,
+    startRetest,
     updateReview,
     updateItem,
     uploadAttachment,
