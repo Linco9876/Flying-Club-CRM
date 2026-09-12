@@ -1219,6 +1219,10 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
     setCommentCleanupOriginal(null);
     setProceedWithCarryForward(false);
     setStep('form');
+    if (lesson?.flightReviewTemplateId) {
+      setRecordEntryType('review_test');
+      void handleStartReview(lesson.flightReviewTemplateId);
+    }
   }
 
   function handleSelectRecordType(type: RecordEntryType) {
@@ -1261,7 +1265,7 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
 
   async function handleStartReview(templateId: string) {
     if (!activeLog || !activeStudentId || !user?.id) return;
-    const existing = reviewForActiveFlight;
+    const existing = reviewForActiveFlight?.templateCourseId === templateId ? reviewForActiveFlight : null;
     if (existing) {
       if (!userCanConductReview(
         user,
@@ -2619,7 +2623,14 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
               )}
 
               {/* Step: form */}
-              {step === 'form' && selectedCourse && selectedLesson && (
+              {step === 'form' && selectedLesson?.flightReviewTemplateId && (
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-5">
+                  <h3 className="font-semibold text-blue-950">RAAus RPC Flight Test</h3>
+                  <p className="mt-2 text-sm text-blue-900">This lesson uses the RPC review form. Its submitted outcome will appear in this course and Reviews &amp; Tests.</p>
+                  <button type="button" disabled={startingReview} onClick={() => { setRecordEntryType('review_test'); void handleStartReview(selectedLesson.flightReviewTemplateId!); }} className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white">Open RPC flight test form</button>
+                </div>
+              )}
+              {step === 'form' && selectedCourse && selectedLesson && !selectedLesson.flightReviewTemplateId && (
                 <div className="space-y-6">
                   <button
                     onClick={() => setStep('lesson')}
@@ -3387,6 +3398,7 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
       </div>
       {activeReviewRecord && activeLog && user && canConductActiveReview && (
         <FlightReviewRecordEditor
+          key={activeReviewRecord.id}
           record={activeReviewRecord}
           items={flightReviews.itemsByRecord.get(activeReviewRecord.id) ?? []}
           attachments={flightReviews.attachmentsByRecord.get(activeReviewRecord.id) ?? []}

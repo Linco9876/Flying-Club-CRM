@@ -549,6 +549,7 @@ export interface Endorsement {
 }
 
 export interface TrainingRecord {
+  flightReviewRecordId?: string;
   id: string;
   studentId: string;
   bookingId?: string;
@@ -767,6 +768,7 @@ export interface TrainingLesson {
   /** Map of course criterion id → whether this lesson requires two consecutive passing records before advancing */
   passMarkRepeatRequirements?: Record<string, boolean>;
   isFlightTest?: boolean;
+  flightReviewTemplateId?: string;
 }
 
 export type CoursePurpose = 'training' | 'flight_review' | 'flight_test' | 'proficiency_check' | 'instructor_compliance';

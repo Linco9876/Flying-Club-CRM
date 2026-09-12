@@ -155,6 +155,7 @@ function dbLessonToLesson(row: Record<string, unknown>): TrainingLesson {
     passMarks: (row.pass_marks as Record<string, string>) ?? {},
     passMarkRepeatRequirements: (row.pass_mark_repeat_requirements as Record<string, boolean>) ?? {},
     isFlightTest: Boolean(row.is_flight_test),
+    flightReviewTemplateId: row.flight_review_template_id as string || undefined,
   };
 }
 
@@ -225,6 +226,7 @@ function lessonToDbRow(lesson: TrainingLesson, courseId: string, sortOrder: numb
     pass_marks: lesson.passMarks ?? {},
     pass_mark_repeat_requirements: lesson.passMarkRepeatRequirements ?? {},
     is_flight_test: lesson.isFlightTest ?? false,
+    flight_review_template_id: lesson.flightReviewTemplateId || null,
   };
 }
 

@@ -1,5 +1,6 @@
+import { useSearchParams } from 'react-router-dom';
 import { SearchableSelect } from '../common/SearchableSelect';
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   CalendarClock,
   CheckCircle2,
@@ -60,11 +61,16 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
   studentName,
 }) => {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
   const { users } = useUsers();
   const { settings: trainingSettings } = useTrainingSettings();
   const reviews = useFlightReviews({ candidateId: studentId });
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
+  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(searchParams.get('reviewId'));
+  useEffect(() => {
+    const id = searchParams.get('reviewId');
+    if (id) { setSelectedRecordId(id); setExpandedId(id); }
+  }, [searchParams]);
   const [startOpen, setStartOpen] = useState(false);
   const [starting, setStarting] = useState(false);
   const [startForm, setStartForm] = useState({
@@ -272,6 +278,7 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
                 ))}
             </SearchableSelect>
           </label>
+          {selectedTemplate?.configuration.review_type !== 'raaus_rpc_flight_test' && (
           <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
             Review date
             <input
@@ -286,6 +293,7 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
               className={inputClass}
             />
           </label>
+          )}
           <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
             Examiner source
             <SearchableSelect
@@ -543,11 +551,11 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
                   </span>
                 </div>
                 <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-                  {format(parseISO(record.reviewDate), "d MMM yyyy")} |{" "}
+                  {record.reviewType === "raaus_rpc_flight_test" && !record.flightLogId ? "Flight not attached" : format(parseISO(record.reviewDate), "d MMM yyyy")} |{" "}
                   {reviewer}
                 </p>
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  {satisfactory}/{required.length} required items satisfactory
+                  {record.retestOfId ? "Retest · " : ""}{satisfactory}/{required.length} required items satisfactory
                   {record.nextReviewDue
                     ? ` | Next due ${format(parseISO(record.nextReviewDue), "d MMM yyyy")}`
                     : ""}
@@ -759,7 +767,15 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
                   user,
                   record.templateSnapshot.review_configuration?.allowed_reviewer_roles,
                 ) && (
-                  <div className="flex justify-end border-t border-gray-200 pt-4 dark:border-[#2c3440]">
+                  <div className="flex flex-wrap justify-end gap-2 border-t border-gray-200 pt-4 dark:border-[#2c3440]">
+                    {record.reviewType === 'raaus_rpc_flight_test' && record.status === 'further_training_required' && (
+                      <button type="button" disabled={starting} onClick={async () => {
+                        setStarting(true);
+                        try { const id = await reviews.startRetest(record.id); setSelectedRecordId(id); }
+                        catch (error) { toast.error(error instanceof Error ? error.message : (error as { message?: string })?.message || 'Could not start retest'); }
+                        finally { setStarting(false); }
+                      }} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-blue-300 px-4 py-2 text-sm font-bold text-blue-700 dark:text-blue-200">Start partial retest</button>
+                    )}
                     <button
                       type="button"
                       onClick={() => setSelectedRecordId(record.id)}
@@ -781,6 +797,7 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
         selectedRecord.templateSnapshot.review_configuration?.allowed_reviewer_roles,
       ) && (
         <FlightReviewRecordEditor
+          key={selectedRecord.id}
           record={selectedRecord}
           items={reviews.itemsByRecord.get(selectedRecord.id) || []}
           attachments={reviews.attachmentsByRecord.get(selectedRecord.id) || []}

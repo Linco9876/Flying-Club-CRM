@@ -44,7 +44,7 @@ export const StudentAcknowledgementModal: React.FC = () => {
     if (!user || !isStudentLike) return [];
     return trainingRecords
       .filter(record => {
-        if (record.studentId !== user.id || record.status !== 'submitted' || record.studentAck) return false;
+        if (record.flightReviewRecordId || record.studentId !== user.id || record.status !== 'submitted' || record.studentAck) return false;
         if (settings.forceStudentAcknowledgementForAllCourses) return true;
         const course = modules.find(module => module.id === record.courseId);
         return Boolean(course?.requiresStudentAcknowledgement);

@@ -112,6 +112,7 @@ export const useTrainingRecords = (studentId?: string, options: UseTrainingRecor
 
         return {
           id: r.id,
+          flightReviewRecordId: r.flight_review_record_id || undefined,
           studentId: r.student_id,
           bookingId: r.booking_id,
           flightLogId: r.flight_log_id,

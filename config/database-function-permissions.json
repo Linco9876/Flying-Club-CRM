@@ -2139,6 +2139,30 @@
       "security_definer": true,
       "fixed_search_path": true,
       "rationale": "Authorised atomic recurring edits including private aircraft identity."
+    },
+    {
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "signature": "public.start_rpc_retest(p_previous_id uuid)",
+      "function_name": "start_rpc_retest",
+      "classification": "staff_aal2",
+      "rationale": "Authorised RPC review workflow; preserves historical evidence and candidate scope."
+    },
+    {
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "signature": "public.rpc_review_context(p_review_id uuid)",
+      "function_name": "rpc_review_context",
+      "classification": "authenticated_self_service",
+      "rationale": "Authorised RPC review workflow; preserves historical evidence and candidate scope."
     }
   ]
 }

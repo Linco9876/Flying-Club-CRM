@@ -1,3 +1,5 @@
+import { supabase } from '../../lib/supabase';
+import { prefillRpcDetails, type RpcFlightDetails } from '../../utils/rpcReviewWorkflow';
 import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -163,7 +165,7 @@ export const FlightReviewRecordEditor: React.FC<
   currentUserId,
   flightComments,
   endorsementOptions = [],
-  linkedFlight,
+  linkedFlight: providedLinkedFlight,
   onClose,
   onChangeForm,
   onUpdateRecord,
@@ -173,6 +175,14 @@ export const FlightReviewRecordEditor: React.FC<
 }) => {
   const config =
     record.templateSnapshot.review_configuration || blankConfiguration();
+  const [context, setContext] = useState<{ defaults: Record<string, unknown>; flights: RpcFlightDetails[]; retestDeadline?: string } | null>(null);
+  const autoPrefills = useRef<Record<string, string>>({});
+  const [contextError, setContextError] = useState('');
+  const [detailsConfirmed, setDetailsConfirmed] = useState(false);
+  const [attachingFlight, setAttachingFlight] = useState(false);
+  const linkedFlight = providedLinkedFlight || context?.flights.find(flight => flight.id === record.flightLogId);
+  const submittedRpc = record.reviewType === 'raaus_rpc_flight_test' && isFinalFlightReviewOutcome(record.status);
+
   const [form, setForm] = useState({
     status: record.status,
     reviewDate: record.reviewDate,
@@ -209,12 +219,40 @@ export const FlightReviewRecordEditor: React.FC<
     authoritySubmissionConfirmed: record.authoritySubmissionConfirmed,
     reviewerSignName: record.reviewerSignName || reviewerName,
   });
+  useEffect(() => {
+    if (record.reviewType !== 'raaus_rpc_flight_test') return;
+    let cancelled = false;
+    setDetailsConfirmed(false);
+    void supabase.rpc('rpc_review_context', { p_review_id: record.id }).then(({ data, error }) => {
+      if (cancelled) return;
+      if (error) { setContextError('Portal details could not be loaded. Reopen the form to retry.'); return; }
+      setContext(data);
+      setContextError('');
+      if (!submittedRpc) setForm(current => {
+        const refreshed = { ...current } as Record<string, unknown>;
+        for (const [key, value] of Object.entries(autoPrefills.current)) {
+          if (refreshed[key] === value) refreshed[key] = '';
+        }
+        const next = prefillRpcDetails(refreshed, data.defaults || {});
+        autoPrefills.current = Object.fromEntries(Object.keys(data.defaults || {}).filter(key => key in refreshed && refreshed[key] === '').map(key => [key, String(next[key])]));
+        return next as typeof current;
+      });
+    });
+    return () => { cancelled = true; };
+  }, [record.id, record.flightLogId, record.reviewType, submittedRpc]);
+
   const [expandedSection, setExpandedSection] = useState<string | null>(
-    items[0]?.section || null,
+    items.find(item => !item.carriedFromItemId)?.section || items[0]?.section || null,
   );
   const [submissionIntent, setSubmissionIntent] = useState<FlightReviewStatus | null>(null);
   const formalFindingsRef = useRef<HTMLTextAreaElement>(null);
   const [saving, setSaving] = useState(false);
+  const pendingItemSaves = useRef(0);
+  const updateChecklistItem: typeof onUpdateItem = async (id, input) => {
+    pendingItemSaves.current += 1;
+    try { await onUpdateItem(id, input); }
+    finally { pendingItemSaves.current -= 1; }
+  };
   const [changingForm, setChangingForm] = useState(false);
   const [changeFormConfirmationOpen, setChangeFormConfirmationOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -255,7 +293,7 @@ export const FlightReviewRecordEditor: React.FC<
     );
   const isPassFail = config.outcome_scheme === "pass_fail";
   const isLinkedToLoggedFlight = Boolean(linkedFlight?.id || record.flightLogId);
-  const aircraftInputsLocked = form.status === "draft" && isLinkedToLoggedFlight;
+  const aircraftInputsLocked = isRpcFlightTest || (form.status === "draft" && isLinkedToLoggedFlight);
   const availableEndorsements = useMemo(
     () => rpcEndorsementOptions(endorsementOptions, form.endorsementsSought),
     [endorsementOptions, form.endorsementsSought],
@@ -271,7 +309,7 @@ export const FlightReviewRecordEditor: React.FC<
       form.endorsementsSought.length > 0);
   const logbookEntryExample = useMemo(
     () => buildRpcLogbookEntryExample({
-      reviewDate: form.completionDate || form.reviewDate,
+      reviewDate: isRpcFlightTest && !isLinkedToLoggedFlight ? "" : form.completionDate || form.reviewDate,
       aircraftType: form.aircraftType,
       registration: form.registration,
       flightMinutes: Number(form.flightMinutes || 0),
@@ -285,6 +323,8 @@ export const FlightReviewRecordEditor: React.FC<
           : "pending",
     }),
     [
+      isRpcFlightTest,
+      isLinkedToLoggedFlight,
       form.aircraftType,
       form.completionDate,
       form.endorsementsSought,
@@ -299,17 +339,19 @@ export const FlightReviewRecordEditor: React.FC<
   );
 
   useEffect(() => {
-    if (!linkedFlight?.id) return;
+    if (!linkedFlight?.id || submittedRpc) return;
     setForm(current => ({
       ...current,
       aircraftType: linkedFlight.aircraftType || current.aircraftType,
       registration: linkedFlight.registration || current.registration,
       reviewDate: linkedFlight.reviewDate || current.reviewDate,
+      completionDate: linkedFlight.reviewDate || current.completionDate,
       flightMinutes: linkedFlight.flightMinutes !== undefined
         ? String(linkedFlight.flightMinutes)
         : current.flightMinutes,
     }));
   }, [
+    submittedRpc,
     linkedFlight?.aircraftType,
     linkedFlight?.flightMinutes,
     linkedFlight?.id,
@@ -322,6 +364,16 @@ export const FlightReviewRecordEditor: React.FC<
     setSubmissionIntent(statusOverride ?? null);
     const successfulOutcome = isSuccessfulFlightReviewOutcome(nextStatus);
     const finalOutcome = isFinalFlightReviewOutcome(nextStatus);
+    if (submittedRpc) return;
+    if (pendingItemSaves.current) { toast.error("Wait for the checklist changes to finish saving, then submit again."); return; }
+    if (isRpcFlightTest && finalOutcome && (!isLinkedToLoggedFlight || !detailsConfirmed)) {
+      toast.error('Attach the test flight and confirm the candidate and flight details before submitting.');
+      return;
+    }
+    if (isRpcFlightTest && nextStatus === 'further_training_required' && !items.some(item => item.result === 'further_training')) {
+      toast.error('Mark the components requiring further training in the checklist.');
+      return;
+    }
     if (successfulOutcome && !completionReady) {
       toast.error(
         "Complete every required checklist item before finishing this review",
@@ -391,7 +443,7 @@ export const FlightReviewRecordEditor: React.FC<
           dualFlightHours: Number(form.dualFlightHours || 0),
           commandFlightHours: Number(form.commandFlightHours || 0),
           raausFlightHours: Number(form.raausFlightHours || 0),
-          certificateGroup: undefined,
+          detailsConfirmed: isRpcFlightTest ? detailsConfirmed : record.assessmentDetails.detailsConfirmed,
           endorsementsSought: form.endorsementsSought,
         },
         emergencyPlanConfirmed: form.emergencyPlanConfirmed,
@@ -487,7 +539,7 @@ export const FlightReviewRecordEditor: React.FC<
               <StudentFileLink studentId={record.candidateId} name={candidateName} />
             </h2>
             <p className="mt-1 text-sm text-blue-100">
-              {format(parseISO(record.reviewDate), "d MMM yyyy")} |{" "}
+              {isRpcFlightTest && !isLinkedToLoggedFlight ? "Draft — flight not attached" : format(parseISO(record.reviewDate), "d MMM yyyy")} |{" "}
               {reviewerName}
             </p>
           </div>
@@ -512,7 +564,7 @@ export const FlightReviewRecordEditor: React.FC<
           </div>
         </header>
 
-        <div className="grid gap-5 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <fieldset disabled={submittedRpc} onChangeCapture={() => setDetailsConfirmed(false)} className="grid min-w-0 gap-5 p-4 sm:p-6 xl:grid-cols-[minmax(0,1fr)_300px]">
           <div className="space-y-5">
             <section className={`${panelClass} p-4 sm:p-5`}>
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -530,6 +582,29 @@ export const FlightReviewRecordEditor: React.FC<
                   {statusLabel[form.status]}
                 </span>
               </div>
+              {isRpcFlightTest ? (
+                <div className="mt-4 space-y-3">
+                  {contextError && <p role="alert" className="text-sm text-red-700 dark:text-red-300">{contextError}</p>}
+                  {submittedRpc && <p className="rounded-lg bg-slate-100 p-3 text-sm dark:bg-slate-800">Submitted assessment — preserved in history. Start a new attempt from Reviews &amp; Tests for any further assessment.</p>}
+                  {!isLinkedToLoggedFlight ? <p className="text-sm text-gray-600 dark:text-gray-300">Prepare and save the assessment now. Date, flight time and aircraft will come from the test flight log when attached.</p> : (
+                    <dl className="grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-900">
+                      <div><dt className="text-xs text-slate-500">Test date</dt><dd className="mt-1 font-semibold">{linkedFlight?.reviewDate || record.reviewDate}</dd></div>
+                      <div><dt className="text-xs text-slate-500">Flight time</dt><dd className="mt-1 font-semibold">{linkedFlight?.flightMinutes ?? record.flightMinutes} min</dd></div>
+                      <div className="col-span-2"><dt className="text-xs text-slate-500">Aircraft</dt><dd className="mt-1 font-semibold">{linkedFlight?.registration || record.registration} · {linkedFlight?.aircraftType || record.aircraftType}</dd></div>
+                    </dl>
+                  )}
+                  {!providedLinkedFlight && !submittedRpc && <label className="block text-sm font-medium">Attach test flight log
+                    <select aria-label="Attach test flight log" className={inputClass} value={record.flightLogId || ''} disabled={attachingFlight || !context} onChange={async event => {
+                      if (!event.target.value) return;
+                      setAttachingFlight(true);
+                      try { await onUpdateRecord(record.id, { flightLogId: event.target.value }); }
+                      catch (error) { toast.error(flightReviewErrorMessage(error, 'Could not attach this flight')); }
+                      finally { setAttachingFlight(false); }
+                    }}><option value="">Choose the flight after it has been logged</option>{context?.flights.map(flight => <option key={flight.id} value={flight.id}>{flight.reviewDate} · {flight.registration} · {flight.flightMinutes} min</option>)}</select>
+                  </label>}
+                  {record.retestOfId && <p className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-100">Partial retest{context?.retestDeadline ? ` — test must be flown by ${context.retestDeadline}` : ''}. Previously satisfactory components are retained below. Assess the outstanding items and complete the new test's completion steps. After this date, start a full test.</p>}
+                </div>
+              ) : (<>
               <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
                   Review date
@@ -629,6 +704,7 @@ export const FlightReviewRecordEditor: React.FC<
                   Aircraft details and flight time are prefilled from the linked logged flight and locked while this record is a draft.
                 </p>
               )}
+              </>)}
               <label className="mt-4 block text-sm font-medium text-gray-700 dark:text-gray-200">
                 Candidate objectives
                 <textarea
@@ -653,7 +729,7 @@ export const FlightReviewRecordEditor: React.FC<
                       Record the details used by the examiner to confirm eligibility for initial RPC issue.
                     </p>
                   </div>
-                  <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="mt-4 grid items-end gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
                       RAAus member number
                       <input
@@ -695,7 +771,9 @@ export const FlightReviewRecordEditor: React.FC<
                         className={inputClass}
                       />
                     </label>
-                    <div className="relative text-sm font-medium text-gray-700 dark:text-gray-200 sm:col-span-2">
+                  </div>
+                  <div className="mt-4 space-y-4">
+                    <div className="relative text-sm font-medium text-gray-700 dark:text-gray-200">
                       Endorsements to issue
                       <button
                         type="button"
@@ -760,6 +838,7 @@ export const FlightReviewRecordEditor: React.FC<
                         </div>
                       )}
                     </div>
+                    <div className="grid grid-cols-2 items-end gap-4 xl:grid-cols-4">
                     {[
                       ["totalFlightHours", "Total flight hours"],
                       ["dualFlightHours", "Dual hours"],
@@ -786,6 +865,7 @@ export const FlightReviewRecordEditor: React.FC<
                         />
                       </label>
                     ))}
+                    </div>
                   </div>
                 </div>
               )}
@@ -891,9 +971,10 @@ export const FlightReviewRecordEditor: React.FC<
                                 </div>
                                 <SearchableSelect
                                   value={item.result}
+                                  disabled={Boolean(item.carriedFromItemId)}
                                   onChange={async (event) => {
                                     try {
-                                      await onUpdateItem(item.id, {
+                                      await updateChecklistItem(item.id, {
                                         result: event.target
                                           .value as FlightReviewRecordItem["result"],
                                       });
@@ -923,12 +1004,14 @@ export const FlightReviewRecordEditor: React.FC<
                                   )}
                                 </SearchableSelect>
                               </div>
+                              {item.carriedFromItemId && <p className="mt-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300">Satisfactory in the previous attempt — retained with its original evidence.</p>}
                               <textarea
+                                disabled={Boolean(item.carriedFromItemId)}
                                 defaultValue={item.notes}
                                 onBlur={async (event) => {
                                   if (event.target.value === item.notes) return;
                                   try {
-                                    await onUpdateItem(item.id, {
+                                    await updateChecklistItem(item.id, {
                                       notes: event.target.value,
                                     });
                                   } catch {
@@ -1222,7 +1305,7 @@ export const FlightReviewRecordEditor: React.FC<
                   className={inputClass}
                 />
               </label>
-              <label className="mt-3 block text-sm font-medium text-gray-700 dark:text-gray-200">
+              {!isRpcFlightTest && <label className="mt-3 block text-sm font-medium text-gray-700 dark:text-gray-200">
                 Completion date
                 <input
                   type="date"
@@ -1235,7 +1318,11 @@ export const FlightReviewRecordEditor: React.FC<
                   }
                   className={inputClass}
                 />
-              </label>
+              </label>}
+              {isRpcFlightTest && !submittedRpc && <label className="mt-4 flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-950 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-100">
+                <input type="checkbox" checked={detailsConfirmed} onChange={event => setDetailsConfirmed(event.target.checked)} className="mt-1 h-4 w-4 shrink-0" />
+                <span>I have checked the candidate details, experience totals and attached flight details and confirm they are correct.</span>
+              </label>}
               <button
                 type="button"
                 onClick={() => void save("completed")}
@@ -1266,7 +1353,7 @@ export const FlightReviewRecordEditor: React.FC<
               </p>
             </section>
           </aside>
-        </div>
+        </fieldset>
       </div>
       {changeFormConfirmationOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/65 p-4" role="dialog" aria-modal="true" aria-labelledby="change-review-form-title">

@@ -44,6 +44,7 @@ interface LessonRecordCardProps {
   matrixAssessment?: LessonRecordMatrixSummary;
   highlighted?: boolean;
   onEdit?: () => void;
+  onOpenReview?: () => void;
   onReassign?: () => void;
   onDeleteDraft?: () => void;
   deletingDraft?: boolean;
@@ -108,6 +109,7 @@ export const LessonRecordCard: React.FC<LessonRecordCardProps> = ({
   matrixAssessment,
   highlighted = false,
   onEdit,
+  onOpenReview,
   onReassign,
   onDeleteDraft,
   deletingDraft = false,
@@ -166,6 +168,7 @@ export const LessonRecordCard: React.FC<LessonRecordCardProps> = ({
         </dl>
 
         <div className="flex shrink-0 items-center gap-2">
+          {onOpenReview && <button type="button" onClick={onOpenReview} className="rounded-lg border border-blue-200 px-3 py-2 text-xs font-semibold text-blue-700 dark:text-blue-300">View RPC test</button>}
           <span className={`hidden rounded-full border px-2 py-1 text-[11px] font-semibold capitalize sm:inline-flex ${statusClasses[record.status]}`}>
             {record.status === 'locked' && record.studentAck ? 'Acknowledged' : record.status}
           </span>
