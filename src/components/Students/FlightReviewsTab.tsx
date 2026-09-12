@@ -1,3 +1,5 @@
+import { recentRpcRetest } from '../../utils/rpcReviewWorkflow';
+import { RpcRetestOffer } from '../Training/RpcRetestOffer';
 import { useSearchParams } from 'react-router-dom';
 import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useMemo, useState } from "react";
@@ -95,6 +97,16 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
   const selectedTemplate = reviews.templates.find(
     (template) => template.id === startForm.templateId,
   );
+  const recentAttempt = selectedTemplate?.configuration.review_type === 'raaus_rpc_flight_test'
+    ? recentRpcRetest(reviews.records, studentId, format(new Date(), 'yyyy-MM-dd')) : undefined;
+  const offeredRetest = recentAttempt && userCanConductReview(user, recentAttempt.templateSnapshot.review_configuration?.allowed_reviewer_roles) ? recentAttempt : undefined;
+  const continueRetest = async () => {
+    if (!offeredRetest) return;
+    setStarting(true);
+    try { const id = await reviews.startRetest(offeredRetest.id); setStartOpen(false); setSelectedRecordId(id); }
+    catch (error) { toast.error((error as { message?: string })?.message || 'Could not start partial retest'); }
+    finally { setStarting(false); }
+  };
   const eligibleReviewers = useMemo(() => {
     if (!selectedTemplate) return [];
     const allowedRoles = new Set(
@@ -258,6 +270,7 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
           <label className="sm:col-span-2 text-sm font-medium text-gray-700 dark:text-gray-200">
             Review or test form
             <SearchableSelect
+              aria-label="Review or test form"
               value={startForm.templateId}
               onChange={(event) =>
                 setStartForm((current) => ({
@@ -278,6 +291,7 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
                 ))}
             </SearchableSelect>
           </label>
+          {offeredRetest && <div className="sm:col-span-2"><RpcRetestOffer previousDate={offeredRetest.reviewDate} originalDate={reviews.records.find(item => item.id === offeredRetest.retestRootId)?.reviewDate || offeredRetest.reviewDate} busy={starting} onContinue={() => void continueRetest()} onFull={() => void beginReview()} /></div>}
           {selectedTemplate?.configuration.review_type !== 'raaus_rpc_flight_test' && (
           <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
             Review date
@@ -314,6 +328,7 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
             <label className="sm:col-span-2 text-sm font-medium text-gray-700 dark:text-gray-200">
               Authorised reviewer
               <SearchableSelect
+                aria-label="Authorised reviewer"
                 value={startForm.reviewerUserId}
                 onChange={(event) =>
                   setStartForm((current) => ({
@@ -414,7 +429,7 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
             ) : (
               <UserCheck className="h-4 w-4" />
             )}
-            Start review
+            {offeredRetest ? "Start a full test" : "Start review"}
           </button>
         </footer>
       </div>
@@ -799,6 +814,9 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
         <FlightReviewRecordEditor
           key={selectedRecord.id}
           record={selectedRecord}
+          previousRecord={reviews.records.find(item => item.id === selectedRecord.retestOfId)}
+          previousItems={selectedRecord.retestOfId ? reviews.itemsByRecord.get(selectedRecord.retestOfId) : undefined}
+          originalTestDate={reviews.records.find(item => item.id === (selectedRecord.retestRootId || selectedRecord.retestOfId))?.reviewDate}
           items={reviews.itemsByRecord.get(selectedRecord.id) || []}
           attachments={reviews.attachmentsByRecord.get(selectedRecord.id) || []}
           candidateName={studentName}
