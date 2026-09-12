@@ -78,14 +78,14 @@ jobs:
         run: |
           psql -v ON_ERROR_STOP=1 -c 'create role anon; create role authenticated; create role service_role;'
           psql -v ON_ERROR_STOP=1 -f tests/database/rpc-review-schema.sql -f supabase/migrations/20260912020000_unify_rpc_flight_tests.sql -f tests/database/rpc-review-workflow.sql
-        - name: Exercise medical self-service and age boundaries
-          run: |
-            createdb medical_self_service
-            psql -d medical_self_service -v ON_ERROR_STOP=1 -f tests/database/self-service-medicals.sql
-        - name: Keep supervisor assignments through booking and availability updates
-          run: |
-            createdb stable_supervision
-            psql -d stable_supervision -v ON_ERROR_STOP=1 -f tests/database/stable-supervision-assignments.sql
+      - name: Exercise medical self-service and age boundaries
+        run: |
+          createdb medical_self_service
+          psql -d medical_self_service -v ON_ERROR_STOP=1 -f tests/database/self-service-medicals.sql
+      - name: Keep supervisor assignments through booking and availability updates
+        run: |
+          createdb stable_supervision
+          psql -d stable_supervision -v ON_ERROR_STOP=1 -f tests/database/stable-supervision-assignments.sql
 
   edge-functions:
     runs-on: ubuntu-latest
