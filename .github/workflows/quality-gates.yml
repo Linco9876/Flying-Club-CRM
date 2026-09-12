@@ -42,6 +42,8 @@ jobs:
         run: npm run test:ai-rewrite
       - name: Test RPC review prefilling and retest boundaries
         run: npm run test:rpc-review
+      - name: Test medical expiry and self-service rules
+        run: npm run test:safety-warning
       - name: Build portal and PWAs
         run: npm run build
         env:
@@ -76,6 +78,10 @@ jobs:
         run: |
           psql -v ON_ERROR_STOP=1 -c 'create role anon; create role authenticated; create role service_role;'
           psql -v ON_ERROR_STOP=1 -f tests/database/rpc-review-schema.sql -f supabase/migrations/20260912020000_unify_rpc_flight_tests.sql -f tests/database/rpc-review-workflow.sql
+      - name: Exercise medical self-service and age boundaries
+        run: |
+          createdb medical_self_service
+          psql -d medical_self_service -v ON_ERROR_STOP=1 -f tests/database/self-service-medicals.sql
 
   edge-functions:
     runs-on: ubuntu-latest

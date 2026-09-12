@@ -10,6 +10,7 @@ import {
 } from "../../hooks/useMedicalRecords";
 import {
   medicalRecordCurrency,
+  medicalEntryRequirements,
   defaultMedicalOperations,
   type MedicalRecord,
 } from "../../utils/medicalRecords";
@@ -67,6 +68,16 @@ export function MedicalRecordsPanel({
   );
   const shown = history ? records : current;
   const type = settings.medicalTypes.find((item) => item.id === draft?.type_id);
+  const requirements = medicalEntryRequirements(
+    type ||
+      (draft
+        ? {
+            validityMode: draft.validity_mode || "expiry_date",
+            validUntilAge: draft.valid_until_age,
+          }
+        : undefined),
+    dateOfBirth,
+  );
   const set = (field: string, value: unknown) =>
     setDraft((previous) =>
       previous ? { ...previous, [field]: value } : previous,
@@ -84,17 +95,35 @@ export function MedicalRecordsPanel({
                   expires_on: null,
                   review_due_on: null,
                   updated_at: undefined,
-                  status: "pending" as const,
+                  status: "active" as const,
                 }
               : {}),
             status:
-              record.status === "legacy" || renew ? "pending" : record.status,
+              ["legacy", "verified", "pending"].includes(record.status) || renew
+                ? "active"
+                : record.status,
           }
-        : { user_id: userId, status: "pending", accepted_operations: [] },
+        : { user_id: userId, status: "active", accepted_operations: [] },
     );
   };
   const save = async () => {
     if (!draft || !user) return;
+    if (draft.status === "active") {
+      if (requirements.missingDateOfBirth) {
+        toast.error("Add a date of birth to the profile first.");
+        return;
+      }
+      if (!requirements.automaticExpiry && !draft.expires_on) {
+        toast.error("Enter the medical expiry date.");
+        return;
+      }
+      if (requirements.documentRequired && !proof && !draft.document_id) {
+        toast.error(
+          "Upload or select a supporting document for this age-limited medical.",
+        );
+        return;
+      }
+    }
     setBusy(true);
     try {
       let documentId = draft.document_id;
@@ -137,7 +166,11 @@ export function MedicalRecordsPanel({
         setProof(null);
       }
       const { error: saveError } = await supabase.rpc("save_member_medical", {
-        p_record: { ...draft, document_id: documentId || null },
+        p_record: {
+          ...draft,
+          expires_on: requirements.automaticExpiry || draft.expires_on || null,
+          document_id: documentId || null,
+        },
       });
       if (saveError) throw saveError;
       setDraft(null);
@@ -225,13 +258,11 @@ export function MedicalRecordsPanel({
                       <span
                         className={`text-xs ${currency.state === "expired" || record.status === "suspended" ? "text-amber-700 dark:text-amber-300" : "text-slate-500 dark:text-slate-400"}`}
                       >
-                        {record.status === "pending"
-                          ? "Pending · "
-                          : record.status === "suspended"
-                            ? "Suspended · "
-                            : currency.state === "expired"
-                              ? "Expired · "
-                              : ""}
+                        {record.status === "suspended"
+                          ? "Suspended · "
+                          : currency.state === "expired"
+                            ? "Expired · "
+                            : ""}
                         {currency.effectiveExpiry
                           ? currency.effectiveExpiry.toLocaleDateString(
                               "en-AU",
@@ -252,27 +283,13 @@ export function MedicalRecordsPanel({
                   </summary>
                   <div className="pb-3">
                     <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {record.status === "legacy"
-                        ? "Imported · not reverified"
+                      {["active", "verified", "legacy", "pending"].includes(
+                        record.status,
+                      )
+                        ? "Recorded"
                         : record.status}{" "}
                       · {currency.label}
                     </p>
-                    <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                      Issued/declaration: {record.issued_on || "Not recorded"} ·
-                      Certificate expiry: {record.expires_on || "Not recorded"}
-                      {record.review_due_on &&
-                        ` · Review due: ${record.review_due_on}`}
-                      {record.validity_mode === "until_age" &&
-                        ` · Additional requirements at age ${record.valid_until_age || "?"}`}
-                    </p>
-                    {record.status === "legacy" &&
-                      record.validity_mode === "until_age" &&
-                      !record.review_due_on && (
-                        <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
-                          Imported age-based validity retained. Staff should
-                          confirm the declaration and next review date.
-                        </p>
-                      )}
                     {record.restrictions && (
                       <p className="mt-2 text-sm">
                         Conditions / review note: {record.restrictions}
@@ -299,9 +316,15 @@ export function MedicalRecordsPanel({
                       )}
                       {canEdit &&
                         (staff ||
-                          ["pending", "withdrawn"].includes(record.status)) && (
+                          [
+                            "active",
+                            "verified",
+                            "legacy",
+                            "pending",
+                            "withdrawn",
+                          ].includes(record.status)) && (
                           <button type="button" onClick={() => start(record)}>
-                            Edit / review
+                            Edit medical
                           </button>
                         )}
                     </div>
@@ -357,7 +380,7 @@ export function MedicalRecordsPanel({
         <div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950/30">
           <div className="flex justify-between">
             <h4 className="font-semibold">
-              {draft.id ? "Review medical" : "Add medical / declaration"}
+              {draft.id ? "Edit medical" : "Add medical / declaration"}
             </h4>
             <button
               type="button"
@@ -397,40 +420,34 @@ export function MedicalRecordsPanel({
                 ))}
             </select>
           </label>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <label className="text-sm">
-              Issue / declaration date
-              <input
-                type="date"
-                className={inputClass}
-                value={draft.issued_on || ""}
-                onChange={(e) => set("issued_on", e.target.value || null)}
-              />
-            </label>
-            <label className="text-sm">
-              Certificate expiry
-              <input
-                type="date"
-                className={inputClass}
-                value={draft.expires_on || ""}
-                onChange={(e) => set("expires_on", e.target.value || null)}
-              />
-            </label>
-            <label className="text-sm">
-              Next declaration / review due
-              <input
-                type="date"
-                className={inputClass}
-                value={draft.review_due_on || ""}
-                onChange={(e) => set("review_due_on", e.target.value || null)}
-              />
-            </label>
-          </div>
+          {requirements.missingDateOfBirth && (
+            <p
+              role="alert"
+              className="text-sm text-amber-700 dark:text-amber-300"
+            >
+              Add a date of birth to the profile to calculate this medical's
+              expiry.
+            </p>
+          )}
+          <label className="block text-sm">
+            Expiry date
+            <input
+              type="date"
+              className={inputClass}
+              value={requirements.automaticExpiry || draft.expires_on || ""}
+              readOnly={Boolean(requirements.automaticExpiry)}
+              required={!requirements.automaticExpiry}
+              onChange={(event) =>
+                set("expires_on", event.target.value || null)
+              }
+            />
+          </label>
           <p className="text-xs text-slate-600 dark:text-slate-300">
-            Existing uploaded medical documents remain available above. Use
-            dates on the evidence. Declarations need a review date; an age
-            threshold does not replace periodic review. Upload one document for
-            each record, or retain the existing attachment when renewing.
+            {requirements.automaticExpiry
+              ? `Valid until age ${type?.validUntilAge || draft.valid_until_age}. No supporting document is required before that birthday.`
+              : requirements.documentRequired
+                ? `From age ${type?.validUntilAge || draft.valid_until_age}, add a supporting document and its expiry date to keep using this medical type.`
+                : "Enter the expiry date shown on the medical. A supporting document is optional."}
           </p>
           <label className="block text-sm">
             Existing evidence
@@ -448,7 +465,8 @@ export function MedicalRecordsPanel({
             </select>
           </label>
           <label className="block text-sm">
-            Supporting document
+            Supporting document{" "}
+            {requirements.documentRequired ? "(required)" : "(optional)"}
             <input
               type="file"
               className={inputClass}
@@ -456,7 +474,7 @@ export function MedicalRecordsPanel({
             />
           </label>
           <label className="block text-sm">
-            Operating restrictions / review note
+            Operating restrictions / notes
             <textarea
               className={inputClass}
               rows={2}
@@ -471,10 +489,9 @@ export function MedicalRecordsPanel({
               value={draft.status}
               onChange={(e) => set("status", e.target.value)}
             >
-              <option value="pending">Pending verification</option>
+              <option value="active">Active</option>
               {staff && (
                 <>
-                  <option value="verified">Verified</option>
                   <option value="superseded">Superseded</option>
                   <option value="suspended">
                     Suspended — requires medical review
@@ -485,8 +502,8 @@ export function MedicalRecordsPanel({
             </select>
           </label>
           <p className="text-xs">
-            Saving new evidence does not remove an existing medical. Pending
-            records do not grant medical clearance.
+            Medical records take effect when saved, subject to their expiry and
+            evidence requirements. No approval is needed.
           </p>
           <button
             type="button"
