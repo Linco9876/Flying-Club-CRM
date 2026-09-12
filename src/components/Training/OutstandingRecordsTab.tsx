@@ -1,3 +1,5 @@
+import { recentRpcRetest } from '../../utils/rpcReviewWorkflow';
+import { RpcRetestOffer } from './RpcRetestOffer';
 import { DeficiencySuggestions } from './DeficiencySuggestions';
 import { SearchableSelect } from '../common/SearchableSelect';
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
@@ -274,6 +276,7 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
   const [showDraftComposer, setShowDraftComposer] = useState(false);
   const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
   const [recordEntryType, setRecordEntryType] = useState<RecordEntryType | null>(null);
+  const [retestOffer, setRetestOffer] = useState<{ templateId: string; previousId: string } | null>(null);
   const [activeReviewRecordId, setActiveReviewRecordId] = useState<string | null>(null);
   const [startingReview, setStartingReview] = useState(false);
   const [deficiencyDraft, setDeficiencyDraft] = useState('');
@@ -1102,6 +1105,7 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
   }
 
   function closePanel() {
+    setRetestOffer(null);
     setActiveLog(null);
     setActiveDraftRecord(null);
     setDraftSession(null);
@@ -1263,7 +1267,7 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
     handleSelectLesson(recommendedLesson.lesson.id, recommendedLesson.course.id);
   }
 
-  async function handleStartReview(templateId: string) {
+  async function handleStartReview(templateId: string, fullTest = false) {
     if (!activeLog || !activeStudentId || !user?.id) return;
     const existing = reviewForActiveFlight?.templateCourseId === templateId ? reviewForActiveFlight : null;
     if (existing) {
@@ -1278,6 +1282,13 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
       return;
     }
 
+    const template = flightReviews.templates.find(item => item.id === templateId);
+    const previous = !fullTest && template?.configuration.review_type === 'raaus_rpc_flight_test'
+      ? recentRpcRetest(flightReviews.records, activeStudentId, format(isDraftSession ? new Date() : new Date(activeLog.start_time), 'yyyy-MM-dd'), isDraftSession ? undefined : activeLog.id) : undefined;
+    if (previous && userCanConductReview(user, previous.templateSnapshot.review_configuration?.allowed_reviewer_roles)) {
+      setRetestOffer({ templateId, previousId: previous.id });
+      return;
+    }
     setStartingReview(true);
     try {
       let sourceDraftRecordId = activeDraftRecord?.id;
@@ -1330,6 +1341,24 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
     } finally {
       setStartingReview(false);
     }
+  }
+
+  async function continueOfferedRetest() {
+    if (!retestOffer || !activeLog) return;
+    setStartingReview(true);
+    try {
+      const existing = flightReviews.records.find(item => item.retestOfId === retestOffer.previousId && ['draft', 'in_progress'].includes(item.status));
+      if (existing?.flightLogId && (isDraftSession || existing.flightLogId !== activeLog.id)) {
+        toast.error('An unfinished retest is already attached to another flight. Open it from Reviews & Tests.');
+        return;
+      }
+      const id = await flightReviews.startRetest(retestOffer.previousId);
+      if (!isDraftSession) await flightReviews.updateReview(id, { flightLogId: activeLog.id });
+      else if (activeDraftRecord?.id && !existing?.sourceTrainingRecordId) await flightReviews.updateReview(id, { sourceTrainingRecordId: activeDraftRecord.id });
+      setRetestOffer(null);
+      setActiveReviewRecordId(id);
+    } catch (error) { toast.error((error as { message?: string })?.message || 'Could not start partial retest'); }
+    finally { setStartingReview(false); }
   }
 
   async function handleChangeReviewForm(recordId: string) {
@@ -3396,10 +3425,23 @@ export const OutstandingRecordsTab: React.FC<OutstandingRecordsTabProps> = ({
         </div>
       )}
       </div>
+      {retestOffer && activeLog && (() => {
+        const previous = flightReviews.records.find(item => item.id === retestOffer.previousId);
+        if (!previous) return null;
+        return <div role="dialog" aria-modal="true" aria-label="Choose RPC test pathway" className="fixed inset-0 z-[100] flex items-center justify-center bg-black/55 p-4">
+          <div className="w-full max-w-xl rounded-xl bg-white p-4 dark:bg-slate-900">
+            <RpcRetestOffer previousDate={previous.reviewDate} originalDate={flightReviews.records.find(item => item.id === previous.retestRootId)?.reviewDate || previous.reviewDate} busy={startingReview} onContinue={() => void continueOfferedRetest()} onFull={() => { const id = retestOffer.templateId; setRetestOffer(null); void handleStartReview(id, true); }} />
+            <button type="button" disabled={startingReview} onClick={() => setRetestOffer(null)} className="mt-3 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-200">Cancel</button>
+          </div>
+        </div>;
+      })()}
       {activeReviewRecord && activeLog && user && canConductActiveReview && (
         <FlightReviewRecordEditor
           key={activeReviewRecord.id}
           record={activeReviewRecord}
+          previousRecord={flightReviews.records.find(item => item.id === activeReviewRecord.retestOfId)}
+          previousItems={activeReviewRecord.retestOfId ? flightReviews.itemsByRecord.get(activeReviewRecord.retestOfId) : undefined}
+          originalTestDate={flightReviews.records.find(item => item.id === (activeReviewRecord.retestRootId || activeReviewRecord.retestOfId))?.reviewDate}
           items={flightReviews.itemsByRecord.get(activeReviewRecord.id) ?? []}
           attachments={flightReviews.attachmentsByRecord.get(activeReviewRecord.id) ?? []}
           candidateName={activeLog.student_name || activeCandidate?.name || 'Member'}

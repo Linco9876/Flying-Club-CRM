@@ -1,3 +1,4 @@
+import { RpcRetestChecklist } from './RpcRetestChecklist';
 import { supabase } from '../../lib/supabase';
 import { prefillRpcDetails, type RpcFlightDetails } from '../../utils/rpcReviewWorkflow';
 import { SearchableSelect } from '../common/SearchableSelect';
@@ -130,6 +131,9 @@ const panelClass =
 interface FlightReviewRecordEditorProps {
   record: FlightReviewRecord;
   items: FlightReviewRecordItem[];
+  previousRecord?: FlightReviewRecord;
+  previousItems?: FlightReviewRecordItem[];
+  originalTestDate?: string;
   attachments: ReturnType<typeof useFlightReviews>["attachments"];
   candidateName: string;
   reviewerName: string;
@@ -159,6 +163,9 @@ export const FlightReviewRecordEditor: React.FC<
 > = ({
   record,
   items,
+  previousRecord,
+  previousItems,
+  originalTestDate,
   attachments,
   candidateName,
   reviewerName,
@@ -365,6 +372,7 @@ export const FlightReviewRecordEditor: React.FC<
     const successfulOutcome = isSuccessfulFlightReviewOutcome(nextStatus);
     const finalOutcome = isFinalFlightReviewOutcome(nextStatus);
     if (submittedRpc) return;
+    if (record.retestOfId && finalOutcome && (!previousRecord || !previousItems?.length || items.some(item => !previousItems.some(prior => prior.templateItemKey === item.templateItemKey)) || !originalTestDate)) { toast.error("Reopen the review to load the previous assessment before submitting."); return; }
     if (pendingItemSaves.current) { toast.error("Wait for the checklist changes to finish saving, then submit again."); return; }
     if (isRpcFlightTest && finalOutcome && (!isLinkedToLoggedFlight || !detailsConfirmed)) {
       toast.error('Attach the test flight and confirm the candidate and flight details before submitting.');
@@ -478,9 +486,7 @@ export const FlightReviewRecordEditor: React.FC<
     } catch (saveError) {
       console.error("Failed to save review:", saveError);
       toast.error(
-        saveError instanceof Error
-          ? saveError.message
-          : "Failed to save review",
+        flightReviewErrorMessage(saveError, "Failed to save review"),
       );
     } finally {
       setSaving(false);
@@ -566,6 +572,7 @@ export const FlightReviewRecordEditor: React.FC<
 
         <fieldset disabled={submittedRpc} onChangeCapture={() => setDetailsConfirmed(false)} className="grid min-w-0 gap-5 p-4 sm:p-6 xl:grid-cols-[minmax(0,1fr)_300px]">
           <div className="space-y-5">
+            {record.retestOfId && <RpcRetestChecklist items={items} previous={previousRecord} previousItems={previousItems} originalDate={originalTestDate} onUpdateItem={updateChecklistItem} />}
             <section className={`${panelClass} p-4 sm:p-5`}>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -602,7 +609,7 @@ export const FlightReviewRecordEditor: React.FC<
                       finally { setAttachingFlight(false); }
                     }}><option value="">Choose the flight after it has been logged</option>{context?.flights.map(flight => <option key={flight.id} value={flight.id}>{flight.reviewDate} · {flight.registration} · {flight.flightMinutes} min</option>)}</select>
                   </label>}
-                  {record.retestOfId && <p className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-100">Partial retest{context?.retestDeadline ? ` — test must be flown by ${context.retestDeadline}` : ''}. Previously satisfactory components are retained below. Assess the outstanding items and complete the new test's completion steps. After this date, start a full test.</p>}
+                  {record.retestOfId && <p className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-100">Partial retest{context?.retestDeadline ? ` — test must be flown by ${context.retestDeadline}` : ''}. Previously satisfactory components are retained in the checklist above. Assess the outstanding items and complete the new test's completion steps. After this date, start a full test.</p>}
                 </div>
               ) : (<>
               <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -891,6 +898,7 @@ export const FlightReviewRecordEditor: React.FC<
               </label>
             </section>
 
+            {!record.retestOfId && (
             <section className={`${panelClass} overflow-hidden`}>
               <div className="border-b border-gray-200 p-4 sm:p-5 dark:border-[#2c3440]">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1033,6 +1041,7 @@ export const FlightReviewRecordEditor: React.FC<
                 })}
               </div>
             </section>
+            )}
 
             <section className={`${panelClass} p-4 sm:p-5`}>
               <h3 className="font-bold text-gray-950 dark:text-gray-100">
