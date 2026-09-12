@@ -78,11 +78,11 @@ export function RpcRetestChecklist({
             </p>
           </div>
           <div>
-            <label className="block text-sm font-medium">
-              New result — {item.code}
+            <label className="block min-w-0 text-sm font-medium">
+              <span className="mb-2 block">New result — {item.code}</span>
               <SearchableSelect
                 aria-label={`New result — ${item.code}`}
-                className={inputClass}
+                className={inputClass.replace("mt-2 ", "")}
                 value={item.result}
                 onChange={(event) =>
                   void update(item.id, {

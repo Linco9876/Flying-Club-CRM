@@ -329,12 +329,13 @@ const safeFileName = (name: string) =>
 export const useFlightReviews = (
   options: {
     enabled?: boolean;
+    outstandingSummariesOnly?: boolean;
     candidateId?: string;
     includeRecords?: boolean;
   } = {},
 ) => {
   const { user } = useAuth();
-  const { enabled = true, candidateId, includeRecords = true } = options;
+  const { enabled = true, candidateId, includeRecords = true, outstandingSummariesOnly = false } = options;
   const [templates, setTemplates] = useState<FlightReviewTemplate[]>([]);
   const [records, setRecords] = useState<FlightReviewRecord[]>([]);
   const [items, setItems] = useState<FlightReviewRecordItem[]>([]);
@@ -381,6 +382,7 @@ export const useFlightReviews = (
         .from("flight_review_records")
         .select("*")
         .order("review_date", { ascending: false });
+      if (outstandingSummariesOnly) recordsQuery = recordsQuery.in("status", ["draft", "in_progress"]);
       if (candidateId)
         recordsQuery = recordsQuery.eq("candidate_id", candidateId);
       const [templateResult, recordResult] = await Promise.all([
@@ -392,6 +394,11 @@ export const useFlightReviews = (
       const nextRecords = (recordResult.data || []).map((row) =>
         mapRecord(row as Record<string, unknown>),
       );
+      if (outstandingSummariesOnly) {
+        setRecords(nextRecords);
+        setError(null);
+        return;
+      }
       const sourceTrainingRecordIds = nextRecords
         .map(record => record.sourceTrainingRecordId)
         .filter((id): id is string => Boolean(id));
@@ -477,7 +484,7 @@ export const useFlightReviews = (
     } finally {
       setLoading(false);
     }
-  }, [candidateId, enabled, includeRecords]);
+  }, [candidateId, enabled, includeRecords, outstandingSummariesOnly]);
 
   useEffect(() => {
     void refetch();
@@ -635,6 +642,17 @@ export const useFlightReviews = (
     [refetch],
   );
 
+  const attachDraft = useCallback(async (id: string, candidate: string, input: Pick<RecordUpdate, "reviewDate" | "aircraftId" | "aircraftType" | "registration" | "flightMinutes"> & { flightLogId: string }) => {
+    const { data, error } = await supabase.from("flight_review_records")
+      .update({ ...updatePayload(input), aircraft_id: input.aircraftId || null }).eq("id", id).eq("candidate_id", candidate)
+      .is("flight_log_id", null).in("status", ["draft", "in_progress"])
+      .select().maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error("This review is no longer an unattached draft. Refresh Outstanding Records.");
+    await refetch();
+    return mapRecord(data as Record<string, unknown>);
+  }, [refetch]);
+
   const updateItem = useCallback(
     async (
       id: string,
@@ -744,6 +762,7 @@ export const useFlightReviews = (
     startReview,
     startRetest,
     updateReview,
+    attachDraft,
     updateItem,
     uploadAttachment,
     createAttachmentUrl,
