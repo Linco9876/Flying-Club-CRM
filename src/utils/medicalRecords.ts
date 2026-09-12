@@ -1,5 +1,6 @@
 import {
   evaluateMedicalCurrency,
+  birthdayAtAge,
   DEFAULT_MEDICAL_TYPES,
   type MedicalCurrencyStatus,
   type MedicalTypeDefinition,
@@ -24,6 +25,7 @@ export interface MedicalRecord {
   valid_until_age: number | null;
   accepted_operations: MedicalOperation[];
   status:
+    | "active"
     | "pending"
     | "verified"
     | "legacy"
@@ -69,7 +71,35 @@ export const medicalRecordCurrency = (
     validUntilAge: record.valid_until_age,
     isActive: true,
   };
-  const assessed = evaluateMedicalCurrency({
+  if (record.validity_mode === "until_age") {
+    if (
+      !dateOfBirth ||
+      Number.isNaN(dateOfBirth.getTime()) ||
+      !record.valid_until_age
+    ) {
+      return {
+        state: "missing_date_of_birth",
+        label: "Date of birth required",
+        effectiveExpiry: null,
+        daysRemaining: null,
+        definition,
+      };
+    }
+    const birthday = birthdayAtAge(dateOfBirth, record.valid_until_age);
+    const day = new Date(at.getFullYear(), at.getMonth(), at.getDate());
+    if (day >= birthday) {
+      if (!record.document_id)
+        return {
+          state: "missing_document",
+          label: "Supporting document required",
+          effectiveExpiry: dateOnly(record.expires_on) || null,
+          daysRemaining: null,
+          definition,
+        };
+      definition.validityMode = "expiry_date";
+    }
+  }
+  return evaluateMedicalCurrency({
     required: true,
     medicalType: record.medical_type,
     medicalExpiry: dateOnly(record.expires_on),
@@ -78,36 +108,36 @@ export const medicalRecordCurrency = (
     at,
     warningDays,
   });
-  const dates = [
-    assessed.effectiveExpiry,
-    dateOnly(record.review_due_on),
-    dateOnly(record.expires_on),
-  ].filter((date): date is Date => Boolean(date));
-  const earliest = dates.sort((a, b) => a.getTime() - b.getTime())[0];
-  if (record.issued_on && record.issued_on > localDate(at))
-    return { ...assessed, state: "expired", label: "Not yet effective" };
-  if (assessed.state === "missing_date_of_birth") return assessed;
-  if (!earliest) return assessed;
-  const expiresOnBirthday =
-    record.validity_mode === "until_age" &&
-    assessed.effectiveExpiry?.getTime() === earliest.getTime();
-  return evaluateMedicalCurrency({
-    required: true,
-    medicalType: record.medical_type,
-    medicalExpiry: earliest,
-    dateOfBirth,
-    definitions: [
-      {
-        ...definition,
-        validityMode: expiresOnBirthday ? "until_age" : "expiry_date",
-      },
-    ],
-    at,
-    warningDays,
-  });
 };
-const localDate = (at: Date) =>
-  `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
+
+/** The age threshold changes the evidence needed; it does not ban the medical type. */
+export function medicalEntryRequirements(
+  definition:
+    Pick<MedicalTypeDefinition, "validityMode" | "validUntilAge"> | undefined,
+  dateOfBirth?: Date,
+  at = new Date(),
+) {
+  const ageLimited = definition?.validityMode === "until_age";
+  const birthday =
+    ageLimited &&
+    dateOfBirth &&
+    !Number.isNaN(dateOfBirth.getTime()) &&
+    definition.validUntilAge
+      ? birthdayAtAge(dateOfBirth, definition.validUntilAge)
+      : null;
+  const underAge = Boolean(
+    birthday &&
+    new Date(at.getFullYear(), at.getMonth(), at.getDate()) < birthday,
+  );
+  return {
+    missingDateOfBirth: Boolean(ageLimited && !birthday),
+    documentRequired: Boolean(ageLimited && birthday && !underAge),
+    automaticExpiry:
+      underAge && birthday
+        ? `${birthday.getFullYear()}-${String(birthday.getMonth() + 1).padStart(2, "0")}-${String(birthday.getDate()).padStart(2, "0")}`
+        : null,
+  };
+}
 export interface MemberMedicalAssessment extends MedicalCurrencyStatus {
   record?: MedicalRecord;
   operation?: MedicalOperation;
@@ -155,7 +185,7 @@ export const assessMemberMedicals = ({
     };
   const applicable = records.filter(
     (record) =>
-      ["verified", "legacy"].includes(record.status) &&
+      ["active", "verified", "legacy"].includes(record.status) &&
       (operation
         ? record.accepted_operations.includes(operation)
         : record.accepted_operations.length > 0),
@@ -182,9 +212,7 @@ export const assessMemberMedicals = ({
     return {
       ...base,
       state: "missing_type",
-      label: records.some((r) => r.status === "pending")
-        ? "Medical awaiting verification"
-        : "No applicable medical recorded",
+      label: "No applicable medical recorded",
       needsReview: true,
       operation,
       effectiveExpiry: null,

@@ -23,6 +23,7 @@ export type MedicalCurrencyState =
   | 'not_required'
   | 'missing_type'
   | 'missing_expiry'
+  | 'missing_document'
   | 'missing_date_of_birth'
   | 'current'
   | 'expiring'

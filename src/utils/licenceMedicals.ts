@@ -99,7 +99,7 @@ export function assessLicence(
   const valid =
     records?.some(
       (record) =>
-        ["verified", "legacy"].includes(record.status) &&
+        ["active", "verified", "legacy"].includes(record.status) &&
         accepted.includes(record.type_id || "") &&
         current(record, at) &&
         current(record, through),
@@ -108,6 +108,6 @@ export function assessLicence(
     valid,
     reason: valid
       ? "Valid — accepted medical current"
-      : "Not valid for flying — accepted medical missing, expired or awaiting verification",
+      : "Not valid for flying — accepted medical missing, expired or missing required evidence",
   };
 }

@@ -47,12 +47,11 @@ test("RAAus remains valid after CASA medical expiry; unrelated expired licences 
     false,
   );
 });
-test("pending, suspended, untyped and future-issued medicals cannot grant licence validity", () => {
+test("pending, suspended and untyped medicals cannot grant licence validity", () => {
   for (const override of [
     { status: "pending" as const },
     { status: "suspended" as const },
     { type_id: null },
-    { issued_on: "2027-01-01" },
   ])
     assert.equal(
       assessLicence(licence, [record(override)], dob, {}, at).valid,
@@ -69,7 +68,7 @@ test("pending, suspended, untyped and future-issued medicals cannot grant licenc
     false,
   );
 });
-test("expiry, review date, missing birth date and birthday are evaluated through flight end", () => {
+test("expiry and birthday apply through flight end; old review dates are ignored", () => {
   assert.equal(
     assessLicence(licence, [record()], undefined, {}, at).valid,
     false,
@@ -83,7 +82,7 @@ test("expiry, review date, missing birth date and birthday are evaluated through
       at,
       new Date(2026, 8, 11),
     ).valid,
-    false,
+    true,
   );
   assert.equal(
     assessLicence(
@@ -155,5 +154,26 @@ test("instructor medical requirements are separate and licence configuration use
       at,
     ).valid,
     true,
+  );
+});
+
+test("active self-service evidence supports the licence after age 75", () => {
+  const olderDob = new Date(1951, 8, 10);
+  const medical = record({
+    status: "active",
+    document_id: "proof",
+    expires_on: "2027-09-10",
+    issued_on: null,
+  });
+  assert.equal(assessLicence(licence, [medical], olderDob, {}, at).valid, true);
+  assert.equal(
+    assessLicence(
+      licence,
+      [{ ...medical, document_id: null }],
+      olderDob,
+      {},
+      at,
+    ).valid,
+    false,
   );
 });

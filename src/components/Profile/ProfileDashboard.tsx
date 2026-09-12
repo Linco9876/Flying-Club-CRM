@@ -605,7 +605,9 @@ export const ProfileDashboard: React.FC = () => {
     if (isFlyingMember && medicalRequirement.required && medicalLevel !== 'ready') {
       actions.push({
         id: 'medical-status',
-        title: medicalCurrency.state === 'missing_type'
+        title: medicalCurrency.state === 'missing_document'
+          ? 'Upload your medical document'
+          : medicalCurrency.state === 'missing_type'
           ? 'Select your operating medical'
           : medicalCurrency.state === 'missing_expiry'
             ? 'Add your medical expiry'
@@ -620,12 +622,12 @@ export const ProfileDashboard: React.FC = () => {
       });
     }
     if (isFlyingMember) {
-      medicalRecords.filter(record => ['verified','legacy'].includes(record.status)).forEach(record => {
+      medicalRecords.filter(record => ['active','verified','legacy'].includes(record.status)).forEach(record => {
         const currency = medicalRecordCurrency(record, user?.dateOfBirth);
         if (currency.state !== 'expiring') return;
         actions.push({
           id: `medical-renewal-${record.id}`,
-          title: `${record.medical_type} review / renewal due`,
+          title: `${record.medical_type} expiry approaching`,
           detail: `Due in ${currency.daysRemaining} days. ${medicalCurrency.record?.id !== record.id && ['current','expiring'].includes(medicalCurrency.state) ? `Another medical (${medicalCurrency.record?.medical_type}) remains current for its covered activities.` : 'Check the medical coverage for your planned flying.'}`,
           to: getProfileReadinessDestination('medical'),
           level: 'warning',
