@@ -35,18 +35,12 @@ test('production workflows use the explicit Australian Supabase secrets', () => 
   assert.match(deployment, /secrets\.SUPABASE_AU_URL/);
   assert.match(deployment, /secrets\.SUPABASE_AU_ANON_KEY/);
 
-  const backup = read('../../.github/workflows/daily-crm-backup.yml');
-  assert.match(backup, /secrets\.SUPABASE_AU_URL/);
-  assert.match(backup, /secrets\.SUPABASE_AU_SERVICE_ROLE_KEY/);
+
 });
 
 test('recovery automation is non-interactive and cannot select production as its target', () => {
-  const recovery = read('../../.github/workflows/monthly-backup-restore-drill.yml');
   const recoveryScript = read('../../scripts/run-isolated-recovery-drill.ps1');
   const projectStateScript = read('../../scripts/set-supabase-project-state.sh');
-  assert.match(recovery, /gpg --batch --yes --dearmor/);
-  assert.match(recovery, /SUPABASE_RECOVERY_PROJECT_REF: hohmmwvtisnuuoumipjq/);
-  assert.match(recovery, /SUPABASE_PROJECT_REF: \$\{\{ secrets\.SUPABASE_AU_PROJECT_REF \}\}/);
   assert.match(recoveryScript, /\[IO\.Path\]::GetTempPath\(\)/);
   assert.doesNotMatch(recoveryScript, /Join-Path \$env:TEMP/);
   assert.doesNotMatch(
@@ -66,11 +60,6 @@ test('recovery automation is non-interactive and cannot select production as its
 
   const acceptance = read('../../.github/workflows/quality-gates.yml');
   const sharedRecoveryLock = /group: isolated-supabase-recovery-project/g;
-  assert.equal(
-    (recovery.match(sharedRecoveryLock) ?? []).length,
-    1,
-    'the restore job must hold the shared recovery-project lock',
-  );
   assert.equal(
     (acceptance.match(sharedRecoveryLock) ?? []).length,
     1,
@@ -98,14 +87,6 @@ test('recovery automation is non-interactive and cannot select production as its
   );
   assert.match(
     acceptance,
-    /set-supabase-project-state\.sh inactive "\$SUPABASE_RECOVERY_PROJECT_REF"/,
-  );
-  assert.match(
-    recovery,
-    /set-supabase-project-state\.sh\s+\\\s+active "\$SUPABASE_RECOVERY_PROJECT_REF"/,
-  );
-  assert.match(
-    recovery,
     /set-supabase-project-state\.sh inactive "\$SUPABASE_RECOVERY_PROJECT_REF"/,
   );
 });

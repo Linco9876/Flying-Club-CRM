@@ -3,8 +3,6 @@ name: GitHub Actions failure monitor
 on:
   workflow_run:
     workflows:
-      - Daily CRM backup
-      - Monthly backup restore drill
       - Quality gates
       - CodeQL security scan
       - Deploy production
