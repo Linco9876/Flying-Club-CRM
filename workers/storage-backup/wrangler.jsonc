@@ -1,0 +1,14 @@
+{
+  "name": "bfc-storage-backup",
+  "main": "index.mjs",
+  "compatibility_date": "2026-10-06",
+  "workers_dev": true,
+  "preview_urls": false,
+  "r2_buckets": [{ "binding": "BACKUPS", "bucket_name": "bfc-portal-backups" }],
+  "vars": {
+    "SUPABASE_URL": "https://kcfjnpngnouyvcuvfleu.supabase.co",
+    "OWNER_USER_ID": "f0b05234-4be9-4791-86be-25a288fb54c3"
+  },
+  "triggers": { "crons": ["*/15 * * * *"] },
+  "observability": { "enabled": true }
+}

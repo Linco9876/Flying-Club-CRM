@@ -32,6 +32,8 @@ jobs:
         run: npm run audit:migrations:local
       - name: Enforce database function permission manifest
         run: npm run audit:function-permissions
+      - name: Test private file backup and recovery safeguards
+        run: node --test workers/storage-backup/index.test.mjs
       - name: Test automation alert handling
         run: npm run test:automation-alerts
       - name: Test private aircraft bookings and pricing

@@ -6,7 +6,7 @@ The production project `kcfjnpngnouyvcuvfleu` is on Supabase Pro. Supabase autom
 
 View recovery points at https://supabase.com/dashboard/project/kcfjnpngnouyvcuvfleu/database/backups/scheduled . Individual recovery points must be checked there; plan verification alone is not a restore test.
 
-Database backups do not include uploaded Storage files such as PDFs, exam evidence or images. A replacement automated file-backup destination has not been configured.
+Database backups do not include uploaded Storage files such as PDFs, exam evidence or images. Independent file backups now run in private Cloudflare R2. See [portal-data-protection.md](../docs/portal-data-protection.md) for verified recovery coverage, the known missing-file incident and recovery instructions.
 
 ## Retired OneDrive automation
 
