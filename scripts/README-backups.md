@@ -1,98 +1,21 @@
-# CRM Backups
+# CRM backups
 
-This folder contains backup jobs for the Bendigo Flying Club CRM.
+## Managed database backups
 
-The local Windows job writes daily backups to OneDrive when the club computer is on. The GitHub Actions job can run in the cloud even when the computer is off, then upload the same backup into OneDrive.
+The production project `kcfjnpngnouyvcuvfleu` is on Supabase Pro. Supabase automatically takes daily database backups with seven days of retention.
 
-## What it backs up
+View recovery points at https://supabase.com/dashboard/project/kcfjnpngnouyvcuvfleu/database/backups/scheduled . Individual recovery points must be checked there; plan verification alone is not a restore test.
 
-- Every table exposed by the current Supabase REST schema, discovered at backup time rather than maintained in a stale allow-list.
-- Supabase Auth user records, excluding passwords because Supabase does not expose passwords.
-- Storage bucket files such as student documents, aircraft documents, safety documents, defect attachments, logos, avatars, and exam uploads.
-- A `manifest.json` with row counts and SHA-256 integrity data for every backed-up file.
-- The cloud job packages and encrypts the complete recovery point with `age` before anything leaves the runner. Raw CRM data is never uploaded.
+Database backups do not include uploaded Storage files such as PDFs, exam evidence or images. Independent file backups now run in private Cloudflare R2. See [portal-data-protection.md](../docs/portal-data-protection.md) for verified recovery coverage, the known missing-file incident and recovery instructions.
 
-## Local Windows Setup
+## Retired OneDrive automation
 
-1. Copy `scripts/backup-crm.env.example` to `scripts/backup-crm.env`.
-2. Add the Supabase `service_role` key in `SUPABASE_SERVICE_ROLE_KEY`.
-3. Confirm `BACKUP_ROOT` points to the club OneDrive folder.
-4. Install the Windows scheduled task:
+On 6 October 2026 the OneDrive daily backup and dependent monthly restore workflows were retired at the owner's request. The Windows daily backup task was removed and the GitHub RCLONE_CONFIG, RCLONE_REMOTE and ONEDRIVE_BACKUP_PATH secrets were deleted.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\install-daily-backup.ps1
-```
+Existing backup archives and BACKUP_AGE_PRIVATE_KEY / BACKUP_AGE_PUBLIC_KEY are retained for recovery. Do not delete the decryption identity while encrypted archives are retained.
 
-5. Test it once:
+## Manual recovery tools
 
-```powershell
-node .\scripts\backup-crm.mjs --env=.\scripts\backup-crm.env
-```
+The generic backup-crm.mjs, verify-crm-backup.mjs and isolated recovery scripts remain available for deliberate manual recovery work. They are not a scheduled replacement for the retired file backup. A manual export downloads data from Supabase and consumes egress.
 
-## Restore Notes
-
-These backups are designed for recovery and audit. Table files can be imported back into Supabase, Auth identities recreated using the Admin API, and Storage files re-uploaded to their original buckets. Restore tables in dependency order and run the repository migrations first when rebuilding an empty project.
-
-`.github/workflows/monthly-backup-restore-drill.yml` has two mandatory stages:
-
-1. download the latest encrypted OneDrive recovery point, verify its external checksum, decrypt it, and verify every file against the manifest; and
-2. create an encrypted relational backup, decrypt and checksum it, restore the `public` and `private` schema, exact object grants, application data, Storage metadata, Auth identities and password hashes into the isolated Supabase recovery project, then compare source and recovery counts.
-
-The second stage uses `SUPABASE_ACCESS_TOKEN` and `SUPABASE_RECOVERY_PROJECT_REF`. It never resets the production project. A failure alerts administrators through the Actions failure monitor. Keep the private `age` identity outside GitHub as an additional break-glass copy.
-
-The recovery project is disposable and must not contain unique club data. The drill intentionally omits Supabase-managed vector Storage tables and managed `supabase_admin` default-ACL entries, while retaining the application object ACLs needed for an operational recovery. Storage binary files remain in the encrypted file backup and are verified separately.
-
-## Cloud Setup
-
-The cloud backup is defined in `.github/workflows/daily-crm-backup.yml`. It runs daily and can also be run manually from GitHub Actions.
-
-Add these GitHub repository secrets:
-
-- `SUPABASE_URL`: `https://joarmzswpufrduectjse.supabase.co`
-- `SUPABASE_SERVICE_ROLE_KEY`: the Supabase service role or secret key.
-- `RCLONE_CONFIG`: the full contents of a working `rclone.conf` that contains a OneDrive remote.
-- `RCLONE_REMOTE`: the OneDrive remote name from `rclone.conf`, for example `onedrive`.
-- `ONEDRIVE_BACKUP_PATH`: the destination folder, for example `CRM Backups/Bendigo Flying Club Portal`.
-- `BACKUP_AGE_PUBLIC_KEY`: the `age1...` public recipient. The daily job refuses to upload without it.
-- `BACKUP_AGE_PRIVATE_KEY`: the corresponding `AGE-SECRET-KEY-...` identity, used only by the monthly recovery drill. Retain a second offline copy.
-- `ALERT_WEBHOOK_URL`: optional webhook URL for failed backup/deploy alerts.
-- `ALERT_WEBHOOK_TYPE`: optional webhook payload type: `generic`, `slack`, `discord`, or `teams`.
-
-The `.github/workflows/actions-failure-monitor.yml` workflow watches the daily backup and GitHub Pages deploy workflows. If either workflow finishes with a failed, cancelled, or timed-out conclusion, it sends an alert to `ALERT_WEBHOOK_URL`.
-
-To create the OneDrive `rclone.conf` locally:
-
-```powershell
-rclone config
-```
-
-Create a Microsoft OneDrive remote, test it with:
-
-```powershell
-rclone lsd onedrive:
-```
-
-Then open the config file:
-
-```powershell
-notepad "$env:APPDATA\rclone\rclone.conf"
-```
-
-Copy the full contents into the GitHub secret named `RCLONE_CONFIG`.
-
-## Backup Failure Alerts
-
-Cloud backup and deploy alerts are sent by GitHub Actions when `ALERT_WEBHOOK_URL` is configured as a repository secret.
-
-GitHub Actions also creates an unread in-app `system` notification for every admin user when a watched workflow fails on `main`. Cancelled, skipped, pull-request and repeated attempts do not alert. The notification uses `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` from GitHub repository secrets.
-
-Local Windows backup alerts use the same setting in `scripts/backup-crm.env`:
-
-```text
-ALERT_WEBHOOK_URL=https://example.com/webhook
-ALERT_WEBHOOK_TYPE=generic
-```
-
-The local backup wrapper also creates an unread in-app `system` notification for every admin user when the backup fails or completes with warnings.
-
-If no webhook is configured, failed jobs still appear in GitHub Actions, the Windows scheduled task log, and the admin notification bell, but no external alert is sent.
+For an existing encrypted archive, verify its external checksum, decrypt with the retained age identity, then verify its manifest using verify-crm-backup.mjs. Test recovery in an isolated project before any production restore.

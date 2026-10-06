@@ -23,6 +23,17 @@
   },
   "functions": [
     {
+      "signature": "public.storage_backup_inventory()",
+      "function_name": "storage_backup_inventory",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Read-only Storage metadata inventory for private independent file backups; no browser access."
+    },
+    {
       "signature": "public.account_is_linked_to_xero(target_user_id uuid)",
       "name": "account_is_linked_to_xero",
       "classification": "authenticated_self_service",
